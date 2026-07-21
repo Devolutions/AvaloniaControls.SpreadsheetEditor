@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:se="clr-namespace:SpreadsheetEditor.Controls;assembly=SpreadsheetEditor.Controls"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+        x:Class="SampleApp.MainWindow"
+        Width="900" Height="600"
+        Title="Spreadsheet Editor">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem x:Name="NewItem" Header="_New" />
+                <MenuItem x:Name="OpenItem" Header="_Open…" />
+                <Separator />
+                <MenuItem x:Name="SaveItem" Header="_Save" />
+                <MenuItem x:Name="SaveAsItem" Header="Save _As…" />
+                <Separator />
+                <MenuItem x:Name="PrintItem" Header="_Print…" InputGesture="Ctrl+P" />
+                <Separator />
+                <MenuItem x:Name="CloseItem" Header="_Close" />
+            </MenuItem>
+        </Menu>
+        <se:SpreadsheetEditor x:Name="Editor" />
+    </DockPanel>
+</Window>

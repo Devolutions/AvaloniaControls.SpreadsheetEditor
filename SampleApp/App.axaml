@@ -1,0 +1,14 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SampleApp.App"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Styles>
+        <FluentTheme />
+        <!-- Pro RichTextEditor theme — without this the control has no template and renders nothing. -->
+        <StyleInclude Source="avares://Avalonia.Controls.RichTextEditor/Themes/Default.axaml" />
+        <!-- Pro Charts theme — likewise required for chart controls to render. -->
+        <StyleInclude Source="avares://Avalonia.Controls.Charts/Themes/Default.axaml" />
+    </Application.Styles>
+</Application>

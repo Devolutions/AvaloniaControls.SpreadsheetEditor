@@ -1,0 +1,193 @@
+name: build package
+
+on:
+  workflow_dispatch:
+    inputs:
+      build-branch:
+        description: "Branch to build from (must be 'master' or 'release/*')"
+        type: string
+        default: 'master'
+        required: true
+      version:
+        description: 'release version (yyyy.MM.dd.n or "latest")'
+        default: "latest"
+        required: true
+      prerelease-suffix:
+        description: 'Prerelease suffix (e.g., avalonia12.1). Leave empty for a stable release.'
+        default: ""
+        required: false
+      publish-mode:
+        description: 'Publishing Mode'
+        type: choice
+        options:
+          - 'Skip Publishing'
+          - 'Dry Run'
+          - 'Publish'
+        default: 'Skip Publishing'
+
+env:
+  PROJECT_DIR: SpreadsheetEditor.Controls
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-22.04
+    outputs:
+      package-env: ${{ steps.info.outputs.package-env }}
+      package-version: ${{ steps.info.outputs.package-version }}
+      skip-publish: ${{ steps.info.outputs.skip-publish }}
+      dry-run: ${{ steps.info.outputs.dry-run }}
+      build-branch: ${{ steps.info.outputs.build-branch }}
+
+    steps:
+      - name: Package information
+        id: info
+        shell: pwsh
+        run: |
+          $BuildBranch = '${{ inputs.build-branch }}'
+          if ([string]::IsNullOrEmpty($BuildBranch)) { $BuildBranch = 'master' }
+          if ($BuildBranch -ne 'master' -And $BuildBranch -NotMatch '^release/.+') {
+            throw "invalid build branch: $BuildBranch, must be 'master' or 'release/*'"
+          }
+
+          $PublishMode = '${{ inputs.publish-mode }}'
+          if ([string]::IsNullOrEmpty($PublishMode)) { $PublishMode = 'Skip Publishing' }
+          $SkipPublish = ($PublishMode -eq 'Skip Publishing')
+          $DryRun = ($PublishMode -eq 'Dry Run')
+          $PackageEnv = if (-Not $SkipPublish) { "publish-prod" } else { "publish-test" }
+
+          $PackageVersion = '${{ inputs.version }}'
+          if ([string]::IsNullOrEmpty($PackageVersion) -or $PackageVersion -eq 'latest') {
+            $PackageVersion = (Get-Date -Format "yyyy.MM.dd") + ".0"
+          }
+          if ($PackageVersion -NotMatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "invalid version format: $PackageVersion, expected: 1.2.3.4"
+          }
+
+          $PrereleaseSuffix = '${{ inputs.prerelease-suffix }}'
+          if (-Not [string]::IsNullOrEmpty($PrereleaseSuffix)) {
+            if ($PrereleaseSuffix -NotMatch '^[a-zA-Z0-9][a-zA-Z0-9.\-]*$') {
+              throw "invalid prerelease suffix: $PrereleaseSuffix"
+            }
+            $PackageVersion = "$PackageVersion-$PrereleaseSuffix"
+          }
+
+          echo "package-env=$PackageEnv" >> $Env:GITHUB_OUTPUT
+          echo "package-version=$PackageVersion" >> $Env:GITHUB_OUTPUT
+          echo "skip-publish=$($SkipPublish.ToString().ToLower())" >> $Env:GITHUB_OUTPUT
+          echo "dry-run=$($DryRun.ToString().ToLower())" >> $Env:GITHUB_OUTPUT
+          echo "build-branch=$BuildBranch" >> $Env:GITHUB_OUTPUT
+
+          echo "::notice::Branch: $BuildBranch"
+          echo "::notice::Version: $PackageVersion"
+          echo "::notice::SkipPublish: $SkipPublish"
+          echo "::notice::DryRun: $DryRun"
+
+  build-nuget:
+    name: Build nuget
+    runs-on: windows-2022
+    needs: [preflight]
+    environment: ${{ needs.preflight.outputs.package-env }}
+
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.build-branch }}
+
+      - name: Install code signing tools
+        run: |
+          dotnet tool install --global AzureSignTool
+          $TestCertsUrl = "https://raw.githubusercontent.com/Devolutions/devolutions-authenticode/master/data/certs"
+          Invoke-WebRequest -Uri "$TestCertsUrl/authenticode-test-ca.crt" -OutFile ".\authenticode-test-ca.crt"
+          Import-Certificate -FilePath ".\authenticode-test-ca.crt" -CertStoreLocation "cert:\LocalMachine\Root"
+          Remove-Item ".\authenticode-test-ca.crt" -ErrorAction SilentlyContinue | Out-Null
+
+      - name: Set package version
+        shell: pwsh
+        run: |
+          $PackageVersion = '${{ needs.preflight.outputs.package-version }}'
+          $csprojPath = (Get-Item "$Env:PROJECT_DIR\*.csproj" | Select-Object -First 1).FullName
+          $content = Get-Content $csprojPath -Raw
+          $content = $content -Replace '(<Version>).*?(</Version>)', "<Version>$PackageVersion</Version>"
+          Set-Content -Path $csprojPath -Value $content -Encoding UTF8
+
+      - name: Build nuget package
+        shell: pwsh
+        env:
+          AVALONIA_LICENSE_KEY: ${{ secrets.AVALONIA_LICENSE_KEY }}
+        run: |
+          New-Item .\package -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
+          & dotnet pack $Env:PROJECT_DIR -c Release -o package
+
+      - name: Code sign nuget contents
+        shell: pwsh
+        run: |
+          $NugetPackages = Get-Item ./package/*.nupkg
+          foreach ($Package in $NugetPackages) {
+            $NugetBaseName = $Package.BaseName
+            $PackedFile = $Package.FullName
+            $UnpackedDir = "./package/${NugetBaseName}"
+            Expand-Archive -Path $PackedFile -Destination $UnpackedDir -Force
+            $Params = @('sign',
+              '-kvt', '${{ secrets.AZURE_TENANT_ID }}',
+              '-kvu', '${{ secrets.CODE_SIGNING_KEYVAULT_URL }}',
+              '-kvi', '${{ secrets.CODE_SIGNING_CLIENT_ID }}',
+              '-kvs', '${{ secrets.CODE_SIGNING_CLIENT_SECRET }}',
+              '-kvc', '${{ secrets.CODE_SIGNING_CERTIFICATE_NAME }}',
+              '-tr', '${{ vars.CODE_SIGNING_TIMESTAMP_SERVER }}',
+              '-v')
+            Get-ChildItem "$UnpackedDir\lib" -Include @("*.dll") -Recurse | ForEach-Object {
+              AzureSignTool @Params $_.FullName
+            }
+            Remove-Item $PackedFile -ErrorAction SilentlyContinue | Out-Null
+            Compress-Archive -Path "$UnpackedDir\*" -Destination $PackedFile -CompressionLevel Optimal
+          }
+
+      - name: Upload nuget package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-nupkg
+          path: package/*.nupkg
+
+  publish:
+    name: Publish package
+    runs-on: ubuntu-22.04
+    needs: [preflight, build-nuget]
+    environment: ${{ needs.preflight.outputs.package-env }}
+    if: ${{ fromJSON(needs.preflight.outputs.skip-publish) == false }}
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download nuget package
+        uses: actions/download-artifact@v4
+        with:
+          name: package-nupkg
+          path: package
+
+      - name: NuGet login (OIDC)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_BOT_USERNAME }}
+
+      - name: Publish to nuget.org
+        shell: pwsh
+        run: |
+          $DryRun = [System.Boolean]::Parse('${{ needs.preflight.outputs.dry-run }}')
+          $NugetPackages = (Get-Item ./package/*.nupkg) | Resolve-Path -Relative
+          foreach ($NugetPackage in $NugetPackages) {
+            $PushArgs = @(
+              'nuget', 'push', "$NugetPackage",
+              '--api-key', '${{ steps.nuget-login.outputs.NUGET_API_KEY }}',
+              '--source', 'https://api.nuget.org/v3/index.json',
+              '--skip-duplicate', '--no-symbols'
+            )
+            Write-Host "dotnet $($PushArgs -Join ' ')"
+            if ($DryRun) {
+              Write-Host "Dry Run: skipping nuget.org publishing!"
+            } else {
+              & 'dotnet' $PushArgs
+            }
+          }

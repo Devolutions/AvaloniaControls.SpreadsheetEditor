@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <!-- Sample host app — not published to NuGet. Shared settings/versions come from ..\Common.props. -->
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!-- Avalonia Pro (Accelerate) license key comes from the AVALONIA_LICENSE_KEY environment variable
+         or a git-ignored .env at the repo root (resolved in Directory.Build.props); never committed. -->
+    <ItemGroup Condition="'$(AVALONIA_LICENSE_KEY)' != ''">
+        <AvaloniaUILicenseKey Include="$(AVALONIA_LICENSE_KEY)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+            <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+            <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="ClosedXML" Version="0.105.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\SpreadsheetEditor.Controls\SpreadsheetEditor.Controls.csproj" />
+    </ItemGroup>
+</Project>

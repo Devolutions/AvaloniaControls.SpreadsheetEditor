@@ -1,0 +1,26 @@
+<Project>
+    <!-- Shared build settings + dependency versions (à la Devolutions/avalonia-extensions). -->
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+
+        <AvaloniaVersion>12.1.0</AvaloniaVersion>
+        <AvaloniaRichTextEditorVersion>12.1.5</AvaloniaRichTextEditorVersion>
+        <AvaloniaChartsVersion>12.1.0</AvaloniaChartsVersion>
+        <CommunityToolkitMvvmVersion>8.4.2</CommunityToolkitMvvmVersion>
+    </PropertyGroup>
+
+    <!-- Shared NuGet package metadata (package-specific bits — Id, Version, Description — stay per project). -->
+    <PropertyGroup>
+        <Authors>Devolutions</Authors>
+        <Company>Devolutions</Company>
+        <Product>Devolutions Avalonia Controls</Product>
+        <Copyright>Copyright © Devolutions</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/Devolutions/AvaloniaControls.SpreadsheetEditor</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/Devolutions/AvaloniaControls.SpreadsheetEditor</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    </PropertyGroup>
+</Project>

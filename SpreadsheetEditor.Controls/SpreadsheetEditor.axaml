@@ -1,0 +1,168 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SpreadsheetEditor.Controls"
+             x:Class="SpreadsheetEditor.Controls.SpreadsheetEditor">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- Chrome brushes for the toolbar/tab strip that adapt to the light/dark theme. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ChromeBackground" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="ChromeBorder" Color="#22000000" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ChromeBackground" Color="#2D2D30" />
+                    <SolidColorBrush x:Key="ChromeBorder" Color="#22FFFFFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+        <!-- Formatting toolbar (above the editor) — grouped icon buttons styled after the
+             RichTextEditor's toolbar: history · clipboard · font · color · B/I/U/S · align · overflow. -->
+        <Border Grid.Row="0" Padding="4,3" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource ChromeBorder}">
+            <Border.Styles>
+                <!-- Compact, flat, square icon buttons across the whole toolbar. -->
+                <Style Selector="Button.tool, ToggleButton.tool">
+                    <Setter Property="Width" Value="30" />
+                    <Setter Property="Height" Value="28" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Focusable" Value="False" />
+                    <Setter Property="HorizontalContentAlignment" Value="Center" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <!-- Standard monochrome icons from the Windows system icon font (Fluent, falling back to
+                     MDL2 Assets on Windows 10). -->
+                <Style Selector="Button.icon, ToggleButton.icon">
+                    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                    <Setter Property="FontSize" Value="15" />
+                </Style>
+                <Style Selector="Border.divider">
+                    <Setter Property="Width" Value="1" />
+                    <Setter Property="Background" Value="{DynamicResource ChromeBorder}" />
+                    <Setter Property="Margin" Value="3,2" />
+                </Style>
+            </Border.Styles>
+            <StackPanel Orientation="Horizontal" Spacing="1">
+
+                <!-- History -->
+                <Button x:Name="UndoButton" Classes="tool icon" Content="&#xE7A7;" ToolTip.Tip="Undo" />
+                <Button x:Name="RedoButton" Classes="tool icon" Content="&#xE7A6;" ToolTip.Tip="Redo" />
+
+                <Border Classes="divider" />
+
+                <!-- Clipboard -->
+                <Button x:Name="CutButton" Classes="tool icon" Content="&#xE8C6;" ToolTip.Tip="Cut" />
+                <Button x:Name="CopyButton" Classes="tool icon" Content="&#xE8C8;" ToolTip.Tip="Copy" />
+                <Button x:Name="PasteButton" Classes="tool icon" Content="&#xE77F;" ToolTip.Tip="Paste" />
+
+                <Border Classes="divider" />
+
+                <!-- Print -->
+                <Button x:Name="PrintButton" Classes="tool icon" Content="&#xE749;" ToolTip.Tip="Print — opens a print preview in your browser" />
+
+                <Border Classes="divider" />
+
+                <!-- Font -->
+                <ComboBox x:Name="FontFamilyBox" Width="140" Height="28" Focusable="False" ToolTip.Tip="Font" />
+                <ComboBox x:Name="FontSizeBox" Width="60" Height="28" Focusable="False" ToolTip.Tip="Font size" />
+
+                <Border Classes="divider" />
+
+                <!-- Color / highlight -->
+                <Button x:Name="ForegroundButton" Classes="tool" ToolTip.Tip="Text color">
+                    <Button.Content>
+                        <StackPanel Orientation="Vertical" Spacing="0" HorizontalAlignment="Center">
+                            <TextBlock Text="A" FontWeight="Bold" HorizontalAlignment="Center" />
+                            <Border x:Name="ForegroundSwatch" Width="16" Height="3" Background="Black" />
+                        </StackPanel>
+                    </Button.Content>
+                    <Button.Flyout>
+                        <Flyout>
+                            <WrapPanel x:Name="ForegroundPalette" Width="132" />
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
+                <Button x:Name="BackgroundButton" Classes="tool" ToolTip.Tip="Highlight / fill color">
+                    <Button.Content>
+                        <Border BorderBrush="#66000000" BorderThickness="1" CornerRadius="2" Width="18" Height="14">
+                            <Border x:Name="BackgroundSwatch" Background="Yellow" Margin="1" CornerRadius="1" />
+                        </Border>
+                    </Button.Content>
+                    <Button.Flyout>
+                        <Flyout>
+                            <WrapPanel x:Name="BackgroundPalette" Width="132" />
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
+                <Border Classes="divider" />
+
+                <!-- Character formatting -->
+                <ToggleButton x:Name="BoldButton" Classes="tool" ToolTip.Tip="Bold">
+                    <TextBlock Text="B" FontWeight="Bold" />
+                </ToggleButton>
+                <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="Italic">
+                    <TextBlock Text="I" FontStyle="Italic" />
+                </ToggleButton>
+                <ToggleButton x:Name="UnderlineButton" Classes="tool" ToolTip.Tip="Underline">
+                    <TextBlock Text="U" TextDecorations="Underline" />
+                </ToggleButton>
+                <ToggleButton x:Name="StrikethroughButton" Classes="tool" ToolTip.Tip="Strikethrough">
+                    <TextBlock Text="S" TextDecorations="Strikethrough" />
+                </ToggleButton>
+
+                <Border Classes="divider" />
+
+                <!-- Alignment -->
+                <ToggleButton x:Name="AlignLeftButton" Classes="tool icon" ToolTip.Tip="Align left" Content="&#xE8E4;" />
+                <ToggleButton x:Name="AlignCenterButton" Classes="tool icon" ToolTip.Tip="Align center" Content="&#xE8E3;" />
+                <ToggleButton x:Name="AlignRightButton" Classes="tool icon" ToolTip.Tip="Align right" Content="&#xE8E2;" />
+
+                <Border Classes="divider" />
+
+                <!-- Insert symbol (currency &amp; math). Flyout built in code-behind. -->
+                <Button x:Name="SymbolButton" Classes="tool" Content="&#x3A9;" FontSize="15" ToolTip.Tip="Insert symbol (currency &amp; math)" />
+
+                <Border Classes="divider" />
+
+                <!-- Overflow: spreadsheet-specific actions (built in code-behind). -->
+                <Button x:Name="OverflowButton" Classes="tool icon" Content="&#xE712;" ToolTip.Tip="More (formulas, chart, rows/columns)" />
+            </StackPanel>
+        </Border>
+
+        <!-- Formula / cell editor bar -->
+        <Grid Grid.Row="1" ColumnDefinitions="90,Auto,*" Margin="4" ColumnSpacing="6">
+            <TextBox x:Name="NameBox" Grid.Column="0" IsReadOnly="True"
+                     VerticalContentAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="fx" FontStyle="Italic"
+                       VerticalAlignment="Center" Opacity="0.7" />
+            <Border x:Name="EditorHost" Grid.Column="2" MinHeight="30"
+                    BorderThickness="1" BorderBrush="{DynamicResource ChromeBorder}" CornerRadius="3" />
+        </Grid>
+
+        <!-- License/fallback notice (hidden when the Pro RichTextEditor activates) -->
+        <Border x:Name="LicenseWarning" Grid.Row="2" IsVisible="False"
+                Background="#33B00020" Padding="8,4" Margin="4,0,4,4">
+            <TextBlock x:Name="LicenseWarningText" TextWrapping="Wrap" Foreground="#B00020" />
+        </Border>
+
+        <!-- The spreadsheet grid: a custom control (not the Avalonia DataGrid) so cells can span
+             (merge) and host rich content — which the DataGrid can't do. Renders from the
+             SpreadsheetViewModel; click-to-select drives the active cell. -->
+        <local:SpreadsheetGrid x:Name="Grid" Grid.Row="3" />
+
+        <!-- Sheet tabs (Excel-style) + add-sheet button. Tabs are built in code-behind. -->
+        <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,2">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button x:Name="AddSheetButton" Content="+" Width="26" Focusable="False"
+                        ToolTip.Tip="Add sheet" Padding="0" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="SheetTabs" Orientation="Horizontal" Spacing="2" />
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
