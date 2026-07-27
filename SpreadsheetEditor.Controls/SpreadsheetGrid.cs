@@ -1340,10 +1340,12 @@ public class SpreadsheetGrid : UserControl
         {
             return (0, 0); // number-formatted (e.g. currency) cells don't spill — Excel shows ####
         }
-        // Spill when the DISPLAYED value is text (incl. a text-producing formula); numbers stay put.
+        // Spill when the DISPLAYED value is text (incl. a text-producing formula); numbers and formula
+        // ERROR values (#DIV/0!, #NAME?, …) stay put — Excel never overflows those into empty cells.
         string display = cell.DisplayText;
         if (string.IsNullOrWhiteSpace(display) ||
             double.TryParse(display, NumberStyles.Any, CultureInfo.InvariantCulture, out _) ||
+            IsErrorValue(display) ||
             this.FindDataBar(row, column) is not null)
         {
             return (0, 0);
@@ -1354,6 +1356,10 @@ public class SpreadsheetGrid : UserControl
         int left = align != TextAlignment.Left ? this.EmptyRun(row, column, -1) : 0;
         return (left, right);
     }
+
+    // An Excel error value (#DIV/0!, #VALUE!, #NAME?, #REF!, #NUM!, #N/A, #CIRC!, …).
+    private static bool IsErrorValue(string display) =>
+        display.Length > 1 && display[0] == '#' && (display[^1] is '!' or '?' || display == "#N/A");
 
     // Counts consecutive empty, non-merged, non-databar cells from (row,column) in a direction.
     private int EmptyRun(int row, int column, int direction)
