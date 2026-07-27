@@ -89,8 +89,8 @@ public static class XlsxCharts
                         continue;
                     }
 
-                    (ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels) = ParseChartPart(chartDoc);
-                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, anchor, sheet);
+                    (ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum) = ParseChartPart(chartDoc);
+                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, axisMinimum, anchor, sheet);
                     if (built is not null)
                     {
                         charts.Add(built);
@@ -109,14 +109,21 @@ public static class XlsxCharts
     // ----- chart part -----
 
     // Parses a chart part into its kind, raw series, and whether data labels are shown.
-    public static (ChartKind Kind, List<RawSeries> Series, bool ShowDataLabels) ParseChartPart(XDocument chartDoc)
+    public static (ChartKind Kind, List<RawSeries> Series, bool ShowDataLabels, double? AxisMinimum) ParseChartPart(XDocument chartDoc)
     {
         XElement? plotArea = chartDoc.Descendants(C + "plotArea").FirstOrDefault();
         List<RawSeries> series = new();
         bool showDataLabels = chartDoc.Descendants(C + "showVal").Any(static e => e.Attribute("val")?.Value is "1" or "true");
+
+        // Explicit value-axis minimum (<c:valAx><c:scaling><c:min>), if the chart pins one; otherwise null
+        // → the builder defaults to 0 (Excel's automatic value-axis baseline).
+        string? minText = chartDoc.Descendants(C + "valAx").FirstOrDefault()
+            ?.Element(C + "scaling")?.Element(C + "min")?.Attribute("val")?.Value;
+        double? axisMinimum = double.TryParse(minText, NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMin) ? parsedMin : null;
+
         if (plotArea is null)
         {
-            return (ChartKind.Line, series, showDataLabels);
+            return (ChartKind.Line, series, showDataLabels, axisMinimum);
         }
 
         // The first element whose name ends with "Chart" determines the type.
@@ -142,7 +149,7 @@ public static class XlsxCharts
             series.Add(new RawSeries(titleFormula, titleLiteral, valueFormula, categoryFormula, cachedValues, cachedCategories));
         }
 
-        return (kind, series, showDataLabels);
+        return (kind, series, showDataLabels, axisMinimum);
     }
 
     // Reads a c:val / c:cat element's cached point values (numCache or strCache) into a list
@@ -320,7 +327,7 @@ public static class XlsxCharts
 
     // ----- stitching -----
 
-    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, Anchor anchor, IXLWorksheet sheet)
+    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, Anchor anchor, IXLWorksheet sheet)
     {
         List<ChartSeriesSpec> series = new();
         CellRange? categories = null;
@@ -362,6 +369,8 @@ public static class XlsxCharts
             CachedCategories = cachedCategories,
             ShowDataLabels = showDataLabels,
             ShowLegend = series.Count > 1,
+            // Honor an explicit axis minimum from the file; otherwise start at 0 like Excel's default.
+            AxisMinimum = axisMinimum ?? 0,
             AnchorRow = anchor.FromRow,
             AnchorColumn = anchor.FromCol,
             OffsetX = anchor.FromColOffPx,
