@@ -93,7 +93,7 @@ public partial class MainWindow : Window
 
             if (IsXlsx(file.Name))
             {
-                this.Editor.LoadWorkbook(XlsxFile.ReadWorkbook(buffer));
+                this.Editor.OpenXlsx(buffer);
             }
             else
             {
@@ -158,7 +158,7 @@ public partial class MainWindow : Window
         if (IsXlsx(file.Name))
         {
             using MemoryStream buffer = new();
-            XlsxFile.Write(buffer, this.Editor.GetCellData());
+            this.Editor.SaveXlsx(buffer);
             bytes = buffer.ToArray();
         }
         else

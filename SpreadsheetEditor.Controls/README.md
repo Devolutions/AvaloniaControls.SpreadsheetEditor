@@ -39,3 +39,24 @@ The control exposes an integration API similar to Avalonia's `RichTextEditor`: `
 `Undo()`/`Redo()` + `CanUndo`/`CanRedo`, `SelectAll()`, `SelectedRange`, and the `ContentChanged`,
 `SelectionChanged`, and `IsReadOnlyChanged` events. Load data via `LoadSheet`, `LoadWorkbook`,
 `LoadCellData`, or `LoadRows`; read it back with `GetCellData`/`GetRows`.
+
+## Excel (.xlsx) files — included
+
+Excel read/write is built in (backed by [ClosedXML](https://github.com/ClosedXML/ClosedXML) plus
+OOXML chart parsing), so no extra package is needed:
+
+```csharp
+using System.IO;
+
+// Load an .xlsx (every worksheet → one tab) into the control:
+await using (FileStream fs = File.OpenRead("book.xlsx"))
+    editor.OpenXlsx(fs);
+
+// Save the active sheet back to .xlsx:
+await using (FileStream fs = File.Create("out.xlsx"))
+    editor.SaveXlsx(fs);
+```
+
+For headless / non-UI use, the readers/writers are also available directly via
+`SpreadsheetEditor.Controls.Xlsx.XlsxFile` (`ReadWorkbook`/`Read`/`Write`) returning the library's
+`SheetData` model.

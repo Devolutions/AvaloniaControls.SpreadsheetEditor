@@ -1,4 +1,4 @@
-namespace SampleApp;
+namespace SpreadsheetEditor.Controls.Xlsx;
 
 using System;
 using System.Collections.Generic;
@@ -8,7 +8,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
 using ClosedXML.Excel;
-using SpreadsheetEditor.Controls.Models;
+using global::SpreadsheetEditor.Controls.Models;
 
 // Reads charts embedded in an .xlsx package. ClosedXML drops charts, so this parses the OOXML parts
 // directly: the worksheet drawing (anchor geometry + chart references) and each chart part (type +

@@ -1,4 +1,4 @@
-namespace SampleApp;
+namespace SpreadsheetEditor.Controls.Xlsx;
 
 using System;
 using System.Collections.Generic;
@@ -8,11 +8,11 @@ using System.Linq;
 using Avalonia.Media;
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
-using SpreadsheetEditor.Controls.Models;
+using global::SpreadsheetEditor.Controls.Models;
 
-// App-side .xlsx open/save for the sample host, backed by ClosedXML. Round-trips cell text plus
-// whole-cell formatting (bold/italic/underline, font color, fill color). Reads the first
-// worksheet and writes a single "Sheet1". Lives in the app, like the TSV/CSV I/O.
+// .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
+// text/formulas plus whole-cell formatting (bold/italic/underline/strikethrough, colors, number format,
+// font). ReadWorkbook reads every worksheet; Write emits a single "Sheet1". Part of the control library.
 public static class XlsxFile
 {
     // Reads the first worksheet of an .xlsx stream into a SheetData

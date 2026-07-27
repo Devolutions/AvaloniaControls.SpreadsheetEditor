@@ -9,6 +9,7 @@
         <AvaloniaRichTextEditorVersion>12.1.5</AvaloniaRichTextEditorVersion>
         <AvaloniaChartsVersion>12.1.0</AvaloniaChartsVersion>
         <CommunityToolkitMvvmVersion>8.4.2</CommunityToolkitMvvmVersion>
+        <ClosedXmlVersion>0.105.0</ClosedXmlVersion>
     </PropertyGroup>
 
     <!-- Shared NuGet package metadata (package-specific bits — Id, Version, Description — stay per project). -->

@@ -18,6 +18,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.ViewModels;
+using global::SpreadsheetEditor.Controls.Xlsx;
 
 // A reusable spreadsheet editor built on a custom SpreadsheetGrid (not the Avalonia
 // DataGrid) so cells can span (merge) and host rich content. The grid renders each cell's text via
@@ -271,6 +272,16 @@ public partial class SpreadsheetEditor : UserControl
     }
 
     public IReadOnlyList<IReadOnlyList<CellData>> GetCellData() => this.vm.ToCellData();
+
+    // ----- Excel (.xlsx) I/O (backed by the bundled ClosedXML + OOXML readers) -----
+
+    // Reads an .xlsx stream — every worksheet, with formulas, formatting, merges, charts, images, data
+    // bars, and named ranges — into the editor (one tab per worksheet).
+    public void OpenXlsx(Stream stream) => this.LoadWorkbook(XlsxFile.ReadWorkbook(stream));
+
+    // Writes the ACTIVE sheet to an .xlsx stream (values/formulas + whole-cell formatting). Multi-sheet
+    // export is not yet supported by the writer.
+    public void SaveXlsx(Stream stream) => XlsxFile.Write(stream, this.GetCellData());
 
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
     // widths, merges, images, charts, data bars, and names.

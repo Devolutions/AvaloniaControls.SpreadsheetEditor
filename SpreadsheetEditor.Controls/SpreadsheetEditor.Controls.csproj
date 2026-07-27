@@ -34,5 +34,7 @@
         <PackageReference Include="Avalonia.Controls.RichTextEditor" Version="$(AvaloniaRichTextEditorVersion)" />
         <PackageReference Include="Avalonia.Controls.Charts" Version="$(AvaloniaChartsVersion)" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="$(CommunityToolkitMvvmVersion)" />
+        <!-- Excel (.xlsx) read/write. Ships with the package so consumers get Excel I/O out of the box. -->
+        <PackageReference Include="ClosedXML" Version="$(ClosedXmlVersion)" />
     </ItemGroup>
 </Project>
