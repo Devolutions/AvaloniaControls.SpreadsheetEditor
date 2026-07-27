@@ -76,8 +76,12 @@ public static class XlsxFile
 
                 // Import the live formula, or a raw number, so the engine can compute/recompute; the
                 // number format renders it (e.g. $50,000). Text/dates keep their formatted string.
+                // Prefer the explicit format code; for built-in formats (percent, thousands, …) ClosedXML
+                // leaves Format empty and only sets NumberFormatId, so map that to its implied code.
                 string? format = cell.Style.NumberFormat.Format;
-                format = string.IsNullOrWhiteSpace(format) ? null : format;
+                format = string.IsNullOrWhiteSpace(format)
+                    ? BuiltInNumberFormat(cell.Style.NumberFormat.NumberFormatId)
+                    : format;
                 string text;
                 string? numberFormat = null;
                 if (cell.HasFormula)
@@ -448,4 +452,20 @@ public static class XlsxFile
     }
 
     private static XLColor ToXl(Color color) => XLColor.FromArgb(color.A, color.R, color.G, color.B);
+
+    // Format code for a built-in Excel numFmtId (0-163) that ClosedXML leaves as an empty Format string.
+    // Only the numeric formats the renderer understands are mapped; dates/text fall through to null
+    // (General / the cell's formatted string). https://learn.microsoft.com built-in number formats.
+    private static string? BuiltInNumberFormat(int numberFormatId) => numberFormatId switch
+    {
+        1 => "0",
+        2 => "0.00",
+        3 => "#,##0",
+        4 => "#,##0.00",
+        9 => "0%",
+        10 => "0.00%",
+        37 or 38 => "#,##0;(#,##0)",
+        39 or 40 => "#,##0.00;(#,##0.00)",
+        _ => null,
+    };
 }
