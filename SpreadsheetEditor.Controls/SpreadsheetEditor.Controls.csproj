@@ -36,5 +36,8 @@
         <PackageReference Include="CommunityToolkit.Mvvm" Version="$(CommunityToolkitMvvmVersion)" />
         <!-- Excel (.xlsx) read/write. Ships with the package so consumers get Excel I/O out of the box. -->
         <PackageReference Include="ClosedXML" Version="$(ClosedXmlVersion)" />
+        <!-- Cross-platform PDF export (SkiaSharp SKDocument). Already flows in transitively via
+             Avalonia.Controls.Charts; referenced explicitly so the printing code can use it directly. -->
+        <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
     </ItemGroup>
 </Project>

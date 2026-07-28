@@ -10,6 +10,9 @@
         <AvaloniaChartsVersion>12.1.0</AvaloniaChartsVersion>
         <CommunityToolkitMvvmVersion>8.4.2</CommunityToolkitMvvmVersion>
         <ClosedXmlVersion>0.105.0</ClosedXmlVersion>
+        <!-- SkiaSharp is used directly for cross-platform PDF export; pin the same version the
+             Avalonia Charts package resolves so there is no assembly/native-asset conflict. -->
+        <SkiaSharpVersion>3.119.3-preview.1.1</SkiaSharpVersion>
     </PropertyGroup>
 
     <!-- Shared NuGet package metadata (package-specific bits — Id, Version, Description — stay per project). -->

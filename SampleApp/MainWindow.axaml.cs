@@ -24,6 +24,13 @@ public partial class MainWindow : Window
         Patterns = new[] { "*.tsv", "*.csv", "*.txt" },
     };
 
+    private static readonly FilePickerFileType PdfFiles = new("PDF document (*.pdf)")
+    {
+        Patterns = new[] { "*.pdf" },
+        MimeTypes = new[] { "application/pdf" },
+        AppleUniformTypeIdentifiers = new[] { "com.adobe.pdf" },
+    };
+
     private static bool IsXlsx(string name) =>
         name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase);
 
@@ -37,6 +44,7 @@ public partial class MainWindow : Window
         this.OpenItem.Click += this.OnOpen;
         this.SaveItem.Click += this.OnSave;
         this.SaveAsItem.Click += this.OnSaveAs;
+        this.ExportPdfItem.Click += this.OnExportPdf;
         this.PrintItem.Click += this.OnPrint;
         this.CloseItem.Click += this.OnClose;
 
@@ -54,6 +62,25 @@ public partial class MainWindow : Window
     }
 
     private void OnPrint(object? sender, RoutedEventArgs e) => this.Editor.Print();
+
+    private async void OnExportPdf(object? sender, RoutedEventArgs e)
+    {
+        IStorageFile? file = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export as PDF",
+            DefaultExtension = "pdf",
+            SuggestedFileName = "sheet.pdf",
+            FileTypeChoices = new[] { PdfFiles },
+        });
+
+        if (file is null)
+        {
+            return;
+        }
+
+        await using Stream stream = await file.OpenWriteAsync();
+        this.Editor.ExportPdf(stream);
+    }
 
     private void OnNew(object? sender, RoutedEventArgs e)
     {

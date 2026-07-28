@@ -6,7 +6,7 @@ grid (not the Avalonia `DataGrid`) so cells can merge and host rich content, and
 - A custom rendering grid with cell merging, frozen headers, and drag-to-select.
 - Rich in-cell editing (bold/italic/underline/strikethrough, fonts, colors, alignment).
 - A hand-rolled `=` formula engine (arithmetic, ranges, `SUM/AVERAGE/IF/…`, named ranges, live recalc).
-- Charts, multi-sheet tabs, infinite rows/columns, undo/redo, clipboard, and HTML print.
+- Charts, multi-sheet tabs, infinite rows/columns, undo/redo, clipboard, and printing (cross-platform PDF export + HTML preview).
 
 ## Requirements
 
@@ -60,3 +60,29 @@ await using (FileStream fs = File.Create("out.xlsx"))
 For headless / non-UI use, the readers/writers are also available directly via
 `SpreadsheetEditor.Controls.Xlsx.XlsxFile` (`ReadWorkbook`/`Read`/`Write`) returning the library's
 `SheetData` model.
+
+## Printing (cross-platform)
+
+Avalonia has no built-in print API, so the control offers two portable routes — both work on
+Windows, macOS, and Linux:
+
+```csharp
+using System.IO;
+
+// 1. PDF export (recommended). Self-contained, rendered with SkiaSharp — no browser needed.
+//    Cell fills, borders, alignment, and rich run formatting are preserved; the sheet is scaled
+//    to fit the page width and rows flow across pages.
+await using (FileStream fs = File.Create("sheet.pdf"))
+    editor.ExportPdf(fs);
+
+editor.SavePdf("sheet.pdf");   // convenience overload for a file path
+editor.PrintPdf();             // writes a temp PDF and opens the OS default viewer to print
+
+// 2. HTML preview. Opens the sheet in the default browser, where the user prints (or saves a PDF)
+//    via the browser's own print dialog.
+string html = editor.ExportHtml();
+editor.Print();
+```
+
+`PrintPdf()`/`Print()` open the file with the platform handler (ShellExecute on Windows, `open` on
+macOS, `xdg-open` on Linux). Charts and images are not drawn into the PDF/HTML (data only).

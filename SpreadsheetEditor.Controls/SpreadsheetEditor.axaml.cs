@@ -17,6 +17,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using global::SpreadsheetEditor.Controls.Models;
+using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
 using global::SpreadsheetEditor.Controls.Xlsx;
 
@@ -443,6 +444,39 @@ public partial class SpreadsheetEditor : UserControl
         catch
         {
             // Never crash the editor if the temp file or default browser can't be opened.
+        }
+    }
+
+    // Writes the active sheet's used range to a paginated PDF (via SkiaSharp). Fully cross-platform
+    // and self-contained — no browser or OS print subsystem required. Cell fills, borders, alignment,
+    // and rich run formatting are preserved; the sheet is scaled to fit the page width and rows flow
+    // across pages. Charts and images are not rendered (data only), matching ExportHtml.
+    public void ExportPdf(Stream stream) => SpreadsheetPdfExporter.Export(this.vm, stream);
+
+    // Convenience: renders the active sheet to a .pdf file at the given path.
+    public void SavePdf(string path)
+    {
+        using FileStream stream = File.Create(path);
+        this.ExportPdf(stream);
+    }
+
+    // Renders the active sheet to a temporary PDF and opens it in the OS default PDF viewer, where the
+    // user prints via that viewer's print dialog. UseShellExecute maps to the platform handler
+    // (ShellExecute on Windows, `open` on macOS, `xdg-open` on Linux), so this is cross-platform.
+    // Best-effort — falls back to the HTML/browser route if the PDF can't be opened.
+    public void PrintPdf()
+    {
+        try
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "SpreadsheetEditor");
+            Directory.CreateDirectory(directory);
+            string file = Path.Combine(directory, SanitizeFileName(this.vm.Name) + ".pdf");
+            this.SavePdf(file);
+            Process.Start(new ProcessStartInfo { FileName = file, UseShellExecute = true });
+        }
+        catch
+        {
+            // Never crash the editor if the PDF can't be written or no viewer is registered.
         }
     }
 

@@ -16,6 +16,7 @@
                 <MenuItem x:Name="SaveItem" Header="_Save" />
                 <MenuItem x:Name="SaveAsItem" Header="Save _As…" />
                 <Separator />
+                <MenuItem x:Name="ExportPdfItem" Header="_Export as PDF…" />
                 <MenuItem x:Name="PrintItem" Header="_Print…" InputGesture="Ctrl+P" />
                 <Separator />
                 <MenuItem x:Name="CloseItem" Header="_Close" />
