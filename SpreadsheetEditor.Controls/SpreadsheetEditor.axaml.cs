@@ -143,7 +143,7 @@ public partial class SpreadsheetEditor : UserControl
         this.CutButton.Click += (_, _) => this.Grid.CutSelection();
         this.CopyButton.Click += (_, _) => this.Grid.CopySelection();
         this.PasteButton.Click += (_, _) => this.Grid.PasteSelection();
-        this.PrintButton.Click += (_, _) => this.Print();
+        this.PrintButton.Click += (_, _) => this.PrintPdf();
 
         // Spreadsheet-specific actions live in the overflow menu.
         this.OverflowButton.Flyout = this.BuildOverflowMenu();
@@ -352,7 +352,7 @@ public partial class SpreadsheetEditor : UserControl
         menu.Items.Add(chart);
 
         MenuItem print = new() { Header = "Print…" };
-        print.Click += (_, _) => this.Print();
+        print.Click += (_, _) => this.PrintPdf();
         menu.Items.Add(print);
 
         MenuItem autoSum = new() { Header = "AutoSum (Σ)" };

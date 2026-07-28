@@ -53,7 +53,7 @@ public partial class MainWindow : Window
         {
             if (e.Key == Key.P && e.KeyModifiers == KeyModifiers.Control)
             {
-                this.Editor.Print();
+                this.Editor.PrintPdf();
                 e.Handled = true;
             }
         };
@@ -61,7 +61,7 @@ public partial class MainWindow : Window
         this.UpdateTitle();
     }
 
-    private void OnPrint(object? sender, RoutedEventArgs e) => this.Editor.Print();
+    private void OnPrint(object? sender, RoutedEventArgs e) => this.Editor.PrintPdf();
 
     private async void OnExportPdf(object? sender, RoutedEventArgs e)
     {
