@@ -23,6 +23,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using global::SpreadsheetEditor.Controls.Models;
+using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
 
 // A custom spreadsheet grid: a scrollable cell area with frozen column/row headers, per-column
@@ -114,6 +115,10 @@ public class SpreadsheetGrid : UserControl
 
     // Charts, on their own canvas above images (hit-testable so chart tooltips/interaction work).
     private readonly Canvas chartOverlay = new();
+
+    // Live chart cards tracked as they are built (for print/PDF snapshotting): the positioned card,
+    // its chart control, and the on-card chrome (⚙ button + resize grip) hidden when snapshotting.
+    private readonly List<(Border Card, Control Chart, Control Settings, Control Grip)> chartCards = new();
 
     // True = selection mode (editor hidden, just the selection rectangle); false = edit mode (editor
     // shown + focused). Default selection mode: a single click selects, double-click/typing/F2 edits.
@@ -857,6 +862,7 @@ public class SpreadsheetGrid : UserControl
     private void RefreshCharts()
     {
         this.chartOverlay.Children.Clear();
+        this.chartCards.Clear();
         if (this.sheet is null || this.columnWidths.Length == 0)
         {
             return;
@@ -1061,7 +1067,124 @@ public class SpreadsheetGrid : UserControl
             };
 
             this.chartOverlay.Children.Add(card);
+            this.chartCards.Add((card, control, settings, grip));
         }
+    }
+
+    // Renders each live chart card to a PNG snapshot with its grid position/size, for compositing
+    // into an exported PDF. The on-card chrome (⚙ button + resize grip) is hidden during capture so
+    // only the chart and its white card show. Must be called on the UI thread (charts are live
+    // controls). Returns empty if the charts have not been rendered (e.g. headless use).
+    public IReadOnlyList<ChartImage> RenderChartImages()
+    {
+        List<ChartImage> images = new();
+        foreach ((Border card, Control chart, Control settings, Control grip) in this.chartCards)
+        {
+            double width = card.Width;
+            double height = card.Height;
+            if (double.IsNaN(width) || double.IsNaN(height) || width < 1 || height < 1)
+            {
+                continue;
+            }
+
+            double left = Canvas.GetLeft(card);
+            double top = Canvas.GetTop(card);
+            if (double.IsNaN(left))
+            {
+                left = 0;
+            }
+
+            if (double.IsNaN(top))
+            {
+                top = 0;
+            }
+
+            bool settingsVisible = settings.IsVisible;
+            bool gripVisible = grip.IsVisible;
+            settings.IsVisible = false;
+            grip.IsVisible = false;
+            try
+            {
+                PixelSize pixelSize = new((int)Math.Ceiling(width), (int)Math.Ceiling(height));
+                using RenderTargetBitmap bitmap = new(pixelSize, new Vector(96, 96));
+                bitmap.Render(card);
+                using MemoryStream stream = new();
+                bitmap.Save(stream, new PngBitmapEncoderOptions());
+                images.Add(new ChartImage(stream.ToArray(), left, top, width, height));
+            }
+            catch
+            {
+                // Skip a chart that can't be snapshotted rather than failing the whole export.
+            }
+            finally
+            {
+                settings.IsVisible = settingsVisible;
+                grip.IsVisible = gripVisible;
+            }
+        }
+
+        return images;
+    }
+
+    // Resolves every chart on the sheet into the data the .xlsx chart writer needs: the range formulas
+    // (qualified with the sheet name) plus the live values/labels so a saved workbook keeps its charts.
+    public IReadOnlyList<ChartWriteData> BuildChartWriteData(string sheetName)
+    {
+        List<ChartWriteData> result = new();
+        if (this.sheet is null)
+        {
+            return result;
+        }
+
+        foreach (SheetChart chart in this.sheet.Charts)
+        {
+            (List<string> categories, List<ChartSeriesData> series) = this.ExtractChartData(chart);
+
+            List<ChartWriteSeries> written = new();
+            for (int i = 0; i < chart.Series.Count; i++)
+            {
+                ChartSeriesSpec spec = chart.Series[i];
+                IReadOnlyList<double> values = i < series.Count ? series[i].Values : Array.Empty<double>();
+                written.Add(new ChartWriteSeries(spec.Title, RangeToFormula(sheetName, spec.Values), values));
+            }
+
+            // Reproduce the chart's on-screen rectangle exactly (same math as RefreshCharts): a
+            // two-cell-anchored chart is sized by its from→to span, otherwise by its stored size. We
+            // persist it as an anchor + explicit pixel extent so position and size survive the round-trip.
+            double left = this.OffsetToColumn(chart.AnchorColumn) + chart.OffsetX;
+            double top = this.OffsetToRow(chart.AnchorRow) + chart.OffsetY;
+            double width = chart.Width;
+            double height = chart.Height;
+            if (chart.ToColumn is { } toColumn && chart.ToRow is { } toRow)
+            {
+                width = this.OffsetToColumn(toColumn) + chart.ToOffsetX - left;
+                height = this.OffsetToRow(toRow) + chart.ToOffsetY - top;
+            }
+
+            width = Math.Clamp(width, 120, 2400);
+            height = Math.Clamp(height, 80, 1600);
+
+            string? categoryFormula = chart.Categories is { } range ? RangeToFormula(sheetName, range) : null;
+            result.Add(new ChartWriteData(
+                chart.Kind, chart.Title, chart.ShowLegend, chart.ShowDataLabels, chart.AxisMinimum,
+                chart.AnchorRow, chart.AnchorColumn, chart.OffsetX, chart.OffsetY, width, height,
+                written, categoryFormula, categories));
+        }
+
+        return result;
+    }
+
+    // Builds an absolute, sheet-qualified A1 range formula (e.g. 'Budget'!$C$7:$C$10) for a chart part.
+    private static string RangeToFormula(string sheetName, CellRange range)
+    {
+        string firstColumn = CellAddress.ColumnToLetters(range.Column);
+        string lastColumn = CellAddress.ColumnToLetters(range.Column + Math.Max(1, range.ColumnSpan) - 1);
+        int firstRow = range.Row + 1;
+        int lastRow = range.Row + Math.Max(1, range.RowSpan);
+        string a1 = range.RowSpan <= 1 && range.ColumnSpan <= 1
+            ? $"${firstColumn}${firstRow}"
+            : $"${firstColumn}${firstRow}:${lastColumn}${lastRow}";
+        return $"'{sheetName.Replace("'", "''")}'!{a1}";
     }
 
     // Reads a chart's explicit series + category ranges into the data the factory needs, pulling the
@@ -1070,26 +1193,41 @@ public class SpreadsheetGrid : UserControl
     {
         string Display(CellAddress a) => this.sheet!.GetCell(a)?.DisplayText ?? string.Empty;
 
+        // True when the range resolves to at least one non-empty cell in the loaded sheet, i.e. the
+        // chart's data lives here and should be read live (so edits/recalcs update the chart). When
+        // false (data on another sheet or outside the loaded range) we fall back to the file snapshot.
+        bool RangeHasData(CellRange range)
+        {
+            if (range.RowSpan <= 0 || range.ColumnSpan <= 0)
+            {
+                return false;
+            }
+
+            return this.EnumerateRange(range).Any(a => !string.IsNullOrWhiteSpace(Display(a)));
+        }
+
         List<ChartSeriesData> series = new();
         foreach (ChartSeriesSpec spec in chart.Series)
         {
-            // Prefer the snapshot saved with the chart (covers data outside the loaded sheet);
-            // otherwise read the referenced cells live.
-            List<double> values = spec.CachedValues is { Count: > 0 }
-                ? spec.CachedValues.ToList()
-                : this.EnumerateRange(spec.Values).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList();
+            List<double> values = RangeHasData(spec.Values)
+                ? this.EnumerateRange(spec.Values).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
+                : spec.CachedValues?.ToList() ?? new List<double>();
             series.Add(new ChartSeriesData(spec.Title, values));
         }
 
         int maxLen = series.Count == 0 ? 0 : series.Max(s => s.Values.Count);
         List<string> categories;
-        if (chart.CachedCategories is { Count: > 0 } cached)
+        if (chart.Categories is { } cats && RangeHasData(cats))
+        {
+            categories = this.EnumerateRange(cats).Select(Display).ToList();
+        }
+        else if (chart.CachedCategories is { Count: > 0 } cached)
         {
             categories = cached.ToList();
         }
-        else if (chart.Categories is { } cats)
+        else if (chart.Categories is { } cats2)
         {
-            categories = this.EnumerateRange(cats).Select(Display).ToList();
+            categories = this.EnumerateRange(cats2).Select(Display).ToList();
         }
         else
         {

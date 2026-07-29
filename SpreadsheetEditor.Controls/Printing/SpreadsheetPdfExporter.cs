@@ -2,6 +2,7 @@ namespace SpreadsheetEditor.Controls.Printing;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Avalonia.Media;
@@ -13,8 +14,8 @@ using global::SpreadsheetEditor.Controls.ViewModels;
 // This is fully cross-platform (Windows/macOS/Linux) and self-contained: it needs no browser
 // and no OS print subsystem. Cells are drawn with their fills, borders, alignment, and
 // (rich) run formatting; the sheet is scaled down to fit the page width ("fit to 1 page wide")
-// and rows flow onto as many pages as needed. Charts and images are not rendered (data only),
-// matching the HTML export.
+// and rows flow onto as many pages as needed. Charts are composited from pre-rendered snapshots
+// (see ChartImage) positioned in grid coordinates; images are not rendered.
 public static class SpreadsheetPdfExporter
 {
     // US Letter, portrait, at 72 pt/inch (PDF's native unit).
@@ -24,6 +25,9 @@ public static class SpreadsheetPdfExporter
 
     private const float Margin = 36f;
 
+    // Space reserved at the top of each page for the sheet-name title.
+    private const float TitleHeight = 24f;
+
     // Screen sizes (column widths, row heights, font sizes) are in device px at 96 dpi;
     // PDF is 72 pt/inch, so 1 px = 0.75 pt.
     private const double PxToPt = 72.0 / 96.0;
@@ -32,7 +36,7 @@ public static class SpreadsheetPdfExporter
 
     private static readonly SKColor TextColor = SKColors.Black;
 
-    public static void Export(SpreadsheetViewModel sheet, Stream stream)
+    public static void Export(SpreadsheetViewModel sheet, Stream stream, IReadOnlyList<ChartImage>? charts = null)
     {
         if (sheet is null)
         {
@@ -44,106 +48,18 @@ public static class SpreadsheetPdfExporter
             throw new ArgumentNullException(nameof(stream));
         }
 
-        int lastRow = Math.Max(sheet.LastNonEmptyRow(), 0);
-        int lastColumn = LastNonEmptyColumn(sheet, lastRow);
-
-        (Dictionary<(int Row, int Column), MergeRange> anchors, HashSet<(int Row, int Column)> covered) = BuildMergeMaps(sheet);
-
-        // Fit-to-width scale: shrink (never grow) so the used columns fit the printable width.
-        float contentWidth = PageWidth - (2 * Margin);
-        double totalWidthPt = 0;
-        for (int c = 0; c <= lastColumn; c++)
-        {
-            totalWidthPt += ColumnWidthPx(sheet, c) * PxToPt;
-        }
-
-        double fitScale = totalWidthPt > contentWidth && totalWidthPt > 0 ? contentWidth / totalWidthPt : 1.0;
-        double scale = PxToPt * fitScale;
-
-        // Column x-offsets and widths, in page points, relative to the left margin.
-        float[] columnLeft = new float[lastColumn + 2];
-        columnLeft[0] = Margin;
-        for (int c = 0; c <= lastColumn; c++)
-        {
-            columnLeft[c + 1] = columnLeft[c] + (float)(ColumnWidthPx(sheet, c) * scale);
-        }
-
-        float[] rowHeightPt = new float[lastRow + 1];
-        for (int r = 0; r <= lastRow; r++)
-        {
-            rowHeightPt[r] = (float)(RowHeightPx(sheet, r) * scale);
-        }
-
-        const float titleHeight = 24f;
-        float gridTop = Margin + titleHeight;
-        float contentBottom = PageHeight - Margin;
-
+        PageLayout layout = ComputeLayout(sheet);
         Dictionary<TypefaceKey, SKTypeface> typefaces = new();
-
         try
         {
             SKDocumentPdfMetadata metadata = new() { Title = sheet.Name };
             using SKDocument document = SKDocument.CreatePdf(stream, metadata);
-
-            int row = 0;
-            while (row <= lastRow)
+            for (int p = 0; p < layout.Pages.Count; p++)
             {
                 SKCanvas canvas = document.BeginPage(PageWidth, PageHeight);
                 try
                 {
-                    DrawTitle(canvas, sheet.Name);
-
-                    // Pack as many rows as fit under the title on this page (at least one).
-                    float y = gridTop;
-                    int pageStart = row;
-                    while (row <= lastRow && (row == pageStart || y + rowHeightPt[row] <= contentBottom))
-                    {
-                        y += rowHeightPt[row];
-                        row++;
-                    }
-
-                    int pageEnd = row; // exclusive
-
-                    // Clip so a merged block spanning past the page bottom is trimmed cleanly.
-                    canvas.Save();
-                    canvas.ClipRect(new SKRect(Margin, gridTop, PageWidth - Margin, contentBottom));
-
-                    float rowTop = gridTop;
-                    for (int r = pageStart; r < pageEnd; r++)
-                    {
-                        for (int c = 0; c <= lastColumn; c++)
-                        {
-                            if (covered.Contains((r, c)))
-                            {
-                                continue;
-                            }
-
-                            CellViewModel? cell = sheet.GetCell(new CellAddress(r, c));
-
-                            int columnSpan = 1;
-                            int rowSpan = 1;
-                            if (anchors.TryGetValue((r, c), out MergeRange span))
-                            {
-                                columnSpan = span.ColumnSpan;
-                                rowSpan = span.RowSpan;
-                            }
-
-                            float cellLeft = columnLeft[c];
-                            float cellRight = columnLeft[Math.Min(c + columnSpan, lastColumn + 1)];
-                            float cellBottom = rowTop;
-                            for (int rr = r; rr < r + rowSpan && rr <= lastRow; rr++)
-                            {
-                                cellBottom += rowHeightPt[rr];
-                            }
-
-                            SKRect rect = new(cellLeft, rowTop, cellRight, cellBottom);
-                            DrawCell(canvas, cell, rect, (float)scale, typefaces);
-                        }
-
-                        rowTop += rowHeightPt[r];
-                    }
-
-                    canvas.Restore();
+                    DrawPage(canvas, sheet, charts, layout, p, typefaces);
                 }
                 finally
                 {
@@ -162,6 +78,199 @@ public static class SpreadsheetPdfExporter
         }
     }
 
+    // Renders each page to a raster bitmap (BGRA, top-down) at the given DPI. Used by the Windows print
+    // path, which blits these onto the printer's device context. Caller owns/disposes the bitmaps.
+    internal static List<SKBitmap> RenderPages(SpreadsheetViewModel sheet, IReadOnlyList<ChartImage>? charts, float dpi)
+    {
+        PageLayout layout = ComputeLayout(sheet);
+        float k = dpi / 72f;
+        int widthPx = Math.Max(1, (int)Math.Ceiling(PageWidth * k));
+        int heightPx = Math.Max(1, (int)Math.Ceiling(PageHeight * k));
+
+        List<SKBitmap> bitmaps = new();
+        Dictionary<TypefaceKey, SKTypeface> typefaces = new();
+        try
+        {
+            for (int p = 0; p < layout.Pages.Count; p++)
+            {
+                SKBitmap bitmap = new(new SKImageInfo(widthPx, heightPx, SKColorType.Bgra8888, SKAlphaType.Premul));
+                using (SKCanvas canvas = new(bitmap))
+                {
+                    canvas.Clear(SKColors.White);
+                    canvas.Scale(k);
+                    DrawPage(canvas, sheet, charts, layout, p, typefaces);
+                }
+
+                bitmaps.Add(bitmap);
+            }
+        }
+        finally
+        {
+            foreach (SKTypeface typeface in typefaces.Values)
+            {
+                typeface.Dispose();
+            }
+        }
+
+        return bitmaps;
+    }
+
+    // Computes the shared layout (fit-to-width scale, column/row geometry, page row-ranges) once, so
+    // both the PDF and raster-print paths render identically.
+    private static PageLayout ComputeLayout(SpreadsheetViewModel sheet)
+    {
+        int lastRow = Math.Max(sheet.LastNonEmptyRow(), 0);
+        int lastColumn = LastNonEmptyColumn(sheet, lastRow);
+
+        (Dictionary<(int Row, int Column), MergeRange> anchors, HashSet<(int Row, int Column)> covered) = BuildMergeMaps(sheet);
+
+        // Fit-to-width scale: shrink (never grow) so the used columns fit the printable width.
+        float contentWidth = PageWidth - (2 * Margin);
+        double totalWidthPt = 0;
+        for (int c = 0; c <= lastColumn; c++)
+        {
+            totalWidthPt += ColumnWidthPx(sheet, c) * PxToPt;
+        }
+
+        double fitScale = totalWidthPt > contentWidth && totalWidthPt > 0 ? contentWidth / totalWidthPt : 1.0;
+        double scale = PxToPt * fitScale;
+
+        float[] columnLeft = new float[lastColumn + 2];
+        columnLeft[0] = Margin;
+        for (int c = 0; c <= lastColumn; c++)
+        {
+            columnLeft[c + 1] = columnLeft[c] + (float)(ColumnWidthPx(sheet, c) * scale);
+        }
+
+        float[] rowHeightPt = new float[lastRow + 1];
+        double[] rowTopPx = new double[lastRow + 2];
+        for (int r = 0; r <= lastRow; r++)
+        {
+            double heightPx = RowHeightPx(sheet, r);
+            rowHeightPt[r] = (float)(heightPx * scale);
+            rowTopPx[r + 1] = rowTopPx[r] + heightPx;
+        }
+
+        float gridTop = Margin + TitleHeight;
+        float contentBottom = PageHeight - Margin;
+
+        List<(int Start, int End)> pages = new();
+        int cursor = 0;
+        while (cursor <= lastRow)
+        {
+            float y = gridTop;
+            int pageStart = cursor;
+            while (cursor <= lastRow && (cursor == pageStart || y + rowHeightPt[cursor] <= contentBottom))
+            {
+                y += rowHeightPt[cursor];
+                cursor++;
+            }
+
+            pages.Add((pageStart, cursor));
+        }
+
+        return new PageLayout
+        {
+            LastRow = lastRow,
+            LastColumn = lastColumn,
+            Anchors = anchors,
+            Covered = covered,
+            Scale = scale,
+            ColumnLeft = columnLeft,
+            RowHeightPt = rowHeightPt,
+            RowTopPx = rowTopPx,
+            GridTop = gridTop,
+            ContentBottom = contentBottom,
+            Pages = pages,
+        };
+    }
+
+    // Draws a single page (title, cells, data bars, charts) onto the given canvas in page points.
+    private static void DrawPage(SKCanvas canvas, SpreadsheetViewModel sheet, IReadOnlyList<ChartImage>? charts, PageLayout layout, int pageIndex, Dictionary<TypefaceKey, SKTypeface> typefaces)
+    {
+        (int pageStart, int pageEnd) = layout.Pages[pageIndex];
+        bool lastPage = pageIndex == layout.Pages.Count - 1;
+        double pageTopPx = layout.RowTopPx[pageStart];
+        double pageBottomPx = layout.RowTopPx[pageEnd];
+
+        DrawTitle(canvas, sheet.Name);
+
+        // Clip so a merged block or chart spanning past the page bottom is trimmed cleanly.
+        canvas.Save();
+        canvas.ClipRect(new SKRect(Margin, layout.GridTop, PageWidth - Margin, layout.ContentBottom));
+
+        float rowTop = layout.GridTop;
+        for (int r = pageStart; r < pageEnd; r++)
+        {
+            for (int c = 0; c <= layout.LastColumn; c++)
+            {
+                if (layout.Covered.Contains((r, c)))
+                {
+                    continue;
+                }
+
+                CellViewModel? cell = sheet.GetCell(new CellAddress(r, c));
+
+                int columnSpan = 1;
+                int rowSpan = 1;
+                if (layout.Anchors.TryGetValue((r, c), out MergeRange span))
+                {
+                    columnSpan = span.ColumnSpan;
+                    rowSpan = span.RowSpan;
+                }
+
+                float cellLeft = layout.ColumnLeft[c];
+                float cellRight = layout.ColumnLeft[Math.Min(c + columnSpan, layout.LastColumn + 1)];
+                float cellBottom = rowTop;
+                for (int rr = r; rr < r + rowSpan && rr <= layout.LastRow; rr++)
+                {
+                    cellBottom += layout.RowHeightPt[rr];
+                }
+
+                SKRect rect = new(cellLeft, rowTop, cellRight, cellBottom);
+                DrawCell(canvas, cell, rect, (float)layout.Scale, typefaces, FindDataBar(sheet, r, c));
+            }
+
+            rowTop += layout.RowHeightPt[r];
+        }
+
+        if (charts is not null)
+        {
+            foreach (ChartImage chart in charts)
+            {
+                if (chart.Png is null || chart.Png.Length == 0 || chart.Width <= 0 || chart.Height <= 0)
+                {
+                    continue;
+                }
+
+                if (chart.Top < pageTopPx || (!lastPage && chart.Top >= pageBottomPx))
+                {
+                    continue;
+                }
+
+                DrawChart(canvas, chart, layout.GridTop, pageTopPx, layout.Scale);
+            }
+        }
+
+        canvas.Restore();
+    }
+
+    private static void DrawChart(SKCanvas canvas, ChartImage chart, float gridTop, double pageTopPx, double scale)
+    {
+        using SKImage? image = SKImage.FromEncodedData(chart.Png);
+        if (image is null)
+        {
+            return;
+        }
+
+        float left = Margin + (float)(chart.Left * scale);
+        float top = gridTop + (float)((chart.Top - pageTopPx) * scale);
+        float right = left + (float)(chart.Width * scale);
+        float bottom = top + (float)(chart.Height * scale);
+        SKRect dest = new(left, top, right, bottom);
+        canvas.DrawImage(image, dest, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+    }
+
     private static void DrawTitle(SKCanvas canvas, string title)
     {
         using SKTypeface typeface = SKTypeface.FromFamilyName("Calibri", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
@@ -170,7 +279,7 @@ public static class SpreadsheetPdfExporter
         canvas.DrawText(title ?? string.Empty, Margin, Margin + 15f, font, paint);
     }
 
-    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, float scale, Dictionary<TypefaceKey, SKTypeface> typefaces)
+    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, float scale, Dictionary<TypefaceKey, SKTypeface> typefaces, SheetDataBar? dataBar)
     {
         // Background fill.
         if (cell?.BackgroundColor is { } bg)
@@ -179,13 +288,28 @@ public static class SpreadsheetPdfExporter
             canvas.DrawRect(rect, fill);
         }
 
+        // Conditional-formatting data bar: a horizontal fill proportional to the cell value between
+        // Min and Max (drawn behind the text, as on screen).
+        if (dataBar is { } bar)
+        {
+            double value = ParseNumber(cell?.DisplayText) ?? bar.Min;
+            double fraction = bar.Max > bar.Min ? Math.Clamp((value - bar.Min) / (bar.Max - bar.Min), 0, 1) : 0;
+            float margin = scale;
+            float barRight = rect.Left + margin + (float)((rect.Width - (2 * margin)) * fraction);
+            if (barRight > rect.Left + margin)
+            {
+                using SKPaint barPaint = new() { Color = ToSkColor(bar.Color), Style = SKPaintStyle.Fill, IsAntialias = true };
+                canvas.DrawRect(new SKRect(rect.Left + margin, rect.Top + margin, barRight, rect.Bottom - margin), barPaint);
+            }
+        }
+
         // Cell border (thin gray, matching the HTML export's grid lines).
         using (SKPaint border = new() { Color = GridLineColor, Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true })
         {
             canvas.DrawRect(rect, border);
         }
 
-        if (cell is null)
+        if (cell is null || dataBar is { ShowValue: false })
         {
             return;
         }
@@ -301,6 +425,56 @@ public static class SpreadsheetPdfExporter
 
     private static SKColor ToSkColor(Color color) => new(color.R, color.G, color.B, color.A);
 
+    private static SheetDataBar? FindDataBar(SpreadsheetViewModel sheet, int row, int column)
+    {
+        foreach (SheetDataBar bar in sheet.DataBars)
+        {
+            if (row >= bar.Range.Row && row < bar.Range.Row + bar.Range.RowSpan &&
+                column >= bar.Range.Column && column < bar.Range.Column + bar.Range.ColumnSpan)
+            {
+                return bar;
+            }
+        }
+
+        return null;
+    }
+
+    // Parses a displayed value into a number (mirrors the grid): tolerates $, %, thousands separators,
+    // and parenthesised negatives.
+    private static double? ParseNumber(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+        {
+            return null;
+        }
+
+        string t = s.Trim();
+        bool negative = t.StartsWith('(') && t.EndsWith(')');
+        if (negative)
+        {
+            t = t[1..^1];
+        }
+
+        bool percent = t.EndsWith('%');
+        if (percent)
+        {
+            t = t[..^1];
+        }
+
+        t = t.Replace("$", string.Empty).Replace(",", string.Empty).Replace("€", string.Empty).Replace("£", string.Empty).Replace(" ", string.Empty).Trim();
+        if (!double.TryParse(t, NumberStyles.Any, CultureInfo.InvariantCulture, out double v))
+        {
+            return null;
+        }
+
+        if (percent)
+        {
+            v /= 100;
+        }
+
+        return negative ? -v : v;
+    }
+
     private static double ColumnWidthPx(SpreadsheetViewModel sheet, int column) =>
         column < sheet.ColumnCount ? sheet.Columns[column].Width : sheet.DefaultColumnWidth;
 
@@ -364,4 +538,35 @@ public static class SpreadsheetPdfExporter
     }
 
     private readonly record struct TypefaceKey(string Family, bool Bold, bool Italic);
+
+    // Precomputed page geometry shared by the PDF and raster-print renderers.
+    private sealed class PageLayout
+    {
+        public int LastRow { get; init; }
+
+        public int LastColumn { get; init; }
+
+        public Dictionary<(int Row, int Column), MergeRange> Anchors { get; init; } = new();
+
+        public HashSet<(int Row, int Column)> Covered { get; init; } = new();
+
+        public double Scale { get; init; }
+
+        public float[] ColumnLeft { get; init; } = Array.Empty<float>();
+
+        public float[] RowHeightPt { get; init; } = Array.Empty<float>();
+
+        public double[] RowTopPx { get; init; } = Array.Empty<double>();
+
+        public float GridTop { get; init; }
+
+        public float ContentBottom { get; init; }
+
+        public List<(int Start, int End)> Pages { get; init; } = new();
+    }
 }
+
+// A pre-rendered snapshot of one chart plus its position/size in grid px (the same coordinate
+// system as the on-screen grid: Left/Top are absolute offsets from the first cell). Produced on the
+// UI thread by SpreadsheetGrid.RenderChartImages and composited into the PDF by the exporter.
+public readonly record struct ChartImage(byte[] Png, double Left, double Top, double Width, double Height);

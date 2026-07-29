@@ -154,6 +154,24 @@ public partial class CellViewModel : ObservableObject
 
     public CellViewModel(string text) => this.text = text;
 
+    // Sets uniform (non-mixed) content from the in-cell editor: whole-cell formatting flags + text,
+    // with any explicit runs cleared. Clearing runs lets the cell render via DisplayText, which
+    // applies the number format (e.g. $#,##0.00) — so editing a currency cell keeps its $ format,
+    // instead of showing the raw typed number. Mixed-format edits still use SetRichRuns.
+    public void SetUniformContent(string text, bool bold, bool italic, bool underline, bool strikethrough, Color? foreground)
+    {
+        this.runs = null;
+        this.Bold = bold;
+        this.Italic = italic;
+        this.Underline = underline;
+        this.Strikethrough = strikethrough;
+        this.ForegroundColor = foreground;
+        this.applyingRuns = true;
+        this.Text = text;
+        this.applyingRuns = false;
+        this.OnPropertyChanged(nameof(EffectiveRuns));
+    }
+
     // Sets mixed-run rich content (from the formula bar) and the matching plain text.
     public void SetRichRuns(List<CellRun> runs)
     {

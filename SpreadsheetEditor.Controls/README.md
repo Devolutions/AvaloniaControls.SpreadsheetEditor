@@ -76,7 +76,7 @@ await using (FileStream fs = File.Create("sheet.pdf"))
     editor.ExportPdf(fs);
 
 editor.SavePdf("sheet.pdf");   // convenience overload for a file path
-editor.PrintPdf();             // writes a temp PDF and opens the OS default viewer to print
+editor.PrintPdf();             // writes a temp PDF and sends it to the printer (see below)
 
 // 2. HTML preview. Opens the sheet in the default browser, where the user prints (or saves a PDF)
 //    via the browser's own print dialog.
@@ -84,5 +84,8 @@ string html = editor.ExportHtml();
 editor.Print();
 ```
 
-`PrintPdf()`/`Print()` open the file with the platform handler (ShellExecute on Windows, `open` on
-macOS, `xdg-open` on Linux). Charts and images are not drawn into the PDF/HTML (data only).
+`PrintPdf()` sends the PDF straight to the printer: on Windows via the shell "print" verb (the
+registered PDF handler prints to the default printer), and on Linux/macOS via `lpr` (the default CUPS
+printer). `Print()` instead opens the HTML in the default browser (`ShellExecute`/`open`/`xdg-open`)
+for browser-driven printing. Images are not drawn into the PDF/HTML (data only); charts are included
+in the PDF.

@@ -64,6 +64,10 @@ public partial class SpreadsheetViewModel : ObservableObject
     public void SetNames(IReadOnlyDictionary<string, string> names) =>
         this.names = new Dictionary<string, string>(names, StringComparer.OrdinalIgnoreCase);
 
+    // The defined names (name -> RefersTo formula/range), so a save can persist them back to the
+    // .xlsx — otherwise formulas that reference a name become #NAME? on the next open.
+    public IReadOnlyDictionary<string, string> Names => this.names;
+
     private string? ResolveName(string name) => this.names.TryGetValue(name, out string? f) ? f : null;
 
     public SpreadsheetViewModel(int rows, int columns) : this() => this.Initialize(rows, columns);

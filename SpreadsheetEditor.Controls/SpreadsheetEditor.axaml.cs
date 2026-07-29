@@ -7,6 +7,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia;
@@ -282,7 +284,10 @@ public partial class SpreadsheetEditor : UserControl
 
     // Writes the ACTIVE sheet to an .xlsx stream (values/formulas + whole-cell formatting). Multi-sheet
     // export is not yet supported by the writer.
-    public void SaveXlsx(Stream stream) => XlsxFile.Write(stream, this.GetCellData());
+    public void SaveXlsx(Stream stream) => XlsxFile.Write(
+        stream, this.GetCellData(), this.vm.Names, this.vm.Merges, this.vm.Name, this.vm.DataBars,
+        this.Grid.BuildChartWriteData(this.vm.Name),
+        this.vm.Columns.Select(static c => c.Width).ToList());
 
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
     // widths, merges, images, charts, data bars, and names.
@@ -451,7 +456,7 @@ public partial class SpreadsheetEditor : UserControl
     // and self-contained — no browser or OS print subsystem required. Cell fills, borders, alignment,
     // and rich run formatting are preserved; the sheet is scaled to fit the page width and rows flow
     // across pages. Charts and images are not rendered (data only), matching ExportHtml.
-    public void ExportPdf(Stream stream) => SpreadsheetPdfExporter.Export(this.vm, stream);
+    public void ExportPdf(Stream stream) => SpreadsheetPdfExporter.Export(this.vm, stream, this.Grid.RenderChartImages());
 
     // Convenience: renders the active sheet to a .pdf file at the given path.
     public void SavePdf(string path)
@@ -460,23 +465,49 @@ public partial class SpreadsheetEditor : UserControl
         this.ExportPdf(stream);
     }
 
-    // Renders the active sheet to a temporary PDF and opens it in the OS default PDF viewer, where the
-    // user prints via that viewer's print dialog. UseShellExecute maps to the platform handler
-    // (ShellExecute on Windows, `open` on macOS, `xdg-open` on Linux), so this is cross-platform.
-    // Best-effort — falls back to the HTML/browser route if the PDF can't be opened.
+    // Prints the active sheet. On Windows this shows the native Windows print dialog (comdlg32
+    // PrintDlg) and prints the rendered pages to the chosen printer via GDI. On Linux/macOS it writes
+    // a temporary PDF and submits it to the default CUPS printer via `lpr`. Best-effort — never throws.
     public void PrintPdf()
     {
         try
         {
-            string directory = Path.Combine(Path.GetTempPath(), "SpreadsheetEditor");
-            Directory.CreateDirectory(directory);
-            string file = Path.Combine(directory, SanitizeFileName(this.vm.Name) + ".pdf");
-            this.SavePdf(file);
-            Process.Start(new ProcessStartInfo { FileName = file, UseShellExecute = true });
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                this.PrintWindows();
+            }
+            else
+            {
+                string directory = Path.Combine(Path.GetTempPath(), "SpreadsheetEditor");
+                Directory.CreateDirectory(directory);
+                string file = Path.Combine(directory, SanitizeFileName(this.vm.Name) + ".pdf");
+                this.SavePdf(file);
+
+                // Linux/macOS: submit straight to the default printer via CUPS' lpr.
+                Process.Start(new ProcessStartInfo { FileName = "lpr", ArgumentList = { file }, UseShellExecute = false });
+            }
         }
         catch
         {
-            // Never crash the editor if the PDF can't be written or no viewer is registered.
+            // Never crash the editor if rendering or the print request can't be dispatched.
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private void PrintWindows()
+    {
+        IntPtr owner = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        List<SkiaSharp.SKBitmap> pages = SpreadsheetPdfExporter.RenderPages(this.vm, this.Grid.RenderChartImages(), 200f);
+        try
+        {
+            WindowsPrinter.PrintPages(owner, this.vm.Name, pages);
+        }
+        finally
+        {
+            foreach (SkiaSharp.SKBitmap page in pages)
+            {
+                page.Dispose();
+            }
         }
     }
 

@@ -6,6 +6,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Documents.TextModel;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using global::SpreadsheetEditor.Controls.Models;
@@ -37,6 +38,9 @@ public class CellEditor : Decorator
                 ShowToolbar = false,
                 ShowPageBounds = false,
                 ShowBlockAdorners = false,
+                // Suppress the editor's floating selection flyout (a mini formatting popup with a
+                // dropdown). All its formatting lives in the grid's top toolbar instead.
+                ShowSelectionFlyout = false,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
                 BorderThickness = new(0),
@@ -50,6 +54,14 @@ public class CellEditor : Decorator
                 SelectionBrush = new SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0x1A, 0x73, 0xE8)),
                 CaretBrush = Brushes.Black,
             };
+
+            // A cell is a single line, but the document's vertical-centering padding can make the
+            // content a hair taller than the cell, which makes the editor's inner ScrollViewer show a
+            // vertical scrollbar — its up-arrow ("line up") button appears as a chevron at the cell's
+            // right edge and obstructs the content. Disable both scrollbars so no such chrome renders.
+            ScrollViewer.SetVerticalScrollBarVisibility(this.rich, ScrollBarVisibility.Disabled);
+            ScrollViewer.SetHorizontalScrollBarVisibility(this.rich, ScrollBarVisibility.Disabled);
+
             this.rich.ContentChanged += (_, _) => this.CommitFromRich();
             this.rich.SelectionChanged += (_, _) => this.SelectionFormatChanged?.Invoke(this, EventArgs.Empty);
             this.Child = this.rich;
@@ -373,7 +385,19 @@ public class CellEditor : Decorator
                 runs.Add(new CellRunDraft(text[i], bold, italic, underline, foreground, strikethrough));
             }
 
-            this.cell.SetRichRuns(Coalesce(runs));
+            // Coalesce merges adjacent same-format characters, so a uniformly-formatted cell yields a
+            // single run. In that case store it as a plain cell (whole-cell flags, no explicit runs) so
+            // the number format still applies on display; keep explicit runs only for mixed formatting.
+            List<CellRun> coalesced = Coalesce(runs);
+            if (coalesced.Count <= 1)
+            {
+                CellRun u = coalesced.Count == 1 ? coalesced[0] : new CellRun(string.Empty, false, false, false, null, null);
+                this.cell.SetUniformContent(text, u.Bold, u.Italic, u.Underline, u.Strikethrough, u.Foreground);
+            }
+            else
+            {
+                this.cell.SetRichRuns(coalesced);
+            }
         }
         catch
         {

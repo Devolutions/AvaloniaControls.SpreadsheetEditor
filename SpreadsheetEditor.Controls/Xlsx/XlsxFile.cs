@@ -355,10 +355,20 @@ public static class XlsxFile
     }
 
     // Writes rows of CellData to a new single-sheet .xlsx workbook with styles.
-    public static void Write(Stream stream, IReadOnlyList<IReadOnlyList<CellData>> rows)
+    public static void Write(
+        Stream stream,
+        IReadOnlyList<IReadOnlyList<CellData>> rows,
+        IReadOnlyDictionary<string, string>? names = null,
+        IReadOnlyList<MergeRange>? merges = null,
+        string? sheetName = null,
+        IReadOnlyList<SheetDataBar>? dataBars = null,
+        IReadOnlyList<ChartWriteData>? charts = null,
+        IReadOnlyList<double>? columnWidths = null)
     {
         using XLWorkbook workbook = new();
-        IXLWorksheet sheet = workbook.Worksheets.Add("Sheet1");
+        // Name the worksheet after the sheet so defined names qualified with that sheet (and the
+        // engine's single-sheet resolution) still line up on the next open.
+        IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(sheetName));
 
         for (int r = 0; r < rows.Count; r++)
         {
@@ -435,7 +445,145 @@ public static class XlsxFile
             }
         }
 
-        workbook.SaveAs(stream);
+        // Persist column widths (px) so the layout survives the round-trip — otherwise every column
+        // falls back to Excel's default and the content truncates. Invert the reader's chars->px
+        // conversion (px = chars * 7 + 5).
+        if (columnWidths is not null)
+        {
+            for (int c = 0; c < columnWidths.Count; c++)
+            {
+                double px = columnWidths[c];
+                if (px <= 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    sheet.Column(c + 1).Width = Math.Clamp((px - 5.0) / 7.0, 0, 255);
+                }
+                catch
+                {
+                    // Skip a column we can't size rather than failing the whole save.
+                }
+            }
+        }
+
+        // Persist merged regions so the layout survives the round-trip.
+        if (merges is not null)
+        {
+            foreach (MergeRange merge in merges)
+            {
+                if (merge.RowSpan <= 0 || merge.ColumnSpan <= 0 || (merge.RowSpan == 1 && merge.ColumnSpan == 1))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    sheet.Range(merge.Row + 1, merge.Column + 1, merge.Row + merge.RowSpan, merge.Column + merge.ColumnSpan).Merge();
+                }
+                catch
+                {
+                    // Skip a merge we can't recreate rather than failing the whole save.
+                }
+            }
+        }
+
+        // Persist conditional-formatting data bars (the in-cell proportional bars).
+        if (dataBars is not null)
+        {
+            foreach (SheetDataBar bar in dataBars)
+            {
+                if (bar.Range.RowSpan <= 0 || bar.Range.ColumnSpan <= 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    IXLRange range = sheet.Range(
+                        bar.Range.Row + 1, bar.Range.Column + 1,
+                        bar.Range.Row + bar.Range.RowSpan, bar.Range.Column + bar.Range.ColumnSpan);
+                    range.AddConditionalFormat()
+                        .DataBar(ToXl(bar.Color), !bar.ShowValue)
+                        .Minimum(XLCFContentType.Number, bar.Min.ToString(CultureInfo.InvariantCulture))
+                        .Maximum(XLCFContentType.Number, bar.Max.ToString(CultureInfo.InvariantCulture));
+                }
+                catch
+                {
+                    // Skip a data bar we can't recreate rather than failing the whole save.
+                }
+            }
+        }
+
+        // Persist workbook defined names so formulas that reference a name (=NetIncome, etc.) still
+        // resolve on the next open — otherwise they come back as #NAME?. A bare range ("$B$1") isn't a
+        // valid defined-name target, so qualify it with the sheet; fall back to the raw value.
+        if (names is not null)
+        {
+            foreach (KeyValuePair<string, string> name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name.Key) || string.IsNullOrWhiteSpace(name.Value))
+                {
+                    continue;
+                }
+
+                string refersTo = name.Value.Trim();
+                string qualified = refersTo.Contains('!') ? refersTo : $"'{sheet.Name}'!{refersTo}";
+                _ = TryAddName(workbook, name.Key, qualified) || TryAddName(workbook, name.Key, refersTo);
+            }
+        }
+
+        // ClosedXML can't author charts, so save to memory and graft the chart parts in as raw OOXML
+        // (keeps the library pure-managed / cross-platform). No charts → write straight to the stream.
+        if (charts is { Count: > 0 })
+        {
+            using MemoryStream buffer = new();
+            workbook.SaveAs(buffer);
+            byte[] withCharts = XlsxChartWriter.Inject(buffer.ToArray(), charts);
+            stream.Write(withCharts, 0, withCharts.Length);
+        }
+        else
+        {
+            workbook.SaveAs(stream);
+        }
+    }
+
+    private static bool TryAddName(XLWorkbook workbook, string name, string refersTo)
+    {
+        try
+        {
+            workbook.DefinedNames.Add(name, refersTo);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // A worksheet name Excel accepts: non-empty, <= 31 chars, without the reserved characters.
+    private static string SafeSheetName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Sheet1";
+        }
+
+        string result = name.Trim();
+        foreach (char bad in new[] { '\\', '/', '?', '*', '[', ']', ':' })
+        {
+            result = result.Replace(bad, ' ');
+        }
+
+        result = result.Trim();
+        if (result.Length == 0)
+        {
+            return "Sheet1";
+        }
+
+        return result.Length > 31 ? result[..31] : result;
     }
 
     // Maps a cell's horizontal alignment, defaulting General to Excel's behavior
