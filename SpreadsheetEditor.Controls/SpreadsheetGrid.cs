@@ -1145,7 +1145,7 @@ public class SpreadsheetGrid : UserControl
             {
                 ChartSeriesSpec spec = chart.Series[i];
                 IReadOnlyList<double> values = i < series.Count ? series[i].Values : Array.Empty<double>();
-                written.Add(new ChartWriteSeries(spec.Title, RangeToFormula(sheetName, spec.Values), values));
+                written.Add(new ChartWriteSeries(spec.Title, RangesToFormula(sheetName, spec.Ranges), values));
             }
 
             // Reproduce the chart's on-screen rectangle exactly (same math as RefreshCharts): a
@@ -1172,6 +1172,17 @@ public class SpreadsheetGrid : UserControl
         }
 
         return result;
+    }
+
+    // Builds the OOXML value reference for a series: one sheet-qualified range, or a parenthesised
+    // multi-area reference (e.g. ('Budget'!$C$7,'Budget'!$C$10)) when the series spans several ranges.
+    private static string RangesToFormula(string sheetName, IReadOnlyList<CellRange> ranges)
+    {
+        List<string> parts = ranges
+            .Where(static r => r.RowSpan > 0 && r.ColumnSpan > 0)
+            .Select(r => RangeToFormula(sheetName, r))
+            .ToList();
+        return parts.Count > 1 ? $"({string.Join(",", parts)})" : parts.FirstOrDefault() ?? string.Empty;
     }
 
     // Builds an absolute, sheet-qualified A1 range formula (e.g. 'Budget'!$C$7:$C$10) for a chart part.
@@ -1209,8 +1220,9 @@ public class SpreadsheetGrid : UserControl
         List<ChartSeriesData> series = new();
         foreach (ChartSeriesSpec spec in chart.Series)
         {
-            List<double> values = RangeHasData(spec.Values)
-                ? this.EnumerateRange(spec.Values).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
+            // A series can span several ranges/cells — concatenate their cells in order into one series.
+            List<double> values = spec.Ranges.Any(RangeHasData)
+                ? spec.Ranges.SelectMany(this.EnumerateRange).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
                 : spec.CachedValues?.ToList() ?? new List<double>();
             series.Add(new ChartSeriesData(spec.Title, values));
         }
@@ -1232,6 +1244,18 @@ public class SpreadsheetGrid : UserControl
         else
         {
             categories = Enumerable.Range(1, maxLen).Select(i => i.ToString()).ToList();
+        }
+
+        // One bar/point per value: if the series has more values than category labels (e.g. the value
+        // range grew), pad the labels with numbers so every value shows. Extra labels are trimmed.
+        for (int i = categories.Count; i < maxLen; i++)
+        {
+            categories.Add((i + 1).ToString());
+        }
+
+        if (categories.Count > maxLen)
+        {
+            categories = categories.GetRange(0, maxLen);
         }
 
         return (categories, series);

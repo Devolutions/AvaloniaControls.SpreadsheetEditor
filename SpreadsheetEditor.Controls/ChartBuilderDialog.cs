@@ -1,6 +1,7 @@
 namespace SpreadsheetEditor.Controls;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
@@ -9,18 +10,26 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using global::SpreadsheetEditor.Controls.Models;
 
-// The choices a user makes in the chart builder.
+// The choices a user makes in the chart builder. SeriesRanges/CategoryRange are populated only when
+// editing an imported chart's explicit source ranges (one A1 range per series, plus the categories).
 public sealed record ChartBuilderResult(
     ChartKind Kind, string Range, string? Title,
     bool FirstRowHeaders, bool FirstColCategories, bool ShowLegend, bool ShowDataLabels,
     AxisNumberFormat ValueAxisFormat = AxisNumberFormat.Number,
-    double? AxisMinimum = null, double? AxisMaximum = null, double? AxisMajorStep = null);
+    double? AxisMinimum = null, double? AxisMaximum = null, double? AxisMajorStep = null,
+    IReadOnlyList<string>? SeriesRanges = null, string? CategoryRange = null);
 
 // A small modal dialog that lets the user build a chart: type, data range, title, and a few
 // options. Built in code so it needs no extra XAML. Returns null when cancelled.
 public static class ChartBuilderDialog
 {
-    public static Task<ChartBuilderResult?> ShowAsync(Window owner, string defaultRange, ChartBuilderResult? initial = null)
+    // allowDataOptions: whether the block data-range + first-row/first-column options are shown (charts
+    // built from a contiguous cell block). seriesSources/categorySource: for an imported chart, the
+    // per-series value ranges (title + A1) and category range are shown as editable fields so the user
+    // can retarget where the chart's values come from without a single block.
+    public static Task<ChartBuilderResult?> ShowAsync(
+        Window owner, string defaultRange, ChartBuilderResult? initial = null, bool allowDataOptions = true,
+        IReadOnlyList<(string Title, string Range)>? seriesSources = null, string? categorySource = null)
     {
         bool editing = initial is not null;
         ComboBox typeBox = new()
@@ -69,22 +78,50 @@ public static class ChartBuilderDialog
             Children = { cancel, create },
         };
 
-        StackPanel panel = new()
+        StackPanel panel = new() { Spacing = 6, Margin = new Thickness(16) };
+        // Editable value range per series + the category range (for imported charts with explicit series).
+        List<TextBox> seriesRangeBoxes = new();
+        TextBox? categoryRangeBox = null;
+
+        panel.Children.Add(Label("Chart type"));
+        panel.Children.Add(typeBox);
+        if (allowDataOptions)
         {
-            Spacing = 6,
-            Margin = new Thickness(16),
-            Children =
+            panel.Children.Add(Label("Data range"));
+            panel.Children.Add(rangeBox);
+        }
+        else if (seriesSources is { Count: > 0 })
+        {
+            panel.Children.Add(Label("Data source"));
+            foreach ((string title, string range) in seriesSources)
             {
-                Label("Chart type"), typeBox,
-                Label("Data range"), rangeBox,
-                Label("Title"), titleBox,
-                headersChk, catsChk, legendChk, labelsChk,
-                Label("Value axis format"), formatBox,
-                Label("Value axis scale"), scaleRow,
-                error,
-                buttons,
-            },
-        };
+                TextBox box = new() { Text = range, PlaceholderText = "e.g. G9:G10 or C7, C10" };
+                seriesRangeBoxes.Add(box);
+                panel.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(title) ? "Values" : title, Foreground = Brushes.Gray, Margin = new Thickness(0, 2, 0, 0) });
+                panel.Children.Add(box);
+            }
+
+            categoryRangeBox = new TextBox { Text = categorySource ?? string.Empty, PlaceholderText = "Range (E9:E10) or names (Income, Expenses)" };
+            panel.Children.Add(new TextBlock { Text = "Categories", Foreground = Brushes.Gray, Margin = new Thickness(0, 2, 0, 0) });
+            panel.Children.Add(categoryRangeBox);
+        }
+
+        panel.Children.Add(Label("Title"));
+        panel.Children.Add(titleBox);
+        if (allowDataOptions)
+        {
+            panel.Children.Add(headersChk);
+            panel.Children.Add(catsChk);
+        }
+
+        panel.Children.Add(legendChk);
+        panel.Children.Add(labelsChk);
+        panel.Children.Add(Label("Value axis format"));
+        panel.Children.Add(formatBox);
+        panel.Children.Add(Label("Value axis scale"));
+        panel.Children.Add(scaleRow);
+        panel.Children.Add(error);
+        panel.Children.Add(buttons);
 
         Window dialog = new()
         {
@@ -98,11 +135,31 @@ public static class ChartBuilderDialog
 
         create.Click += (_, _) =>
         {
-            if (!CellRange.TryParse(rangeBox.Text, out _))
+            if (allowDataOptions && !CellRange.TryParse(rangeBox.Text, out _))
             {
                 error.Text = "Enter a valid range like B6:G10.";
                 error.IsVisible = true;
                 return;
+            }
+
+            // Validate each series' value ranges (blank keeps the existing range). A series can list
+            // several comma/semicolon-separated cells/ranges (e.g. "C7, C10"); each must be a valid range.
+            foreach (TextBox box in seriesRangeBoxes)
+            {
+                if (string.IsNullOrWhiteSpace(box.Text))
+                {
+                    continue;
+                }
+
+                foreach (string token in box.Text.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!CellRange.TryParse(token.Trim(), out _))
+                    {
+                        error.Text = "Enter valid value cells/ranges like G9:G10 or C7, C10.";
+                        error.IsVisible = true;
+                        return;
+                    }
+                }
             }
 
             dialog.Close(new ChartBuilderResult(
@@ -116,7 +173,9 @@ public static class ChartBuilderDialog
                 (AxisNumberFormat)(formatBox.SelectedItem ?? AxisNumberFormat.Number),
                 ParseOptional(minBox.Text),
                 ParseOptional(maxBox.Text),
-                ParseOptional(stepBox.Text)));
+                ParseOptional(stepBox.Text),
+                seriesRangeBoxes.Count > 0 ? seriesRangeBoxes.ConvertAll(b => b.Text ?? string.Empty) : null,
+                categoryRangeBox?.Text));
         };
         cancel.Click += (_, _) => dialog.Close(null);
 

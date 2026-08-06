@@ -225,6 +225,132 @@ public partial class SpreadsheetViewModel : ObservableObject
     }
 
     // Replaces an existing chart with new settings, keeping its on-sheet placement/size.
+    // Re-applies only presentation settings (kind/title/legend/labels/axis), keeping the chart's
+    // existing series + categories. Used when editing a chart whose series are explicit ranges (e.g.
+    // imported charts with no single SourceRange), so editing settings never wipes its data.
+    public void UpdateChartSettings(SheetChart existing, ChartKind kind, string? title, bool showLegend,
+        bool showDataLabels, AxisNumberFormat valueAxisFormat = AxisNumberFormat.Number,
+        double? axisMin = null, double? axisMax = null, double? axisStep = null)
+    {
+        int index = this.Charts.IndexOf(existing);
+        if (index < 0)
+        {
+            return;
+        }
+
+        this.Charts[index] = new SheetChart
+        {
+            Kind = kind,
+            Series = existing.Series,
+            Categories = existing.Categories,
+            CachedCategories = existing.CachedCategories,
+            Title = string.IsNullOrWhiteSpace(title) ? null : title,
+            ShowLegend = showLegend,
+            ShowDataLabels = showDataLabels,
+            ValueAxisFormat = valueAxisFormat,
+            AxisMinimum = axisMin,
+            AxisMaximum = axisMax,
+            AxisMajorStep = axisStep,
+            SourceRange = existing.SourceRange,
+            FirstRowHeaders = existing.FirstRowHeaders,
+            FirstColCategories = existing.FirstColCategories,
+            AnchorRow = existing.AnchorRow,
+            AnchorColumn = existing.AnchorColumn,
+            OffsetX = existing.OffsetX,
+            OffsetY = existing.OffsetY,
+            ToRow = existing.ToRow,
+            ToColumn = existing.ToColumn,
+            ToOffsetX = existing.ToOffsetX,
+            ToOffsetY = existing.ToOffsetY,
+            Width = existing.Width,
+            Height = existing.Height,
+        };
+    }
+
+    // Retargets an imported chart's explicit source ranges: each series keeps its title but takes a new
+    // value range (blank/invalid entries keep the current one), and the category range is updated. Cached
+    // values are cleared so the chart reads the new ranges live. Presentation settings are applied too.
+    public void UpdateChartSource(SheetChart existing, IReadOnlyList<string>? seriesRanges, string? categoryRange,
+        ChartKind kind, string? title, bool showLegend, bool showDataLabels,
+        AxisNumberFormat valueAxisFormat = AxisNumberFormat.Number,
+        double? axisMin = null, double? axisMax = null, double? axisStep = null)
+    {
+        int index = this.Charts.IndexOf(existing);
+        if (index < 0)
+        {
+            return;
+        }
+
+        List<ChartSeriesSpec> series = new();
+        for (int i = 0; i < existing.Series.Count; i++)
+        {
+            ChartSeriesSpec spec = existing.Series[i];
+            IReadOnlyList<CellRange> parsed = seriesRanges is not null && i < seriesRanges.Count
+                ? ChartSeriesSpec.ParseRanges(seriesRanges[i])
+                : new List<CellRange>();
+            if (parsed.Count > 0)
+            {
+                series.Add(new ChartSeriesSpec(spec.Title, parsed)); // retargeted (may be several cells) → read live
+            }
+            else
+            {
+                series.Add(new ChartSeriesSpec(spec.Title, spec.Ranges, spec.CachedValues)); // unchanged → keep
+            }
+        }
+
+        // Category field: blank keeps the existing categories/labels (auto); a valid range reads live;
+        // anything else is treated as comma/semicolon-separated literal labels the user typed.
+        CellRange? categories;
+        IReadOnlyList<string>? cachedCategories;
+        if (string.IsNullOrWhiteSpace(categoryRange))
+        {
+            categories = existing.Categories;
+            cachedCategories = existing.CachedCategories;
+        }
+        else if (CellRange.TryParse(categoryRange, out CellRange parsedCategories))
+        {
+            categories = parsedCategories;
+            cachedCategories = null;
+        }
+        else
+        {
+            categories = null;
+            cachedCategories = categoryRange
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(static s => s.Trim())
+                .Where(static s => s.Length > 0)
+                .ToList();
+        }
+
+        this.Charts[index] = new SheetChart
+        {
+            Kind = kind,
+            Series = series,
+            Categories = categories,
+            CachedCategories = cachedCategories,
+            Title = string.IsNullOrWhiteSpace(title) ? null : title,
+            ShowLegend = showLegend,
+            ShowDataLabels = showDataLabels,
+            ValueAxisFormat = valueAxisFormat,
+            AxisMinimum = axisMin,
+            AxisMaximum = axisMax,
+            AxisMajorStep = axisStep,
+            SourceRange = existing.SourceRange,
+            FirstRowHeaders = existing.FirstRowHeaders,
+            FirstColCategories = existing.FirstColCategories,
+            AnchorRow = existing.AnchorRow,
+            AnchorColumn = existing.AnchorColumn,
+            OffsetX = existing.OffsetX,
+            OffsetY = existing.OffsetY,
+            ToRow = existing.ToRow,
+            ToColumn = existing.ToColumn,
+            ToOffsetX = existing.ToOffsetX,
+            ToOffsetY = existing.ToOffsetY,
+            Width = existing.Width,
+            Height = existing.Height,
+        };
+    }
+
     public void UpdateChart(SheetChart existing, ChartKind kind, CellRange range, bool firstRowHeaders,
         bool firstColCategories, string? title, bool showLegend, bool showDataLabels,
         AxisNumberFormat valueAxisFormat = AxisNumberFormat.Number,

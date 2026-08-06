@@ -3,6 +3,7 @@ namespace SpreadsheetEditor.Controls.Models;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 public enum ChartKind { Line, Spline, StepLine, Area, StackedArea, Bar, StackedBar, Scatter, Pie, Donut, Radar }
 
@@ -83,10 +84,59 @@ public readonly record struct CellRange(int Row, int Column, int RowSpan, int Co
     }
 }
 
-// One chart series: a display title and the cell range holding its values. CachedValues, when present,
-// is the snapshot the file saved with the chart (used when the referenced cells aren't part of the
-// loaded sheet, e.g. an off-screen data table).
-public sealed record ChartSeriesSpec(string Title, CellRange Values, IReadOnlyList<double>? CachedValues = null);
+// One chart series: a display title and the cell range(s) holding its values. A series can reference
+// several non-adjacent ranges/cells (e.g. C7 and C10 without C8/C9) — their cells are concatenated in
+// order into the series' data points. CachedValues, when present, is the snapshot the file saved with
+// the chart (used when the referenced cells aren't part of the loaded sheet, e.g. an off-screen table).
+public sealed record ChartSeriesSpec
+{
+    public ChartSeriesSpec(string title, IReadOnlyList<CellRange> ranges, IReadOnlyList<double>? cachedValues = null)
+    {
+        this.Title = title;
+        this.Ranges = ranges;
+        this.CachedValues = cachedValues;
+    }
+
+    // Convenience for the common single-range series.
+    public ChartSeriesSpec(string title, CellRange range, IReadOnlyList<double>? cachedValues = null)
+        : this(title, new[] { range }, cachedValues)
+    {
+    }
+
+    public string Title { get; }
+
+    public IReadOnlyList<CellRange> Ranges { get; }
+
+    public IReadOnlyList<double>? CachedValues { get; }
+
+    // The first range — for callers that only need an anchor/representative range.
+    public CellRange PrimaryRange => this.Ranges.Count > 0 ? this.Ranges[0] : new CellRange(0, 0, 0, 0);
+
+    // The ranges as a comma-separated A1 string (e.g. "C7, C10" or "C7:C9, C11"), for display/editing.
+    public string RangesA1 =>
+        string.Join(", ", this.Ranges.Where(static r => r.RowSpan > 0 && r.ColumnSpan > 0).Select(static r => r.ToA1()));
+
+    // Parses a comma/semicolon-separated list of A1 ranges (e.g. "C7, C10") into ranges, skipping any
+    // token that isn't a valid range.
+    public static IReadOnlyList<CellRange> ParseRanges(string? text)
+    {
+        List<CellRange> ranges = new();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return ranges;
+        }
+
+        foreach (string token in text.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (CellRange.TryParse(token.Trim(), out CellRange range))
+            {
+                ranges.Add(range);
+            }
+        }
+
+        return ranges;
+    }
+}
 
 // A chart embedded in a sheet. Carries explicit series (each a value range) plus an optional shared
 // category range — matching how Excel charts reference data — and a floating placement (anchor cell

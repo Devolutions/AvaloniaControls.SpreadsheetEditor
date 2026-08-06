@@ -206,7 +206,34 @@ public static class XlsxCharts
 
     // ----- range formulas -----
 
-    // Parses an OOXML range formula like Sheet1!$D$18:$D$36 to a 0-based range.
+    // Parses an OOXML value reference into one or more 0-based ranges. Handles a single range
+    // (Sheet1!$C$7:$C$10) and a parenthesised multi-area reference ((Sheet1!$C$7,Sheet1!$C$10)).
+    public static List<CellRange> ParseRanges(string? formula)
+    {
+        List<CellRange> ranges = new();
+        if (string.IsNullOrWhiteSpace(formula))
+        {
+            return ranges;
+        }
+
+        string trimmed = formula.Trim();
+        if (trimmed.StartsWith('(') && trimmed.EndsWith(')'))
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        foreach (string area in trimmed.Split(','))
+        {
+            if (ParseRange(area) is { } range)
+            {
+                ranges.Add(range);
+            }
+        }
+
+        return ranges;
+    }
+
+    // Parses an OOXML range formula like Sheet1!$D$18:$D$36 to a 0-based range (first area only).
     public static CellRange? ParseRange(string? formula)
     {
         if (string.IsNullOrWhiteSpace(formula))
@@ -336,15 +363,17 @@ public static class XlsxCharts
         for (int i = 0; i < rawSeries.Count; i++)
         {
             RawSeries raw = rawSeries[i];
-            CellRange? range = ParseRange(raw.ValueFormula);
+            List<CellRange> ranges = ParseRanges(raw.ValueFormula);
             bool hasCache = raw.CachedValues.Count > 0;
-            if (range is null && !hasCache)
+            if (ranges.Count == 0 && !hasCache)
             {
                 continue;
             }
 
             string title = ResolveTitle(raw, sheet) ?? $"Series {i + 1}";
-            series.Add(new ChartSeriesSpec(title, range ?? new CellRange(0, 0, 0, 0),
+            series.Add(new ChartSeriesSpec(
+                title,
+                ranges.Count > 0 ? ranges : new List<CellRange> { new(0, 0, 0, 0) },
                 hasCache ? raw.CachedValues : null));
 
             categories ??= ParseRange(raw.CategoryFormula);

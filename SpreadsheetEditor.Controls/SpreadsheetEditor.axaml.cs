@@ -2,6 +2,7 @@ namespace SpreadsheetEditor.Controls;
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -465,9 +466,16 @@ public partial class SpreadsheetEditor : UserControl
         this.ExportPdf(stream);
     }
 
+    // Message shown when the CUPS `lpr` command isn't available on Linux/macOS.
+    private const string LprMissingMessage =
+        "Printing requires the 'lpr' command (part of CUPS), which doesn't appear to be installed.\n\n" +
+        "Install it and try again — for example, on Debian/Ubuntu:\n    sudo apt install cups-client\n\n" +
+        "Alternatively, use \"Export as PDF\" to save the sheet and print it from a PDF viewer.";
+
     // Prints the active sheet. On Windows this shows the native Windows print dialog (comdlg32
     // PrintDlg) and prints the rendered pages to the chosen printer via GDI. On Linux/macOS it writes
-    // a temporary PDF and submits it to the default CUPS printer via `lpr`. Best-effort — never throws.
+    // a temporary PDF and submits it to the default CUPS printer via `lpr`, surfacing a message if
+    // `lpr` is missing or fails.
     public void PrintPdf()
     {
         try
@@ -475,22 +483,88 @@ public partial class SpreadsheetEditor : UserControl
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 this.PrintWindows();
+                return;
             }
-            else
-            {
-                string directory = Path.Combine(Path.GetTempPath(), "SpreadsheetEditor");
-                Directory.CreateDirectory(directory);
-                string file = Path.Combine(directory, SanitizeFileName(this.vm.Name) + ".pdf");
-                this.SavePdf(file);
 
-                // Linux/macOS: submit straight to the default printer via CUPS' lpr.
-                Process.Start(new ProcessStartInfo { FileName = "lpr", ArgumentList = { file }, UseShellExecute = false });
+            string directory = Path.Combine(Path.GetTempPath(), "SpreadsheetEditor");
+            Directory.CreateDirectory(directory);
+            string file = Path.Combine(directory, SanitizeFileName(this.vm.Name) + ".pdf");
+            this.SavePdf(file);
+            _ = this.PrintUnixAsync(file);
+        }
+        catch (Exception ex)
+        {
+            _ = this.ShowMessageAsync("Print failed", ex.Message);
+        }
+    }
+
+    // Linux/macOS: submit the PDF to the default printer via CUPS' `lpr`. Reports a helpful message if
+    // `lpr` isn't installed, and surfaces its error output (e.g. no default printer) when it fails.
+    private async Task PrintUnixAsync(string file)
+    {
+        try
+        {
+            ProcessStartInfo info = new()
+            {
+                FileName = "lpr",
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+            };
+            info.ArgumentList.Add(file);
+
+            Process? process = Process.Start(info);
+            if (process is null)
+            {
+                await this.ShowMessageAsync("Print failed", LprMissingMessage);
+                return;
+            }
+
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0)
+            {
+                await this.ShowMessageAsync(
+                    "Print failed",
+                    string.IsNullOrWhiteSpace(error)
+                        ? $"The print command 'lpr' exited with code {process.ExitCode}. Check that a printer is configured."
+                        : error.Trim());
             }
         }
-        catch
+        catch (Win32Exception)
         {
-            // Never crash the editor if rendering or the print request can't be dispatched.
+            // lpr isn't on PATH — the most common cause on a minimal Linux install.
+            await this.ShowMessageAsync("Print failed", LprMissingMessage);
         }
+        catch (Exception ex)
+        {
+            await this.ShowMessageAsync("Print failed", ex.Message);
+        }
+    }
+
+    // A small modal message dialog (used for print errors). No-ops if there's no owner window.
+    private async Task ShowMessageAsync(string title, string message)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        TextBlock text = new() { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        Button ok = new() { Content = "OK", IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
+        StackPanel panel = new() { Margin = new Thickness(16), Spacing = 8, Children = { text, ok } };
+        Window dialog = new()
+        {
+            Title = title,
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = panel,
+        };
+        ok.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(owner);
     }
 
     [SupportedOSPlatform("windows")]
@@ -858,22 +932,72 @@ public partial class SpreadsheetEditor : UserControl
             return;
         }
 
-        CellRange range = chart.SourceRange ?? new CellRange(chart.AnchorRow, 0, 1, 1);
-        ChartBuilderResult initial = new(chart.Kind, range.ToA1(), chart.Title,
+        // Charts built from a contiguous block carry a SourceRange the dialog can re-read. Imported
+        // charts define their series as explicit ranges (no single SourceRange) — for those, show the
+        // first series' range and only apply setting changes, so editing never rebuilds (and wipes) the data.
+        CellRange displayRange = chart.SourceRange
+            ?? (chart.Series.Count > 0 ? chart.Series[0].PrimaryRange : new CellRange(chart.AnchorRow, 0, 1, 1));
+        ChartBuilderResult initial = new(chart.Kind, displayRange.ToA1(), chart.Title,
             chart.FirstRowHeaders, chart.FirstColCategories, chart.ShowLegend, chart.ShowDataLabels,
             chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep);
-        ChartBuilderResult? result = await ChartBuilderDialog.ShowAsync(owner, range.ToA1(), initial);
+        // A chart built from a contiguous block keeps the block data-range + first-row/first-col options.
+        // An imported chart's series are explicit ranges — expose each series' value range and the
+        // category range as editable fields so its data source can be retargeted without a single block.
+        bool blockBuilt = chart.SourceRange is not null;
+        List<(string Title, string Range)>? seriesSources = blockBuilt ? null : DescribeChartSources(chart);
+
+        // Pre-fill the category field with the range (if it comes from cells) or the literal labels
+        // (Income, Expenses) so the user can see/edit them; blank only when the chart has no categories.
+        string? categorySource = null;
+        if (!blockBuilt)
+        {
+            if (chart.Categories is { } cats && HasRange(cats))
+            {
+                categorySource = cats.ToA1();
+            }
+            else if (chart.CachedCategories is { Count: > 0 } cached)
+            {
+                categorySource = string.Join(", ", cached);
+            }
+        }
+
+        ChartBuilderResult? result = await ChartBuilderDialog.ShowAsync(
+            owner, displayRange.ToA1(), initial, blockBuilt, seriesSources, categorySource);
         if (result is null)
         {
             return;
         }
 
-        if (CellRange.TryParse(result.Range, out CellRange newRange))
+        if (blockBuilt && CellRange.TryParse(result.Range, out CellRange newRange))
         {
+            // Chart built from a block: rebuild from the (possibly edited) range.
             this.vm.UpdateChart(chart, result.Kind, newRange, result.FirstRowHeaders, result.FirstColCategories,
                 result.Title, result.ShowLegend, result.ShowDataLabels,
                 result.ValueAxisFormat, result.AxisMinimum, result.AxisMaximum, result.AxisMajorStep);
         }
+        else
+        {
+            // Imported chart: apply the (possibly edited) series/category ranges plus the settings.
+            this.vm.UpdateChartSource(chart, result.SeriesRanges, result.CategoryRange, result.Kind,
+                result.Title, result.ShowLegend, result.ShowDataLabels,
+                result.ValueAxisFormat, result.AxisMinimum, result.AxisMaximum, result.AxisMajorStep);
+        }
+    }
+
+    private static bool HasRange(CellRange range) => range.RowSpan > 0 && range.ColumnSpan > 0;
+
+    // Each series' title + its value range in A1 (empty when the series has no resolvable range), so the
+    // edit dialog can show and let the user retarget where the chart's values come from.
+    private static List<(string Title, string Range)> DescribeChartSources(SheetChart chart)
+    {
+        List<(string Title, string Range)> sources = new();
+        foreach (ChartSeriesSpec series in chart.Series)
+        {
+            string name = string.IsNullOrWhiteSpace(series.Title) ? "Series" : series.Title;
+            sources.Add((name, series.RangesA1));
+        }
+
+        return sources;
     }
 
     // The formula bar: a plain TextBox bound two-way to the active cell's text (its
