@@ -3,12 +3,19 @@
 An Excel-like **spreadsheet editor control for [Avalonia UI](https://avaloniaui.net/)**, published as the
 NuGet package [`Devolutions.AvaloniaControls.SpreadsheetEditor`](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor).
 
+> [!IMPORTANT]
+> **This control requires a commercial [Avalonia UI (Accelerate)](https://avaloniaui.net/) license.**
+> It builds on the paid `Avalonia.Controls.RichTextEditor` and `Avalonia.Controls.Charts` packages, which
+> need a valid license key at build time. The source is MIT-licensed, but you **cannot build or run** the
+> control (or an app that consumes it) without your own Avalonia license. See [Requirements](#requirements).
+
 It uses a custom rendering grid (not the Avalonia `DataGrid`) so cells can merge and host rich content:
 
 - Custom grid with cell merging, frozen headers, drag-to-select, and infinite rows/columns.
 - Rich in-cell editing (bold / italic / underline / strikethrough, fonts, colors, alignment).
 - A hand-rolled `=` formula engine (arithmetic, ranges, `SUM/AVERAGE/IF/…`, named ranges, live recalc).
-- Charts, multi-sheet tabs, undo/redo, clipboard, a symbol picker, and HTML print.
+- Charts, multi-sheet tabs, undo/redo, clipboard, a symbol picker, and printing (cross-platform PDF
+  export, a native Windows print dialog, and `lpr`/CUPS on Linux/macOS).
 - An integration API modeled on Avalonia's `RichTextEditor` (`IsReadOnly`, `Undo`/`Redo`, `CanUndo`/`CanRedo`,
   `SelectAll`, `SelectedRange`, and `ContentChanged` / `SelectionChanged` / `IsReadOnlyChanged` events).
 

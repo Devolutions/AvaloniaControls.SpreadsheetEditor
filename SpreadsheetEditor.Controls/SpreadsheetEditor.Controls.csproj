@@ -10,8 +10,11 @@
     <PropertyGroup>
         <IsPackable>true</IsPackable>
         <PackageId>Devolutions.AvaloniaControls.SpreadsheetEditor</PackageId>
-        <!-- CalVer (yyyy.M.d), matching Devolutions' Avalonia package versioning. -->
-        <Version>2026.7.22</Version>
+        <!-- CalVer (yyyy.M.d), matching Devolutions' Avalonia package versioning. This value is a
+             fallback for local builds; the CI publish workflow (.github/workflows/build-package.yml)
+             overwrites <Version> with the release version at pack time. Kept in sync with the latest
+             published NuGet release. -->
+        <Version>2026.8.7</Version>
         <Description>An Excel-like spreadsheet editor control for Avalonia UI: a custom grid with cell merging, rich in-cell editing, a formula engine, charts, multi-sheet tabs, undo/redo, and printing. Requires the commercial Avalonia Accelerate packages (a valid Avalonia UI license key must be supplied by the consuming application).</Description>
         <PackageTags>avalonia;spreadsheet;grid;excel;xlsx;formulas;charts;control</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
