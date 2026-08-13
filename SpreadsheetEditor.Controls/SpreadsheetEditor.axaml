@@ -190,15 +190,23 @@
              SpreadsheetViewModel; click-to-select drives the active cell. -->
         <local:SpreadsheetGrid x:Name="Grid" Grid.Row="3" />
 
-        <!-- Sheet tabs (Excel-style) + add-sheet button. Tabs are built in code-behind. -->
+        <!-- Sheet tabs (Excel-style) + add-sheet button, with a zoom control docked right. -->
         <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,2">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-                <Button x:Name="AddSheetButton" Content="+" Width="26" Focusable="False"
-                        ToolTip.Tip="Add sheet" Padding="0" />
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="SheetTabs" Orientation="Horizontal" Spacing="2" />
-                </ScrollViewer>
-            </StackPanel>
+            <DockPanel LastChildFill="True">
+                <!-- Zoom control (Excel-style): − · 100% · + -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,2,0">
+                    <Button x:Name="ZoomOutButton" Content="−" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Zoom out (Ctrl+-)" />
+                    <Button x:Name="ZoomResetButton" Content="100%" Width="52" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Reset zoom to 100% (Ctrl+0)" />
+                    <Button x:Name="ZoomInButton" Content="+" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Zoom in (Ctrl++)" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="AddSheetButton" Content="+" Width="26" Focusable="False"
+                            ToolTip.Tip="Add sheet" Padding="0" />
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="SheetTabs" Orientation="Horizontal" Spacing="2" />
+                    </ScrollViewer>
+                </StackPanel>
+            </DockPanel>
         </Border>
     </Grid>
 </UserControl>

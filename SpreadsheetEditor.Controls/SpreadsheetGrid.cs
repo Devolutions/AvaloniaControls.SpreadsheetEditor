@@ -130,6 +130,15 @@ public class SpreadsheetGrid : UserControl
     private const int ColumnBuffer = 8;     // columns kept past the last visible/used column
 
     private SpreadsheetViewModel? sheet;
+
+    // Zoom multiplier applied to column widths, row heights, header sizes, and font sizes (1.0 = 100%).
+    // Stored column widths / row heights are the LOGICAL sizes × zoom, so all coordinate math and the
+    // pointer→cell mapping stay consistent; the model keeps the unscaled logical sizes.
+    private double zoom = 1.0;
+    private const double MinZoom = 0.5;
+    private const double MaxZoom = 3.0;
+    private const double ZoomStep = 0.1;
+
     private double[] columnWidths = Array.Empty<double>();
     private double[] rowHeights = Array.Empty<double>();
     private bool[,]? covered;
@@ -189,6 +198,25 @@ public class SpreadsheetGrid : UserControl
             this.AdjustColumnsForScroll();
         };
 
+        // Ctrl + mouse wheel zooms (like Excel). Handled in the tunnel so the ScrollViewer doesn't
+        // also scroll on the same gesture.
+        this.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                if (e.Delta.Y > 0)
+                {
+                    this.ZoomIn();
+                }
+                else if (e.Delta.Y < 0)
+                {
+                    this.ZoomOut();
+                }
+
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Tunnel);
+
         // Right-click menu (acts on the selection).
         this.cells.ContextFlyout = this.BuildCellMenu();
 
@@ -197,6 +225,13 @@ public class SpreadsheetGrid : UserControl
         root.Children.Add(this.rowHeaderScroller);
         root.Children.Add(this.cellScroller);
         this.Content = root;
+
+        // Crisper text and edges (esp. for small, zoomed-out cells) and high-quality scaling for any
+        // bitmap content (chart snapshots).
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Antialias);
+        RenderOptions.SetEdgeMode(this, EdgeMode.Antialias);
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
+        this.UseLayoutRounding = true;
 
         // Intercept navigation keys before the in-cell editor (tunnel) so arrows/Enter/Tab move the
         // selection. Typing on a selected cell starts editing. The grid is focusable so it can receive
@@ -265,6 +300,9 @@ public class SpreadsheetGrid : UserControl
                     case Key.X: this.CutSelection(); e.Handled = true; return;
                     case Key.V: this.PasteSelection(); e.Handled = true; return;
                     case Key.A: this.SelectAll(); e.Handled = true; return;
+                    case Key.OemPlus or Key.Add: this.ZoomIn(); e.Handled = true; return;
+                    case Key.OemMinus or Key.Subtract: this.ZoomOut(); e.Handled = true; return;
+                    case Key.D0 or Key.NumPad0: this.ResetZoom(); e.Handled = true; return;
                 }
             }
             if (e.Key == Key.Delete || e.Key == Key.Back)
@@ -555,6 +593,37 @@ public class SpreadsheetGrid : UserControl
         }
     }
 
+    // Current zoom level (1.0 = 100%). Setting it re-lays-out the grid at the new scale.
+    public double Zoom
+    {
+        get => this.zoom;
+        set
+        {
+            double clamped = Math.Clamp(value, MinZoom, MaxZoom);
+            if (Math.Abs(clamped - this.zoom) < 0.0001)
+            {
+                return;
+            }
+
+            this.zoom = clamped;
+            if (this.sheet is not null)
+            {
+                this.Rebuild();
+            }
+
+            this.ZoomChanged?.Invoke(this.zoom);
+        }
+    }
+
+    // Raised when the zoom level changes (so a host can show a "100%" indicator).
+    public event Action<double>? ZoomChanged;
+
+    public void ZoomIn() => this.Zoom = this.zoom + ZoomStep;
+
+    public void ZoomOut() => this.Zoom = this.zoom - ZoomStep;
+
+    public void ResetZoom() => this.Zoom = 1.0;
+
     // Rebuilds the entire grid from the current sheet (call after structural changes / load).
     public void Rebuild()
     {
@@ -583,10 +652,13 @@ public class SpreadsheetGrid : UserControl
         int cols = this.sheet.ColumnCount;
         int rows = this.sheet.RowCount;
 
+        // Column widths / row heights are stored as logical size × zoom so layout and pointer mapping
+        // stay consistent at any scale (the model keeps the unscaled logical sizes).
         this.columnWidths = new double[cols];
         for (int c = 0; c < cols; c++)
         {
-            this.columnWidths[c] = this.sheet.Columns[c].Width > 0 ? this.sheet.Columns[c].Width : this.sheet.DefaultColumnWidth;
+            double logical = this.sheet.Columns[c].Width > 0 ? this.sheet.Columns[c].Width : this.sheet.DefaultColumnWidth;
+            this.columnWidths[c] = logical * this.zoom;
         }
 
         this.rowHeights = new double[rows];
@@ -594,11 +666,11 @@ public class SpreadsheetGrid : UserControl
         {
             if (this.sheet.Rows[r].Height is { } explicitHeight)
             {
-                this.rowHeights[r] = explicitHeight;
+                this.rowHeights[r] = explicitHeight * this.zoom;
                 continue;
             }
             double maxFont = this.sheet.Rows[r].Cells.Count == 0 ? CellViewModel.DefaultFontSize : this.sheet.Rows[r].Cells.Max(c => c.FontSize);
-            this.rowHeights[r] = Math.Max(DefaultRowHeight, maxFont + 8);
+            this.rowHeights[r] = Math.Max(DefaultRowHeight, maxFont + 8) * this.zoom;
         }
 
         this.BuildMergeMaps(rows, cols);
@@ -609,8 +681,13 @@ public class SpreadsheetGrid : UserControl
             this.columnHeaders.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(w)));
             this.cells.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(w)));
         }
-        this.columnHeaders.RowDefinitions.Add(new RowDefinition(new GridLength(ColumnHeaderHeight)));
-        this.rowHeaders.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(RowHeaderWidth)));
+        this.columnHeaders.RowDefinitions.Add(new RowDefinition(new GridLength(ColumnHeaderHeight * this.zoom)));
+        this.rowHeaders.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(RowHeaderWidth * this.zoom)));
+
+        // The frozen top-left corner must match the (zoom-scaled) header sizes, or a gap appears below
+        // the column headers / beside the row headers at any zoom other than 100%.
+        this.cornerBox.Width = RowHeaderWidth * this.zoom;
+        this.cornerBox.Height = ColumnHeaderHeight * this.zoom;
         foreach (double h in this.rowHeights)
         {
             this.rowHeaders.RowDefinitions.Add(new RowDefinition(new GridLength(h)));
@@ -876,19 +953,29 @@ public class SpreadsheetGrid : UserControl
 
         foreach (SheetChart chart in this.sheet.Charts)
         {
-            double left = this.OffsetToColumn(chart.AnchorColumn) + chart.OffsetX;
-            double top = this.OffsetToRow(chart.AnchorRow) + chart.OffsetY;
+            // Positions/offsets are in the (zoom-scaled) layout; column/row offsets already include zoom
+            // via OffsetToColumn/Row, and the logical pixel offsets/sizes are scaled by zoom so charts
+            // resize together with the cells.
+            double left = this.OffsetToColumn(chart.AnchorColumn) + (chart.OffsetX * this.zoom);
+            double top = this.OffsetToRow(chart.AnchorRow) + (chart.OffsetY * this.zoom);
 
             // Size to span from→to cells in OUR layout (so it covers the same cells Excel anchored it
             // to); fall back to the stored pixel size for one-cell-anchored charts.
-            double width = chart.Width, height = chart.Height;
+            double width;
+            double height;
             if (chart.ToColumn is { } toCol && chart.ToRow is { } toRow)
             {
-                width = this.OffsetToColumn(toCol) + chart.ToOffsetX - left;
-                height = this.OffsetToRow(toRow) + chart.ToOffsetY - top;
+                width = this.OffsetToColumn(toCol) + (chart.ToOffsetX * this.zoom) - left;
+                height = this.OffsetToRow(toRow) + (chart.ToOffsetY * this.zoom) - top;
             }
-            width = Math.Clamp(width, 120, 2400);
-            height = Math.Clamp(height, 80, 1600);
+            else
+            {
+                width = chart.Width * this.zoom;
+                height = chart.Height * this.zoom;
+            }
+
+            width = Math.Clamp(width, 120 * this.zoom, 2400 * this.zoom);
+            height = Math.Clamp(height, 80 * this.zoom, 1600 * this.zoom);
 
             (List<string> cats, List<ChartSeriesData> ser) = this.ExtractChartData(chart);
             Control? control = ChartFactory.Build(chart.Kind, cats, ser, width, height, chart.ShowDataLabels,
@@ -995,7 +1082,8 @@ public class SpreadsheetGrid : UserControl
                 {
                     int col = this.NearestColumn(Canvas.GetLeft(card));
                     int row = this.NearestRow(Canvas.GetTop(card));
-                    this.sheet?.MoveChart(captured, row, col, cardWidth, cardHeight);
+                    // cardWidth/cardHeight are in scaled pixels; store the logical size so zoom stays out of the model.
+                    this.sheet?.MoveChart(captured, row, col, cardWidth / this.zoom, cardHeight / this.zoom);
                 }
                 pressed = false;
                 moved = false;
@@ -1044,8 +1132,8 @@ public class SpreadsheetGrid : UserControl
                     return;
                 }
                 Point p = e.GetPosition(this.cells);
-                double w = Math.Clamp(startW + (p.X - startSizePointer.X), 120, 2400);
-                double h = Math.Clamp(startH + (p.Y - startSizePointer.Y), 80, 1600);
+                double w = Math.Clamp(startW + (p.X - startSizePointer.X), 120 * this.zoom, 2400 * this.zoom);
+                double h = Math.Clamp(startH + (p.Y - startSizePointer.Y), 80 * this.zoom, 1600 * this.zoom);
                 card.Width = w;
                 card.Height = h;
                 control.Width = w;       // live-resize the chart itself
@@ -1061,7 +1149,8 @@ public class SpreadsheetGrid : UserControl
                 this.chartDragging = false;
                 if (sizing)
                 {
-                    this.sheet?.ResizeChart(captured, card.Width, card.Height);
+                    // Store the logical (unscaled) size so zoom doesn't leak into the model.
+                    this.sheet?.ResizeChart(captured, card.Width / this.zoom, card.Height / this.zoom);
                 }
                 sizing = false;
             };
@@ -1348,6 +1437,7 @@ public class SpreadsheetGrid : UserControl
             {
                 Text = text,
                 Foreground = this.headerText,
+                FontSize = 12 * this.zoom,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
@@ -1467,7 +1557,8 @@ public class SpreadsheetGrid : UserControl
         }
         if (this.sheet is not null && column < this.sheet.ColumnCount)
         {
-            this.sheet.Columns[column].Width = width;
+            // Store the logical (unscaled) width so zoom doesn't leak into the model / saved file.
+            this.sheet.Columns[column].Width = this.zoom > 0 ? width / this.zoom : width;
         }
     }
 
@@ -1489,7 +1580,8 @@ public class SpreadsheetGrid : UserControl
         }
         if (this.sheet is not null && row < this.sheet.RowCount)
         {
-            this.sheet.Rows[row].Height = height;
+            // Store the logical (unscaled) height so zoom doesn't leak into the model.
+            this.sheet.Rows[row].Height = this.zoom > 0 ? height / this.zoom : height;
         }
     }
 
@@ -1551,7 +1643,7 @@ public class SpreadsheetGrid : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(4, 2),
             TextTrimming = TextTrimming.CharacterEllipsis,
-            FontSize = cell.FontSize,
+            FontSize = cell.FontSize * this.zoom,
             TextAlignment = cell.TextAlignment,
             IsHitTestVisible = false,
         };
@@ -1575,7 +1667,7 @@ public class SpreadsheetGrid : UserControl
             // When the text spills into empty neighbours, an overlay TextBlock draws the full text on
             // top; the in-cell one then shouldn't show an ellipsis (the overlay covers it).
             TextTrimming = spilling ? TextTrimming.None : TextTrimming.CharacterEllipsis,
-            FontSize = cell.FontSize,
+            FontSize = cell.FontSize * this.zoom,
             TextAlignment = cell.TextAlignment,
         };
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))

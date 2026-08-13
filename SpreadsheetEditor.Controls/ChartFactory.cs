@@ -1,7 +1,9 @@
 namespace SpreadsheetEditor.Controls;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Charts;
 using Avalonia.Media;
@@ -102,6 +104,10 @@ public static class ChartFactory
             HorizontalAxis = new CategoryAxis { ShowLabels = true, ShowGridLines = false },
             VerticalAxis = valueAxis,
         };
+        // Keep per-point value labels, but shrink them to fit as the number of bars grows (otherwise
+        // they overlap into an unreadable mess). Sized from the horizontal room per category, clamped
+        // to a readable range — a 2-bar summary keeps large labels; a 12/17-bar chart uses small ones.
+        double labelFontSize = Math.Clamp(width / Math.Max(1, categories.Count) * 0.28, 6, 12);
         for (int i = 0; i < series.Count; i++)
         {
             CartesianSeries cs = MakeCartesianSeries(kind, PaletteBrush(i));
@@ -113,6 +119,13 @@ public static class ChartFactory
             {
                 cs.ShowLabels = true;
                 cs.LabelFormat = "{0:" + axisFmt + "}"; // placeholder form (a bare "C0" renders literally)
+                cs.LabelFontSize = labelFontSize;
+                // Dark text on a translucent light pill so labels stay legible whether they sit over a
+                // bar or the plot background (no single text color works over both).
+                cs.LabelForeground = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
+                cs.LabelBackground = new SolidColorBrush(Color.FromArgb(0xDC, 0xFF, 0xFF, 0xFF));
+                cs.LabelCornerRadius = new CornerRadius(2);
+                cs.LabelPadding = new Thickness(2, 0, 2, 0);
             }
 
             chart.Series.Add(cs);

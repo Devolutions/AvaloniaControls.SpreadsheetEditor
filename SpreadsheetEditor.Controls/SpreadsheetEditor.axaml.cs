@@ -119,6 +119,12 @@ public partial class SpreadsheetEditor : UserControl
 
         this.AddSheetButton.Click += (_, _) => this.AddSheet();
 
+        // Zoom control (bottom bar) — buttons + a live "100%" readout.
+        this.ZoomInButton.Click += (_, _) => this.Grid.ZoomIn();
+        this.ZoomOutButton.Click += (_, _) => this.Grid.ZoomOut();
+        this.ZoomResetButton.Click += (_, _) => this.Grid.ResetZoom();
+        this.Grid.ZoomChanged += zoom => this.ZoomResetButton.Content = $"{Math.Round(zoom * 100)}%";
+
         this.CreateFormulaBar();
 
         this.BuildPalette(this.ForegroundPalette, this.ApplyForeground);
@@ -465,6 +471,22 @@ public partial class SpreadsheetEditor : UserControl
         using FileStream stream = File.Create(path);
         this.ExportPdf(stream);
     }
+
+    // ----- Zoom -----
+
+    // The grid zoom level (1.0 = 100%). Scales cells, headers, and fonts; the underlying data and saved
+    // column widths/row heights are unaffected.
+    public double Zoom
+    {
+        get => this.Grid.Zoom;
+        set => this.Grid.Zoom = value;
+    }
+
+    public void ZoomIn() => this.Grid.ZoomIn();
+
+    public void ZoomOut() => this.Grid.ZoomOut();
+
+    public void ResetZoom() => this.Grid.ResetZoom();
 
     // Message shown when the CUPS `lpr` command isn't available on Linux/macOS.
     private const string LprMissingMessage =

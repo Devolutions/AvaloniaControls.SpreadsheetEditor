@@ -31,6 +31,32 @@ public static class FormulaFunctions
         ["COUNT"] = static (ev, a) => CellValue.FromNumber(CountWhere(ev, a, static v => v.Kind == CellValueKind.Number)),
         ["COUNTA"] = static (ev, a) => CellValue.FromNumber(CountWhere(ev, a, static v => v.Kind != CellValueKind.Empty)),
 
+        // SUBTOTAL(function_num, ref, ...). function_num 1-11 (and 101-111, which ignore manually
+        // hidden rows — treated identically here since the grid has no hidden rows) selects the
+        // aggregate. Used by Excel table Totals rows.
+        ["SUBTOTAL"] = static (ev, a) =>
+        {
+            if (a.Count < 2)
+            {
+                throw Throw(FormulaErrors.Value);
+            }
+
+            int function = (int)Math.Round(ev.Number(a[0])) % 100;
+            List<FormulaNode> rest = a.Skip(1).ToList();
+            List<double> n = ev.CollectNumbers(rest);
+            return function switch
+            {
+                1 => n.Count == 0 ? Err(FormulaErrors.Div0) : CellValue.FromNumber(n.Average()),        // AVERAGE
+                2 => CellValue.FromNumber(CountWhere(ev, rest, static v => v.Kind == CellValueKind.Number)), // COUNT
+                3 => CellValue.FromNumber(CountWhere(ev, rest, static v => v.Kind != CellValueKind.Empty)),  // COUNTA
+                4 => CellValue.FromNumber(n.Count == 0 ? 0 : n.Max()),                                  // MAX
+                5 => CellValue.FromNumber(n.Count == 0 ? 0 : n.Min()),                                  // MIN
+                6 => CellValue.FromNumber(n.Aggregate(1.0, static (x, y) => x * y)),                    // PRODUCT
+                9 => CellValue.FromNumber(n.Sum()),                                                     // SUM
+                _ => throw Throw(FormulaErrors.Value),                                                  // STDEV/VAR: unsupported
+            };
+        },
+
         ["IF"] = static (ev, a) =>
         {
             Arity(a, 2, 3);

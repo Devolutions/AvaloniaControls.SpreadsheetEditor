@@ -4,7 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Xml.Linq;
 using Avalonia.Media;
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
@@ -55,6 +57,14 @@ public static class XlsxFile
         int lastRow = sheet?.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet?.LastColumnUsed()?.ColumnNumber() ?? 0;
 
+        // Excel Table definitions, so structured references (Income[[#This Row],[Jan]:[Dec]], etc.) in
+        // formulas can be translated to plain A1 ranges the engine understands.
+        List<StructuredReferences.TableInfo> tables = StructuredReferences.ReadTables(sheet);
+
+        // Excel Table banding (header / total / striped-row fills) comes from the table style, not from
+        // per-cell fills — resolve it so those highlighted rows show up.
+        Dictionary<(int Row, int Column), Color> tableFills = BuildTableFills(bytes, sheet, workbook);
+
         for (int r = 1; r <= lastRow; r++)
         {
             List<CellData> row = new(lastColumn);
@@ -74,6 +84,12 @@ public static class XlsxFile
                     ? ResolveColor(workbook, cell.Style.Fill.BackgroundColor)
                     : null;
 
+                // Fall back to the table's banded/header/total fill when the cell has no explicit fill.
+                if (background is null && tableFills.TryGetValue((r, c), out Color banded))
+                {
+                    background = banded;
+                }
+
                 // Import the live formula, or a raw number, so the engine can compute/recompute; the
                 // number format renders it (e.g. $50,000). Text/dates keep their formatted string.
                 // Prefer the explicit format code; for built-in formats (percent, thousands, …) ClosedXML
@@ -86,7 +102,7 @@ public static class XlsxFile
                 string? numberFormat = null;
                 if (cell.HasFormula)
                 {
-                    text = "=" + cell.FormulaA1;
+                    text = "=" + StructuredReferences.Translate(cell.FormulaA1, r, c, tables);
                     numberFormat = format;
                 }
                 else if (cell.DataType == XLDataType.Number)
@@ -353,6 +369,168 @@ public static class XlsxFile
             (byte)(c.G + (255 - c.G) * tint),
             (byte)(c.B + (255 - c.B) * tint));
     }
+
+    // ----- Excel Table banding (header / total / striped-row fills from the table style) -----
+
+    private static readonly XNamespace Ssml = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+    // Builds a per-cell fill map for the sheet's tables from their table styles (which color the header,
+    // totals, and alternating "striped" rows — Excel doesn't store these as per-cell fills).
+    private static Dictionary<(int Row, int Column), Color> BuildTableFills(byte[] bytes, IXLWorksheet? sheet, XLWorkbook workbook)
+    {
+        Dictionary<(int, int), Color> fills = new();
+        if (sheet is null || !sheet.Tables.Any())
+        {
+            return fills;
+        }
+
+        try
+        {
+            // Resolve the workbook's table-style definitions (style name → its element dxf colors).
+            using ZipArchive archive = new(new MemoryStream(bytes), ZipArchiveMode.Read);
+            ZipArchiveEntry? stylesEntry = archive.GetEntry("xl/styles.xml");
+            if (stylesEntry is null)
+            {
+                return fills;
+            }
+
+            XDocument styles = XDocument.Load(stylesEntry.Open());
+            List<XElement> dxfs = styles.Descendants(Ssml + "dxfs").Elements(Ssml + "dxf").ToList();
+
+            Dictionary<string, TableStyle> tableStyles = new(StringComparer.OrdinalIgnoreCase);
+            foreach (XElement ts in styles.Descendants(Ssml + "tableStyle"))
+            {
+                string? name = ts.Attribute("name")?.Value;
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                Color? Element(string type, out int size)
+                {
+                    size = 1;
+                    XElement? el = ts.Elements(Ssml + "tableStyleElement").FirstOrDefault(e => e.Attribute("type")?.Value == type);
+                    if (el is null || !int.TryParse(el.Attribute("dxfId")?.Value, out int id) || id < 0 || id >= dxfs.Count)
+                    {
+                        return null;
+                    }
+
+                    if (int.TryParse(el.Attribute("size")?.Value, out int s) && s > 0)
+                    {
+                        size = s;
+                    }
+
+                    return DxfFill(dxfs[id], workbook);
+                }
+
+                Color? header = Element("headerRow", out _);
+                Color? total = Element("totalRow", out _);
+                Color? stripe1 = Element("firstRowStripe", out int size1);
+                Color? stripe2 = Element("secondRowStripe", out int size2);
+                tableStyles[name] = new TableStyle(header, total, stripe1, stripe2, size1, size2);
+            }
+
+            foreach (IXLTable table in sheet.Tables)
+            {
+                string? styleName = table.Theme?.Name;
+                if (styleName is null || !tableStyles.TryGetValue(styleName, out TableStyle style))
+                {
+                    continue;
+                }
+
+                IXLRangeAddress range = table.RangeAddress;
+                int firstColumn = range.FirstAddress.ColumnNumber;
+                int lastColumn = range.LastAddress.ColumnNumber;
+                int headerRow = table.ShowHeaderRow ? table.HeadersRow().RowNumber() : -1;
+                int totalsRow = table.ShowTotalsRow ? table.TotalsRow().RowNumber() : -1;
+                int firstData = table.DataRange?.FirstRow().RowNumber() ?? range.FirstAddress.RowNumber;
+                int lastData = table.DataRange?.LastRow().RowNumber() ?? range.LastAddress.RowNumber;
+
+                void Paint(int row, Color? color)
+                {
+                    if (color is not { } c)
+                    {
+                        return;
+                    }
+
+                    for (int col = firstColumn; col <= lastColumn; col++)
+                    {
+                        fills[(row, col)] = c;
+                    }
+                }
+
+                Paint(headerRow, style.Header);
+                Paint(totalsRow, style.Total);
+
+                int period = Math.Max(1, style.Stripe1Size) + Math.Max(1, style.Stripe2Size);
+                for (int row = firstData; row <= lastData; row++)
+                {
+                    if (table.ShowRowStripes)
+                    {
+                        int pos = (row - firstData) % period;
+                        Paint(row, pos < Math.Max(1, style.Stripe1Size) ? style.Stripe1 : style.Stripe2);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Banding is cosmetic — never let it break opening the file.
+        }
+
+        return fills;
+    }
+
+    private readonly record struct TableStyle(Color? Header, Color? Total, Color? Stripe1, Color? Stripe2, int Stripe1Size, int Stripe2Size);
+
+    // Resolves a dxf's background fill color (rgb, or theme + tint) to an Avalonia color.
+    private static Color? DxfFill(XElement dxf, XLWorkbook workbook)
+    {
+        XElement? bg = dxf.Element(Ssml + "fill")?.Element(Ssml + "patternFill")?.Element(Ssml + "bgColor");
+        if (bg is null)
+        {
+            return null;
+        }
+
+        string? rgb = bg.Attribute("rgb")?.Value;
+        if (!string.IsNullOrEmpty(rgb) && rgb.Length >= 6)
+        {
+            string hex = rgb.Length == 8 ? rgb : "FF" + rgb;
+            return Color.FromArgb(
+                Convert.ToByte(hex[..2], 16), Convert.ToByte(hex.Substring(2, 2), 16),
+                Convert.ToByte(hex.Substring(4, 2), 16), Convert.ToByte(hex.Substring(6, 2), 16));
+        }
+
+        if (int.TryParse(bg.Attribute("theme")?.Value, out int themeIndex))
+        {
+            double tint = double.TryParse(bg.Attribute("tint")?.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double t) ? t : 0;
+            XLColor? baseColor = ThemeBase(workbook, DxfThemeColor(themeIndex));
+            if (baseColor is null)
+            {
+                return null;
+            }
+
+            System.Drawing.Color c = baseColor.Color;
+            return ApplyTint(Color.FromArgb(c.A, c.R, c.G, c.B), tint);
+        }
+
+        return null;
+    }
+
+    // The OOXML dxf/cell theme-color index → the workbook theme slot.
+    private static XLThemeColor DxfThemeColor(int index) => index switch
+    {
+        0 => XLThemeColor.Background1,
+        1 => XLThemeColor.Text1,
+        2 => XLThemeColor.Background2,
+        3 => XLThemeColor.Text2,
+        4 => XLThemeColor.Accent1,
+        5 => XLThemeColor.Accent2,
+        6 => XLThemeColor.Accent3,
+        7 => XLThemeColor.Accent4,
+        8 => XLThemeColor.Accent5,
+        _ => XLThemeColor.Accent6,
+    };
 
     // Writes rows of CellData to a new single-sheet .xlsx workbook with styles.
     public static void Write(
