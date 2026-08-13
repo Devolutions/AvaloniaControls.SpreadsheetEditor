@@ -635,7 +635,11 @@ public partial class SpreadsheetEditor : UserControl
 
         StringBuilder html = new();
         string title = WebUtility.HtmlEncode(sheet.Name);
-        html.Append("<!doctype html><html><head><meta charset=\"utf-8\"><title>").Append(title).Append("</title><style>");
+        html.Append("<!doctype html><html><head><meta charset=\"utf-8\">");
+        // Defense in depth: a strict CSP so no script executes and nothing is fetched, even if another
+        // unencoded value is ever introduced. The exported document only needs inline styles + data: images.
+        html.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">");
+        html.Append("<title>").Append(title).Append("</title><style>");
         html.Append("body{font-family:Calibri,'Segoe UI',sans-serif;margin:16px;}");
         html.Append("h1{font-size:15pt;margin:0 0 10px;}");
         html.Append("table{border-collapse:collapse;table-layout:fixed;}");
@@ -765,7 +769,18 @@ public partial class SpreadsheetEditor : UserControl
         style.Append("font-size:").Append(((int)Math.Round(cell.FontSize * 3.0 / 4.0)).ToString(CultureInfo.InvariantCulture)).Append("pt;");
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))
         {
-            style.Append("font-family:'").Append(cell.FontFamily).Append("';");
+            // The font name is attacker-controlled (read verbatim from an imported .xlsx), so it must
+            // not be emitted raw into a quoted CSS attribute — a quote would break out and inject markup.
+            // Allowlist to characters valid in a CSS font-family name, then HTML-encode for the attribute
+            // context (defense in depth: neither a quote nor a bracket survives both steps).
+            string safeFamily = new string(cell.FontFamily
+                .Where(static ch => char.IsLetterOrDigit(ch) || ch is ' ' or '-' or '_')
+                .ToArray())
+                .Trim();
+            if (safeFamily.Length > 0)
+            {
+                style.Append("font-family:'").Append(WebUtility.HtmlEncode(safeFamily)).Append("';");
+            }
         }
 
         return style.ToString();
