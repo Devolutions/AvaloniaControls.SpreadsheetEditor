@@ -3,6 +3,10 @@
 An Excel-like **spreadsheet editor control for [Avalonia UI](https://avaloniaui.net/)**, published as the
 NuGet package [`Devolutions.AvaloniaControls.SpreadsheetEditor`](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor).
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="SpreadsheetEditor showing a monthly budget with formatted cells, formulas, and a chart" width="900">
+</p>
+
 > [!IMPORTANT]
 > **This control requires a commercial [Avalonia UI (Accelerate)](https://avaloniaui.net/) license.**
 > It builds on the paid `Avalonia.Controls.RichTextEditor` and `Avalonia.Controls.Charts` packages, which
