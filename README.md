@@ -1,5 +1,9 @@
 # AvaloniaControls.SpreadsheetEditor
 
+[![NuGet](https://img.shields.io/nuget/v/Devolutions.AvaloniaControls.SpreadsheetEditor?logo=nuget)](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor)
+[![Downloads](https://img.shields.io/nuget/dt/Devolutions.AvaloniaControls.SpreadsheetEditor?logo=nuget)](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 An Excel-like **spreadsheet editor control for [Avalonia UI](https://avaloniaui.net/)**, published as the
 NuGet package [`Devolutions.AvaloniaControls.SpreadsheetEditor`](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor).
 
@@ -52,6 +56,23 @@ dotnet build SpreadSheetEditor.sln
 dotnet run --project SampleApp        # launch the sample app
 dotnet pack SpreadsheetEditor.Controls -c Release   # build the NuGet package
 ```
+
+## Installation
+
+Install the [NuGet package](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor) into your Avalonia project:
+
+```sh
+dotnet add package Devolutions.AvaloniaControls.SpreadsheetEditor
+```
+
+Or add a `<PackageReference>` to your `.csproj`:
+
+```xml
+<PackageReference Include="Devolutions.AvaloniaControls.SpreadsheetEditor" Version="2026.8.7" />
+```
+
+> [!NOTE]
+> A valid **Avalonia UI (Accelerate) license** is required to build and run — see [Requirements](#requirements).
 
 ## Using the control
 

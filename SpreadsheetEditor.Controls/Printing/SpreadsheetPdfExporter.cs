@@ -25,8 +25,9 @@ public static class SpreadsheetPdfExporter
 
     private const float Margin = 36f;
 
-    // Space reserved at the top of each page for the sheet-name title.
-    private const float TitleHeight = 24f;
+    // Space reserved at the top of each page above the grid. The sheet-name title is not printed, so
+    // this is just a small breathing gap below the page margin.
+    private const float TitleHeight = 0f;
 
     // Screen sizes (column widths, row heights, font sizes) are in device px at 96 dpi;
     // PDF is 72 pt/inch, so 1 px = 0.75 pt.
@@ -169,12 +170,18 @@ public static class SpreadsheetPdfExporter
             pages.Add((pageStart, cursor));
         }
 
+        (Dictionary<(int, int), (int, int)> spills, HashSet<(int, int)> noLeft, HashSet<(int, int)> noRight) =
+            ComputeSpills(sheet, lastRow, lastColumn, covered);
+
         return new PageLayout
         {
             LastRow = lastRow,
             LastColumn = lastColumn,
             Anchors = anchors,
             Covered = covered,
+            Spills = spills,
+            NoLeftBorder = noLeft,
+            NoRightBorder = noRight,
             Scale = scale,
             ColumnLeft = columnLeft,
             RowHeightPt = rowHeightPt,
@@ -192,8 +199,6 @@ public static class SpreadsheetPdfExporter
         bool lastPage = pageIndex == layout.Pages.Count - 1;
         double pageTopPx = layout.RowTopPx[pageStart];
         double pageBottomPx = layout.RowTopPx[pageEnd];
-
-        DrawTitle(canvas, sheet.Name);
 
         // Clip so a merged block or chart spanning past the page bottom is trimmed cleanly.
         canvas.Save();
@@ -228,7 +233,19 @@ public static class SpreadsheetPdfExporter
                 }
 
                 SKRect rect = new(cellLeft, rowTop, cellRight, cellBottom);
-                DrawCell(canvas, cell, rect, (float)layout.Scale, typefaces, FindDataBar(sheet, r, c));
+
+                // When the cell spills, its text is drawn across the empty neighbours (a wider rect)
+                // and the shared gridlines are dropped so the run reads as continuous — matching screen.
+                SKRect textRect = rect;
+                if (layout.Spills.TryGetValue((r, c), out (int Left, int Right) spill))
+                {
+                    float spanLeft = layout.ColumnLeft[c - spill.Left];
+                    float spanRight = layout.ColumnLeft[Math.Min(c + spill.Right + 1, layout.LastColumn + 1)];
+                    textRect = new SKRect(spanLeft, rect.Top, spanRight, rect.Bottom);
+                }
+
+                DrawCell(canvas, cell, rect, textRect, (float)layout.Scale, typefaces, FindDataBar(sheet, r, c),
+                    layout.NoLeftBorder.Contains((r, c)), layout.NoRightBorder.Contains((r, c)));
             }
 
             rowTop += layout.RowHeightPt[r];
@@ -271,15 +288,7 @@ public static class SpreadsheetPdfExporter
         canvas.DrawImage(image, dest, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
     }
 
-    private static void DrawTitle(SKCanvas canvas, string title)
-    {
-        using SKTypeface typeface = SKTypeface.FromFamilyName("Calibri", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
-        using SKFont font = new(typeface, 15f);
-        using SKPaint paint = new() { Color = TextColor, IsAntialias = true };
-        canvas.DrawText(title ?? string.Empty, Margin, Margin + 15f, font, paint);
-    }
-
-    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, float scale, Dictionary<TypefaceKey, SKTypeface> typefaces, SheetDataBar? dataBar)
+    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, SKRect textRect, float scale, Dictionary<TypefaceKey, SKTypeface> typefaces, SheetDataBar? dataBar, bool omitLeftBorder, bool omitRightBorder)
     {
         // Background fill.
         if (cell?.BackgroundColor is { } bg)
@@ -303,10 +312,21 @@ public static class SpreadsheetPdfExporter
             }
         }
 
-        // Cell border (thin gray, matching the HTML export's grid lines).
+        // Cell border (thin gray, matching the HTML export's grid lines). A vertical edge shared with a
+        // cell that this one spills into (or that spills into this one) is dropped so the gridline
+        // between them disappears, exactly as on screen.
         using (SKPaint border = new() { Color = GridLineColor, Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true })
         {
-            canvas.DrawRect(rect, border);
+            canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Top, border);       // top
+            canvas.DrawLine(rect.Left, rect.Bottom, rect.Right, rect.Bottom, border); // bottom
+            if (!omitLeftBorder)
+            {
+                canvas.DrawLine(rect.Left, rect.Top, rect.Left, rect.Bottom, border);
+            }
+            if (!omitRightBorder)
+            {
+                canvas.DrawLine(rect.Right, rect.Top, rect.Right, rect.Bottom, border);
+            }
         }
 
         if (cell is null || dataBar is { ShowValue: false })
@@ -322,7 +342,7 @@ public static class SpreadsheetPdfExporter
 
         float fontSize = Math.Max(1f, (float)(cell.FontSize * scale));
         float padding = 3f * scale;
-        float available = rect.Width - (2 * padding);
+        float available = textRect.Width - (2 * padding);
         if (available <= 0)
         {
             return;
@@ -354,17 +374,17 @@ public static class SpreadsheetPdfExporter
         {
             float x = cell.TextAlignment switch
             {
-                TextAlignment.Center => rect.Left + ((rect.Width - totalWidth) / 2f),
-                TextAlignment.Right => rect.Right - padding - totalWidth,
-                _ => rect.Left + padding,
+                TextAlignment.Center => textRect.Left + ((textRect.Width - totalWidth) / 2f),
+                TextAlignment.Right => textRect.Right - padding - totalWidth,
+                _ => textRect.Left + padding,
             };
 
             // Vertically center on the cell using the (uniform) cell font metrics.
             SKFontMetrics metrics = laid[0].Font.Metrics;
-            float baseline = rect.MidY - ((metrics.Ascent + metrics.Descent) / 2f);
+            float baseline = textRect.MidY - ((metrics.Ascent + metrics.Descent) / 2f);
 
             canvas.Save();
-            canvas.ClipRect(new SKRect(rect.Left + 0.5f, rect.Top, rect.Right - 0.5f, rect.Bottom));
+            canvas.ClipRect(new SKRect(textRect.Left + 0.5f, textRect.Top, textRect.Right - 0.5f, textRect.Bottom));
 
             using SKPaint paint = new() { IsAntialias = true };
             foreach ((CellRun run, SKFont font, float width) in laid)
@@ -537,6 +557,164 @@ public static class SpreadsheetPdfExporter
         return (anchors, covered);
     }
 
+    // Mirrors SpreadsheetGrid's on-screen text spill: a text cell (not number-formatted, not an error,
+    // no data bar) overflows into adjacent empty cells, and the gridlines between it and those cells
+    // are removed. NoRightBorder/NoLeftBorder mark the internal cell edges to drop so the spanned run
+    // reads as continuous — an edge is only removed when BOTH neighbours agree it is internal.
+    private static (Dictionary<(int, int), (int Left, int Right)> Spills, HashSet<(int, int)> NoLeft, HashSet<(int, int)> NoRight)
+        ComputeSpills(SpreadsheetViewModel sheet, int lastRow, int lastColumn, HashSet<(int, int)> covered)
+    {
+        Dictionary<(int, int), (int, int)> spills = new();
+        HashSet<(int, int)> noLeft = new();
+        HashSet<(int, int)> noRight = new();
+        for (int r = 0; r <= lastRow && r < sheet.RowCount; r++)
+        {
+            RowViewModel row = sheet.Rows[r];
+            for (int c = 0; c <= lastColumn && c < row.Cells.Count; c++)
+            {
+                if (covered.Contains((r, c)))
+                {
+                    continue;
+                }
+
+                (int left, int right) = ComputeSpill(sheet, r, c, row.Cells[c], lastColumn, covered);
+                if (left + right == 0)
+                {
+                    continue;
+                }
+
+                spills[(r, c)] = (left, right);
+                for (int k = c - left; k < c + right; k++)
+                {
+                    noRight.Add((r, k));
+                }
+                for (int k = c - left + 1; k <= c + right; k++)
+                {
+                    noLeft.Add((r, k));
+                }
+            }
+        }
+
+        return (spills, noLeft, noRight);
+    }
+
+    private static (int Left, int Right) ComputeSpill(SpreadsheetViewModel sheet, int row, int column, CellViewModel cell, int lastColumn, HashSet<(int, int)> covered)
+    {
+        if (cell.NumberFormat is not null)
+        {
+            return (0, 0); // number-formatted (e.g. currency) cells don't spill — Excel shows ####
+        }
+
+        string display = cell.DisplayText;
+        if (string.IsNullOrWhiteSpace(display) ||
+            double.TryParse(display, NumberStyles.Any, CultureInfo.InvariantCulture, out _) ||
+            IsErrorValue(display) ||
+            FindDataBar(sheet, row, column) is not null)
+        {
+            return (0, 0);
+        }
+
+        TextAlignment align = cell.TextAlignment;
+        int rightRun = align != TextAlignment.Right ? EmptyRun(sheet, row, column, +1, lastColumn, covered) : 0;
+        int leftRun = align != TextAlignment.Left ? EmptyRun(sheet, row, column, -1, lastColumn, covered) : 0;
+        if (rightRun == 0 && leftRun == 0)
+        {
+            return (0, 0);
+        }
+
+        // Overflow only as far as the text is wide — drop just the gridlines under the overflowing
+        // text, not every empty cell in the row (mirrors SpreadsheetGrid).
+        double overflow = MeasureTextWidth(cell) - (ColumnWidthPx(sheet, column) - CellTextPadding);
+        if (overflow <= 0)
+        {
+            return (0, 0);
+        }
+
+        return align switch
+        {
+            TextAlignment.Right => (ColumnsToCover(sheet, column, -1, overflow, leftRun, lastColumn), 0),
+            TextAlignment.Center => (ColumnsToCover(sheet, column, -1, overflow / 2, leftRun, lastColumn), ColumnsToCover(sheet, column, +1, overflow / 2, rightRun, lastColumn)),
+            _ => (0, ColumnsToCover(sheet, column, +1, overflow, rightRun, lastColumn)),
+        };
+    }
+
+    // Total horizontal text padding (both sides), in px, matching DrawCell's per-side padding.
+    private const double CellTextPadding = 6;
+
+    // Measures a cell's text width in px (per-run typefaces), for deciding how far it overflows.
+    private static double MeasureTextWidth(CellViewModel cell)
+    {
+        double width = 0;
+        foreach (CellRun run in cell.EffectiveRuns)
+        {
+            if (string.IsNullOrEmpty(run.Text))
+            {
+                continue;
+            }
+            SKTypeface typeface = SKTypeface.FromFamilyName(
+                string.IsNullOrWhiteSpace(cell.FontFamily) ? "Calibri" : cell.FontFamily,
+                run.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal,
+                SKFontStyleWidth.Normal,
+                run.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright) ?? SKTypeface.Default;
+            using (SKFont font = new(typeface, (float)cell.FontSize))
+            {
+                width += font.MeasureText(run.Text);
+            }
+
+            if (!ReferenceEquals(typeface, SKTypeface.Default))
+            {
+                typeface.Dispose();
+            }
+        }
+
+        return width;
+    }
+
+    private static int ColumnsToCover(SpreadsheetViewModel sheet, int column, int direction, double overflow, int maxRun, int lastColumn)
+    {
+        int covered = 0;
+        double accumulated = 0;
+        for (int i = 1; i <= maxRun; i++)
+        {
+            int col = column + (direction * i);
+            if (col < 0 || col > lastColumn)
+            {
+                break;
+            }
+            covered = i;
+            accumulated += ColumnWidthPx(sheet, col);
+            if (accumulated >= overflow)
+            {
+                break;
+            }
+        }
+
+        return covered;
+    }
+
+    private static int EmptyRun(SpreadsheetViewModel sheet, int row, int column, int direction, int lastColumn, HashSet<(int, int)> covered)
+    {
+        int count = 0;
+        RowViewModel r = sheet.Rows[row];
+        for (int c = column + direction; c >= 0 && c <= lastColumn && c < r.Cells.Count; c += direction)
+        {
+            if (covered.Contains((row, c)) || FindDataBar(sheet, row, c) is not null)
+            {
+                break;
+            }
+            if (!string.IsNullOrWhiteSpace(r.Cells[c].DisplayText))
+            {
+                break;
+            }
+            count++;
+        }
+
+        return count;
+    }
+
+    private static bool IsErrorValue(string display) =>
+        display.Length > 1 && display[0] == '#' && (display[^1] is '!' or '?' || display == "#N/A");
+
     private readonly record struct TypefaceKey(string Family, bool Bold, bool Italic);
 
     // Precomputed page geometry shared by the PDF and raster-print renderers.
@@ -549,6 +727,14 @@ public static class SpreadsheetPdfExporter
         public Dictionary<(int Row, int Column), MergeRange> Anchors { get; init; } = new();
 
         public HashSet<(int Row, int Column)> Covered { get; init; } = new();
+
+        // Cells whose text overflows into empty neighbours, and which cell edges to drop so the
+        // gridline between a spilling cell and the cell it spills into disappears (as on screen).
+        public Dictionary<(int Row, int Column), (int Left, int Right)> Spills { get; init; } = new();
+
+        public HashSet<(int Row, int Column)> NoLeftBorder { get; init; } = new();
+
+        public HashSet<(int Row, int Column)> NoRightBorder { get; init; } = new();
 
         public double Scale { get; init; }
 

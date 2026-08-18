@@ -122,7 +122,33 @@ public class SpreadsheetGrid : UserControl
 
     // True = selection mode (editor hidden, just the selection rectangle); false = edit mode (editor
     // shown + focused). Default selection mode: a single click selects, double-click/typing/F2 edits.
-    private bool editorSuspended = true;
+    private bool editorSuspendedField = true;
+
+    // Tracks an active editing session so that when it ends (commit) we recompute text spill once —
+    // a cell whose text just grew past its width needs to overflow into empty neighbours (Excel-style),
+    // which the spill overlay only picks up on a rebuild. Done on commit, not per keystroke.
+    private bool editingSession;
+
+    private bool editorSuspended
+    {
+        get => this.editorSuspendedField;
+        set
+        {
+            if (!value)
+            {
+                this.editorSuspendedField = false;
+                this.editingSession = true; // editing started
+                return;
+            }
+
+            this.editorSuspendedField = true;
+            if (this.editingSession)
+            {
+                this.editingSession = false; // editing ended → refresh spill for the edited cell
+                Dispatcher.UIThread.Post(this.Rebuild, DispatcherPriority.Background);
+            }
+        }
+    }
 
     private bool adjustingRows;            // reentrancy guard for dynamic row growth/trim
     private bool adjustingColumns;         // reentrancy guard for dynamic column growth/trim
@@ -609,6 +635,15 @@ public class SpreadsheetGrid : UserControl
             if (this.sheet is not null)
             {
                 this.Rebuild();
+                // Zooming out shrinks every cell, so the viewport now spans more rows/columns than the
+                // grid was built for — grow to refill it (once layout has the new, smaller extent).
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        this.AdjustColumnsForScroll();
+                        this.AdjustRowsForScroll();
+                    },
+                    DispatcherPriority.Background);
             }
 
             this.ZoomChanged?.Invoke(this.zoom);
@@ -705,6 +740,38 @@ public class SpreadsheetGrid : UserControl
             this.rowHeaders.Children.Add(this.RowResizeHandle(r));
         }
 
+        // Pass 1: compute which cells spill their text into empty neighbours. Where a cell spills, the
+        // gridlines *between* it and those neighbours are removed so the text reads as one continuous
+        // run (Excel/Sheets behaviour) — every column in the spill span except the last drops its right
+        // border. Computed up-front because a leftward spill removes borders of cells built earlier.
+        Dictionary<(int Row, int Column), (int Left, int Right)> spillMap = new();
+        HashSet<(int Row, int Column)> noRightBorder = new();
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols && c < this.sheet.Rows[r].Cells.Count; c++)
+            {
+                if (this.covered![r, c])
+                {
+                    continue;
+                }
+                (int rowSpan, int colSpan) = this.spans![r, c];
+                if (colSpan != 1)
+                {
+                    continue;
+                }
+                (int spillLeft, int spillRight) = this.ComputeSpill(r, c, this.sheet.Rows[r].Cells[c]);
+                if (spillLeft + spillRight == 0)
+                {
+                    continue;
+                }
+                spillMap[(r, c)] = (spillLeft, spillRight);
+                for (int k = c - spillLeft; k < c + spillRight; k++)
+                {
+                    noRightBorder.Add((r, k));
+                }
+            }
+        }
+
         List<Control> spillOverlays = new();
         for (int r = 0; r < rows; r++)
         {
@@ -716,10 +783,11 @@ public class SpreadsheetGrid : UserControl
                 }
                 (int rowSpan, int colSpan) = this.spans![r, c];
                 CellViewModel cell = this.sheet.Rows[r].Cells[c];
-                (int spillLeft, int spillRight) = colSpan == 1 ? this.ComputeSpill(r, c, cell) : (0, 0);
-                this.cells.Children.Add(this.BuildCell(cell, r, c, rowSpan, colSpan, spilling: spillLeft + spillRight > 0));
-                if (spillLeft + spillRight > 0)
+                bool spilling = spillMap.ContainsKey((r, c));
+                this.cells.Children.Add(this.BuildCell(cell, r, c, rowSpan, colSpan, spilling: spilling, omitRightBorder: noRightBorder.Contains((r, c))));
+                if (spilling)
                 {
+                    (int spillLeft, int spillRight) = spillMap[(r, c)];
                     spillOverlays.Add(this.BuildSpillText(cell, r, c - spillLeft, spillLeft + 1 + spillRight));
                 }
             }
@@ -853,8 +921,11 @@ public class SpreadsheetGrid : UserControl
         int target = this.sheet.RowCount;
         if (offsetY + viewport >= extent - 40)
         {
-            // At/near the bottom (or content shorter than the viewport) → add a chunk of rows.
-            target = this.sheet.RowCount + RowBuffer;
+            // At/near the bottom (or content shorter than the viewport) → add enough rows to span the
+            // empty gap below the content (large after a zoom-out), plus a buffer to scroll into.
+            double gap = (offsetY + viewport) - extent;
+            int fill = gap > 0 ? (int)Math.Ceiling(gap / Math.Max(1, DefaultRowHeight * this.zoom)) : 0;
+            target = this.sheet.RowCount + fill + RowBuffer;
         }
         else
         {
@@ -904,8 +975,11 @@ public class SpreadsheetGrid : UserControl
         int target = this.sheet.ColumnCount;
         if (offsetX + viewport >= extent - 40)
         {
-            // At/near the right (or content narrower than the viewport) → add a chunk of columns.
-            target = this.sheet.ColumnCount + ColumnBuffer;
+            // At/near the right (or content narrower than the viewport) → add enough columns to span
+            // the empty gap to the right (large after a zoom-out), plus a buffer to scroll into.
+            double gap = (offsetX + viewport) - extent;
+            int fill = gap > 0 ? (int)Math.Ceiling(gap / Math.Max(1, this.sheet.DefaultColumnWidth * this.zoom)) : 0;
+            target = this.sheet.ColumnCount + fill + ColumnBuffer;
         }
         else
         {
@@ -959,27 +1033,31 @@ public class SpreadsheetGrid : UserControl
             double left = this.OffsetToColumn(chart.AnchorColumn) + (chart.OffsetX * this.zoom);
             double top = this.OffsetToRow(chart.AnchorRow) + (chart.OffsetY * this.zoom);
 
-            // Size to span from→to cells in OUR layout (so it covers the same cells Excel anchored it
-            // to); fall back to the stored pixel size for one-cell-anchored charts.
-            double width;
-            double height;
+            // The displayed size spans from→to cells in OUR (scaled) layout; fall back to the stored
+            // pixel size for one-cell-anchored charts.
+            double z = this.zoom > 0 ? this.zoom : 1;
+            double scaledWidth;
+            double scaledHeight;
             if (chart.ToColumn is { } toCol && chart.ToRow is { } toRow)
             {
-                width = this.OffsetToColumn(toCol) + (chart.ToOffsetX * this.zoom) - left;
-                height = this.OffsetToRow(toRow) + (chart.ToOffsetY * this.zoom) - top;
+                scaledWidth = this.OffsetToColumn(toCol) + (chart.ToOffsetX * this.zoom) - left;
+                scaledHeight = this.OffsetToRow(toRow) + (chart.ToOffsetY * this.zoom) - top;
             }
             else
             {
-                width = chart.Width * this.zoom;
-                height = chart.Height * this.zoom;
+                scaledWidth = chart.Width * this.zoom;
+                scaledHeight = chart.Height * this.zoom;
             }
 
-            width = Math.Clamp(width, 120 * this.zoom, 2400 * this.zoom);
-            height = Math.Clamp(height, 80 * this.zoom, 1600 * this.zoom);
+            // Build the chart at its LOGICAL (zoom-independent) size and scale the whole card with a
+            // ScaleTransform — so zoom shrinks/grows the chart as a fixed object (like Excel) instead of
+            // re-laying-out its contents (labels, axis) at every zoom level.
+            double width = Math.Clamp(scaledWidth / z, 120, 2400);
+            double height = Math.Clamp(scaledHeight / z, 80, 1600);
 
             (List<string> cats, List<ChartSeriesData> ser) = this.ExtractChartData(chart);
             Control? control = ChartFactory.Build(chart.Kind, cats, ser, width, height, chart.ShowDataLabels,
-                chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep);
+                chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep, chart.LegendPosition);
             if (control is null)
             {
                 continue;
@@ -1015,6 +1093,10 @@ public class SpreadsheetGrid : UserControl
                 Width = width,
                 Height = height,
                 Cursor = new Cursor(StandardCursorType.SizeAll),
+                // Scale the whole (logical-size) card by the zoom factor, anchored at its top-left so it
+                // stays put — the chart scales uniformly as a fixed object rather than re-laying-out.
+                RenderTransform = new ScaleTransform(z, z),
+                RenderTransformOrigin = RelativePoint.TopLeft,
             };
             Canvas.SetLeft(card, left);
             Canvas.SetTop(card, top);
@@ -1082,8 +1164,8 @@ public class SpreadsheetGrid : UserControl
                 {
                     int col = this.NearestColumn(Canvas.GetLeft(card));
                     int row = this.NearestRow(Canvas.GetTop(card));
-                    // cardWidth/cardHeight are in scaled pixels; store the logical size so zoom stays out of the model.
-                    this.sheet?.MoveChart(captured, row, col, cardWidth / this.zoom, cardHeight / this.zoom);
+                    // cardWidth/cardHeight are already logical (the card is scaled via a ScaleTransform).
+                    this.sheet?.MoveChart(captured, row, col, cardWidth, cardHeight);
                 }
                 pressed = false;
                 moved = false;
@@ -1132,8 +1214,11 @@ public class SpreadsheetGrid : UserControl
                     return;
                 }
                 Point p = e.GetPosition(this.cells);
-                double w = Math.Clamp(startW + (p.X - startSizePointer.X), 120 * this.zoom, 2400 * this.zoom);
-                double h = Math.Clamp(startH + (p.Y - startSizePointer.Y), 80 * this.zoom, 1600 * this.zoom);
+                // The pointer delta is in scaled space; the card is logical-size (scaled by transform),
+                // so convert the delta back to logical before applying it.
+                double zoomNow = this.zoom > 0 ? this.zoom : 1;
+                double w = Math.Clamp(startW + ((p.X - startSizePointer.X) / zoomNow), 120, 2400);
+                double h = Math.Clamp(startH + ((p.Y - startSizePointer.Y) / zoomNow), 80, 1600);
                 card.Width = w;
                 card.Height = h;
                 control.Width = w;       // live-resize the chart itself
@@ -1149,8 +1234,8 @@ public class SpreadsheetGrid : UserControl
                 this.chartDragging = false;
                 if (sizing)
                 {
-                    // Store the logical (unscaled) size so zoom doesn't leak into the model.
-                    this.sheet?.ResizeChart(captured, card.Width / this.zoom, card.Height / this.zoom);
+                    // card.Width/Height are already logical (the card is scaled via a ScaleTransform).
+                    this.sheet?.ResizeChart(captured, card.Width, card.Height);
                 }
                 sizing = false;
             };
@@ -1192,6 +1277,14 @@ public class SpreadsheetGrid : UserControl
             bool gripVisible = grip.IsVisible;
             settings.IsVisible = false;
             grip.IsVisible = false;
+            // A selected chart's card carries a thick blue selection border — reset it to the normal
+            // gridline look so the snapshot (and the print/PDF) never shows the selection highlight.
+            IBrush? borderBrush = card.BorderBrush;
+            Thickness borderThickness = card.BorderThickness;
+            card.BorderBrush = this.gridLine;
+            card.BorderThickness = new Thickness(1);
+            ITransform? transform = card.RenderTransform;
+            card.RenderTransform = null; // snapshot at the card's logical size, not the zoomed size
             try
             {
                 PixelSize pixelSize = new((int)Math.Ceiling(width), (int)Math.Ceiling(height));
@@ -1199,7 +1292,10 @@ public class SpreadsheetGrid : UserControl
                 bitmap.Render(card);
                 using MemoryStream stream = new();
                 bitmap.Save(stream, new PngBitmapEncoderOptions());
-                images.Add(new ChartImage(stream.ToArray(), left, top, width, height));
+                // card.Width/Height are logical; only the position needs converting from scaled to
+                // logical grid pixels (the PDF exporter lays cells out at the sheet's logical sizes).
+                double z = this.zoom > 0 ? this.zoom : 1;
+                images.Add(new ChartImage(stream.ToArray(), left / z, top / z, width, height));
             }
             catch
             {
@@ -1207,6 +1303,9 @@ public class SpreadsheetGrid : UserControl
             }
             finally
             {
+                card.RenderTransform = transform;
+                card.BorderBrush = borderBrush;
+                card.BorderThickness = borderThickness;
                 settings.IsVisible = settingsVisible;
                 grip.IsVisible = gripVisible;
             }
@@ -1606,9 +1705,77 @@ public class SpreadsheetGrid : UserControl
         }
 
         TextAlignment align = cell.TextAlignment;
-        int right = align != TextAlignment.Right ? this.EmptyRun(row, column, +1) : 0;
-        int left = align != TextAlignment.Left ? this.EmptyRun(row, column, -1) : 0;
-        return (left, right);
+        int rightRun = align != TextAlignment.Right ? this.EmptyRun(row, column, +1) : 0;
+        int leftRun = align != TextAlignment.Left ? this.EmptyRun(row, column, -1) : 0;
+        if (rightRun == 0 && leftRun == 0)
+        {
+            return (0, 0);
+        }
+
+        // Only overflow as far as the text is actually wide — the gridlines that vanish are just the
+        // ones under the overflowing text, not every empty cell to the side. If the text fits its own
+        // cell there is no spill (and every gridline stays).
+        double overflow = this.MeasureTextWidth(cell) - (this.columnWidths[column] - CellTextPadding);
+        if (overflow <= 0)
+        {
+            return (0, 0);
+        }
+
+        return align switch
+        {
+            TextAlignment.Right => (this.ColumnsToCover(column, -1, overflow, leftRun), 0),
+            TextAlignment.Center => (this.ColumnsToCover(column, -1, overflow / 2, leftRun), this.ColumnsToCover(column, +1, overflow / 2, rightRun)),
+            _ => (0, this.ColumnsToCover(column, +1, overflow, rightRun)),
+        };
+    }
+
+    // Total horizontal padding (both sides) of a cell's text, matching the in-cell/overlay Margin.
+    private const double CellTextPadding = 8;
+
+    // Measures the rendered width (px, at the current zoom) of a cell's text, summing per-run widths
+    // so bold/italic runs are measured with the right typeface.
+    private double MeasureTextWidth(CellViewModel cell)
+    {
+        FontFamily family = string.IsNullOrWhiteSpace(cell.FontFamily) ? FontFamily.Default : new FontFamily(cell.FontFamily);
+        double size = cell.FontSize * this.zoom;
+        double width = 0;
+        foreach (CellRun run in cell.EffectiveRuns)
+        {
+            if (string.IsNullOrEmpty(run.Text))
+            {
+                continue;
+            }
+            Typeface typeface = new(family, run.Italic ? FontStyle.Italic : FontStyle.Normal, run.Bold ? FontWeight.Bold : FontWeight.Normal);
+            FormattedText formatted = new(run.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, size, null);
+            width += formatted.Width;
+        }
+
+        return width;
+    }
+
+    // How many consecutive columns (from `column`, in `direction`) the overflowing text reaches into:
+    // it crosses a column's boundary — and so removes that gridline — until the accumulated width of
+    // the columns entered covers the overflow. Capped by the empty run so text never spills onto data.
+    private int ColumnsToCover(int column, int direction, double overflow, int maxRun)
+    {
+        int covered = 0;
+        double accumulated = 0;
+        for (int i = 1; i <= maxRun; i++)
+        {
+            int col = column + (direction * i);
+            if (col < 0 || col >= this.columnWidths.Length)
+            {
+                break;
+            }
+            covered = i;
+            accumulated += this.columnWidths[col];
+            if (accumulated >= overflow)
+            {
+                break;
+            }
+        }
+
+        return covered;
     }
 
     // An Excel error value (#DIV/0!, #VALUE!, #NAME?, #REF!, #NUM!, #N/A, #CIRC!, …).
@@ -1658,7 +1825,7 @@ public class SpreadsheetGrid : UserControl
         return text;
     }
 
-    private Control BuildCell(CellViewModel cell, int row, int column, int rowSpan, int columnSpan, bool spilling = false)
+    private Control BuildCell(CellViewModel cell, int row, int column, int rowSpan, int columnSpan, bool spilling = false, bool omitRightBorder = false)
     {
         TextBlock text = new()
         {
@@ -1700,7 +1867,9 @@ public class SpreadsheetGrid : UserControl
         Border border = new()
         {
             BorderBrush = this.gridLine,
-            BorderThickness = new Thickness(0, 0, 1, 1),
+            // A spilling cell drops the gridline between it and the empty neighbour it overflows into,
+            // so the overlaid text reads as continuous. The cell keeps its own hit-testable box.
+            BorderThickness = new Thickness(0, 0, omitRightBorder ? 0 : 1, 1),
             Background = cell.Background ?? Brushes.Transparent,
             Child = barGrid is null ? text : Layered(barGrid, text),
         };
@@ -1769,9 +1938,12 @@ public class SpreadsheetGrid : UserControl
             switch (e.PropertyName)
             {
                 case nameof(CellViewModel.EffectiveRuns) or nameof(CellViewModel.Text):
-                    // A spilling cell's text lives in a separate overlay whose span depends on the
-                    // neighbours — rebuild so it (and the spill extent) recomputes cleanly.
-                    if (spilling)
+                    // The text changed, so the spill extent may have too. Rebuild when the cell spills
+                    // now OR spilled before — a spilling cell's text lives in a separate overlay whose
+                    // span (and the neighbour gridlines it clears) is only recomputed on a rebuild.
+                    // This fires exactly when the new value lands on the model, so a cell that just grew
+                    // past its width starts overflowing even after being cleared and retyped.
+                    if (spilling || (this.spans is not null && this.spans[row, column] is (1, 1) && this.ComputeSpill(row, column, cell) is not (0, 0)))
                     {
                         this.Rebuild();
                         break;

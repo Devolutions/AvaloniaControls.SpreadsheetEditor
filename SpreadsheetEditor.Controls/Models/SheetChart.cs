@@ -10,6 +10,9 @@ public enum ChartKind { Line, Spline, StepLine, Area, StackedArea, Bar, StackedB
 // How the value (Y) axis and data labels format their numbers.
 public enum AxisNumberFormat { Number, Currency, Percent }
 
+// Where a chart's legend sits (neutral of the Pro chart control's own enum, kept out of Models).
+public enum ChartLegendPosition { None, Left, Right, Top, Bottom }
+
 // A rectangular cell range (0-based, inclusive spans).
 public readonly record struct CellRange(int Row, int Column, int RowSpan, int ColumnSpan)
 {
@@ -154,6 +157,10 @@ public sealed class SheetChart
 
     // Whether the chart shows a legend.
     public bool ShowLegend { get; init; } = true;
+
+    // Where the legend sits (Excel stores this per chart). Defaults to the bottom, matching how these
+    // budget-style charts read; only used when ShowLegend is true.
+    public ChartLegendPosition LegendPosition { get; init; } = ChartLegendPosition.Bottom;
 
     // Whether the chart shows value data labels on points/bars.
     public bool ShowDataLabels { get; init; }

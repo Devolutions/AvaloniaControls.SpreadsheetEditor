@@ -52,7 +52,8 @@ public static class ChartFactory
         IReadOnlyList<ChartSeriesData> series, double width, double height,
         bool showDataLabels = false, string? title = null, bool? showLegend = null,
         AxisNumberFormat valueFormat = AxisNumberFormat.Number,
-        double? axisMin = null, double? axisMax = null, double? axisStep = null)
+        double? axisMin = null, double? axisMax = null, double? axisStep = null,
+        ChartLegendPosition legendPosition = ChartLegendPosition.Bottom)
     {
         if (series.Count == 0)
         {
@@ -68,9 +69,26 @@ public static class ChartFactory
                 ChartKind.Radar => BuildRadar(categories, series, width, height, legend),
                 _ => BuildCartesian(kind, categories, series, width, height, showDataLabels, legend, valueFormat, axisMin, axisMax, axisStep),
             };
-            if (chart is ChartBase cb && !string.IsNullOrWhiteSpace(title))
+            if (chart is ChartBase cb)
             {
-                cb.Title = title;
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    cb.Title = title;
+                }
+
+                // The sub-builders set ShowLegend; the position must be set explicitly or the control
+                // won't place the legend where Excel had it (default isn't a guaranteed visible spot).
+                if (legend)
+                {
+                    cb.LegendPosition = legendPosition switch
+                    {
+                        ChartLegendPosition.Left => LegendPosition.Left,
+                        ChartLegendPosition.Right => LegendPosition.Right,
+                        ChartLegendPosition.Top => LegendPosition.Top,
+                        ChartLegendPosition.None => LegendPosition.None,
+                        _ => LegendPosition.Bottom,
+                    };
+                }
             }
 
             return chart;
@@ -92,22 +110,37 @@ public static class ChartFactory
             ShowGridLines = true,
             LabelFormat = axisFmt,
             Minimum = axisMin,    // null = auto
-            Maximum = axisMax,
+            Maximum = axisMax,    // null = auto (the chart rounds up, leaving headroom for top labels)
             MajorStep = axisStep,
         };
+        // Per-bar value labels: how much horizontal room each bar gets. A value label needs roughly
+        // 18px to be legible; when the bars are packed tighter than that no font size can stop them
+        // overlapping or clipping, so labels are only shown when they actually fit. The ones that do
+        // show are sized to the room available and given side padding so edge labels aren't clipped.
+        int totalBars = Math.Max(1, categories.Count * Math.Max(1, series.Count));
+        double barSpacing = width / totalBars;
+        bool labelsFit = showDataLabels && barSpacing >= 18;
+        double labelFontSize = Math.Clamp(barSpacing * 0.3, 6, 12);
+
         CartesianChart chart = new()
         {
             Width = width,
             Height = height,
             ShowLegend = showLegend,
-            // Category labels on X (Income/Expenses, months…); value labels + gridlines on Y.
-            HorizontalAxis = new CategoryAxis { ShowLabels = true, ShowGridLines = false },
+            // Inset so top/edge value labels have room instead of being clipped at the plot boundary
+            // (extra on the sides for the first/last bar's label, a little on top for tall bars).
+            Padding = labelsFit ? new Thickness(14, 8, 14, 0) : new Thickness(2, 4, 2, 0),
+            // Category labels on X (Income/Expenses, months…); value labels + gridlines on Y. Auto fit
+            // lets the chart angle the labels when they'd be too crowded to sit horizontally (Excel-
+            // style) instead of silently dropping some; short labels that fit stay horizontal.
+            HorizontalAxis = new CategoryAxis
+            {
+                ShowLabels = true,
+                ShowGridLines = false,
+                LabelFitMode = LabelFitMode.Auto,
+            },
             VerticalAxis = valueAxis,
         };
-        // Keep per-point value labels, but shrink them to fit as the number of bars grows (otherwise
-        // they overlap into an unreadable mess). Sized from the horizontal room per category, clamped
-        // to a readable range — a 2-bar summary keeps large labels; a 12/17-bar chart uses small ones.
-        double labelFontSize = Math.Clamp(width / Math.Max(1, categories.Count) * 0.28, 6, 12);
         for (int i = 0; i < series.Count; i++)
         {
             CartesianSeries cs = MakeCartesianSeries(kind, PaletteBrush(i));
@@ -115,7 +148,7 @@ public static class ChartFactory
             cs.CategoryPath = nameof(ChartPoint.Category);
             cs.ValuePath = nameof(ChartPoint.Value);
             cs.Title = series[i].Title;
-            if (showDataLabels)
+            if (labelsFit)
             {
                 cs.ShowLabels = true;
                 cs.LabelFormat = "{0:" + axisFmt + "}"; // placeholder form (a bare "C0" renders literally)

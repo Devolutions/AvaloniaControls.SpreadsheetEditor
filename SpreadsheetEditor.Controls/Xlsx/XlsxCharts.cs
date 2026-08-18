@@ -89,8 +89,8 @@ public static class XlsxCharts
                         continue;
                     }
 
-                    (ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum) = ParseChartPart(chartDoc);
-                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, axisMinimum, anchor, sheet);
+                    (ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend) = ParseChartPart(chartDoc);
+                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, axisMinimum, title, legend, anchor, sheet);
                     if (built is not null)
                     {
                         charts.Add(built);
@@ -108,12 +108,15 @@ public static class XlsxCharts
 
     // ----- chart part -----
 
-    // Parses a chart part into its kind, raw series, and whether data labels are shown.
-    public static (ChartKind Kind, List<RawSeries> Series, bool ShowDataLabels, double? AxisMinimum) ParseChartPart(XDocument chartDoc)
+    // Parses a chart part into its kind, raw series, whether data labels are shown, its title, and its
+    // legend placement (ChartLegendPosition.None when the chart has no legend).
+    public static (ChartKind Kind, List<RawSeries> Series, bool ShowDataLabels, double? AxisMinimum, string? Title, ChartLegendPosition Legend) ParseChartPart(XDocument chartDoc)
     {
         XElement? plotArea = chartDoc.Descendants(C + "plotArea").FirstOrDefault();
         List<RawSeries> series = new();
         bool showDataLabels = chartDoc.Descendants(C + "showVal").Any(static e => e.Attribute("val")?.Value is "1" or "true");
+        string? title = ParseChartTitle(chartDoc);
+        ChartLegendPosition legend = ParseLegend(chartDoc);
 
         // Explicit value-axis minimum (<c:valAx><c:scaling><c:min>), if the chart pins one; otherwise null
         // → the builder defaults to 0 (Excel's automatic value-axis baseline).
@@ -123,7 +126,7 @@ public static class XlsxCharts
 
         if (plotArea is null)
         {
-            return (ChartKind.Line, series, showDataLabels, axisMinimum);
+            return (ChartKind.Line, series, showDataLabels, axisMinimum, title, legend);
         }
 
         // The first element whose name ends with "Chart" determines the type.
@@ -149,7 +152,47 @@ public static class XlsxCharts
             series.Add(new RawSeries(titleFormula, titleLiteral, valueFormula, categoryFormula, cachedValues, cachedCategories));
         }
 
-        return (kind, series, showDataLabels, axisMinimum);
+        return (kind, series, showDataLabels, axisMinimum, title, legend);
+    }
+
+    // The chart's legend placement: None when the chart part has no <c:legend>, else the mapped
+    // <c:legendPos> (b/t/l/r). A legend with no explicit position defaults to right (OOXML default).
+    private static ChartLegendPosition ParseLegend(XDocument chartDoc)
+    {
+        XElement? legend = chartDoc.Descendants(C + "legend").FirstOrDefault();
+        if (legend is null)
+        {
+            return ChartLegendPosition.None;
+        }
+
+        return legend.Element(C + "legendPos")?.Attribute("val")?.Value switch
+        {
+            "t" => ChartLegendPosition.Top,
+            "l" => ChartLegendPosition.Left,
+            "b" => ChartLegendPosition.Bottom,
+            "tr" => ChartLegendPosition.Right,
+            _ => ChartLegendPosition.Right,
+        };
+    }
+
+    // The chart's own title text: the manual/auto rich-text title (a:t runs), or a cell-reference
+    // title's cached value. Null when there is no title element (e.g. autoTitleDeleted with none set).
+    private static string? ParseChartTitle(XDocument chartDoc)
+    {
+        XElement? titleEl = chartDoc.Descendants(C + "chart").FirstOrDefault()?.Element(C + "title");
+        if (titleEl is null)
+        {
+            return null;
+        }
+
+        string text = string.Concat(titleEl.Descendants(A + "t").Select(static t => t.Value));
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            // Title bound to a cell (<c:tx><c:strRef>) — use its cached value.
+            text = titleEl.Descendants(C + "v").FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     // Reads a c:val / c:cat element's cached point values (numCache or strCache) into a list
@@ -354,7 +397,7 @@ public static class XlsxCharts
 
     // ----- stitching -----
 
-    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, Anchor anchor, IXLWorksheet sheet)
+    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend, Anchor anchor, IXLWorksheet sheet)
     {
         List<ChartSeriesSpec> series = new();
         CellRange? categories = null;
@@ -370,13 +413,27 @@ public static class XlsxCharts
                 continue;
             }
 
-            string title = ResolveTitle(raw, sheet) ?? $"Series {i + 1}";
+            // Excel's cached point count is authoritative for how many cells the series actually plots:
+            // a range formula can overshoot the data (e.g. $O$22:$O$39 covering a trailing "Total" row
+            // that the chart doesn't include — cache says 17, range says 18). Clamp so we don't plot the
+            // extra cell, while still reading live from the (corrected) range so edits update the chart.
+            if (hasCache)
+            {
+                ranges = ClampRanges(ranges, raw.CachedValues.Count);
+            }
+
+            string seriesTitle = ResolveTitle(raw, sheet) ?? $"Series {i + 1}";
             series.Add(new ChartSeriesSpec(
-                title,
+                seriesTitle,
                 ranges.Count > 0 ? ranges : new List<CellRange> { new(0, 0, 0, 0) },
                 hasCache ? raw.CachedValues : null));
 
-            categories ??= ParseRange(raw.CategoryFormula);
+            if (categories is null && ParseRange(raw.CategoryFormula) is { } catRange)
+            {
+                // Same clamp for the category labels (drops the trailing "Total" label to match).
+                categories = raw.CachedCategories.Count > 0 ? TrimRange(catRange, raw.CachedCategories.Count) : catRange;
+            }
+
             if (cachedCategories is null && raw.CachedCategories.Any(static s => !string.IsNullOrEmpty(s)))
             {
                 cachedCategories = raw.CachedCategories;
@@ -393,11 +450,15 @@ public static class XlsxCharts
         return new SheetChart
         {
             Kind = kind,
+            Title = string.IsNullOrWhiteSpace(title) ? null : title,
             Series = series,
             Categories = categories,
             CachedCategories = cachedCategories,
             ShowDataLabels = showDataLabels,
-            ShowLegend = series.Count > 1,
+            // Honor the file's legend exactly: shown only if the chart part had a <c:legend>, at the
+            // position Excel stored (rather than guessing from the series count).
+            ShowLegend = legend != ChartLegendPosition.None,
+            LegendPosition = legend == ChartLegendPosition.None ? ChartLegendPosition.Bottom : legend,
             // Honor an explicit axis minimum from the file; otherwise start at 0 like Excel's default.
             AxisMinimum = axisMinimum ?? 0,
             AnchorRow = anchor.FromRow,
@@ -411,6 +472,61 @@ public static class XlsxCharts
             Width = anchor.ExtWidthPx > 0 ? anchor.ExtWidthPx : 380,
             Height = anchor.ExtHeightPx > 0 ? anchor.ExtHeightPx : 260,
         };
+    }
+
+    // Limits a set of ranges to at most `maxCount` cells total (in order), trimming the range that
+    // crosses the boundary along its single long axis. Ranges are left untouched when they already fit.
+    private static List<CellRange> ClampRanges(List<CellRange> ranges, int maxCount)
+    {
+        if (maxCount <= 0)
+        {
+            return ranges;
+        }
+
+        List<CellRange> result = new();
+        int remaining = maxCount;
+        foreach (CellRange range in ranges)
+        {
+            int cells = range.RowSpan * range.ColumnSpan;
+            if (cells <= remaining)
+            {
+                result.Add(range);
+                remaining -= cells;
+                continue;
+            }
+
+            if (remaining > 0)
+            {
+                result.Add(TrimRange(range, remaining));
+            }
+
+            remaining = 0;
+            break;
+        }
+
+        return result.Count > 0 ? result : ranges;
+    }
+
+    // Shrinks a strip range to its first `count` cells along whichever axis it runs (row or column).
+    // A 2-D block is left as-is (its cell ordering is ambiguous for a linear series).
+    private static CellRange TrimRange(CellRange range, int count)
+    {
+        if (count <= 0)
+        {
+            return range;
+        }
+
+        if (range.RowSpan == 1 && count < range.ColumnSpan)
+        {
+            return new CellRange(range.Row, range.Column, 1, count);
+        }
+
+        if (range.ColumnSpan == 1 && count < range.RowSpan)
+        {
+            return new CellRange(range.Row, range.Column, count, 1);
+        }
+
+        return range;
     }
 
     private static string? ResolveTitle(RawSeries raw, IXLWorksheet sheet)
