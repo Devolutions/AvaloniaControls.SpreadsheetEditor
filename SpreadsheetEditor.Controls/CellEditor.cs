@@ -19,6 +19,10 @@ using global::SpreadsheetEditor.Controls.ViewModels;
 // which route to the rich selection or the whole-cell flags accordingly.
 public class CellEditor : Decorator
 {
+    // Cell text/caret color. Fixed rather than theme-resolved because the sheet panel stays a light
+    // page in both themes, matching Excel's dark mode — see SpreadsheetGrid's CellText.
+    private static readonly IBrush CellForeground = new SolidColorBrush(Avalonia.Media.Color.FromRgb(0x20, 0x20, 0x20));
+
     private readonly RichTextEditor? rich;
     private readonly TextBox? plain;
     private CellViewModel? cell;
@@ -52,7 +56,11 @@ public class CellEditor : Decorator
                 // Stripping the chrome also drops the default selection/caret brushes — set them so
                 // click-drag text selection shows a blue highlight and the caret is visible.
                 SelectionBrush = new SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0x1A, 0x73, 0xE8)),
-                CaretBrush = Brushes.Black,
+                // The cell canvas stays light in both themes (Excel-style dark mode), so the edited
+                // text and caret must be dark — the inherited dark-theme foreground would be
+                // near-white and invisible. Per-run colors still override the foreground.
+                Foreground = CellForeground,
+                CaretBrush = CellForeground,
             };
 
             // A cell is a single line, but the document's vertical-centering padding can make the
@@ -74,6 +82,8 @@ public class CellEditor : Decorator
             {
                 BorderThickness = new(0),
                 Background = Brushes.Transparent,
+                Foreground = CellForeground, // light cell canvas in both themes
+                CaretBrush = CellForeground,
                 Padding = new(4, 2),
                 AcceptsReturn = false,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -113,7 +123,7 @@ public class CellEditor : Decorator
                 this.plain.FontStyle = cell.FontStyle;
                 this.plain.FontSize = cell.FontSize;
                 this.plain.TextAlignment = cell.TextAlignment;
-                this.plain.Foreground = cell.Foreground ?? Brushes.Black;
+                this.plain.Foreground = cell.Foreground ?? CellForeground;
                 if (!string.IsNullOrWhiteSpace(cell.FontFamily))
                 {
                     this.plain.FontFamily = new FontFamily(cell.FontFamily);
@@ -289,7 +299,7 @@ public class CellEditor : Decorator
 
         this.plain.FontWeight = this.cell.FontWeight;
         this.plain.FontStyle = this.cell.FontStyle;
-        this.plain.Foreground = this.cell.Foreground ?? Brushes.Black;
+        this.plain.Foreground = this.cell.Foreground ?? CellForeground;
     }
 
     // ----- Rich document <-> CellRun conversion -----

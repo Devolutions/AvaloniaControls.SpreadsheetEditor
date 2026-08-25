@@ -171,7 +171,7 @@ public static class SpreadsheetPdfExporter
         }
 
         (Dictionary<(int, int), (int, int)> spills, HashSet<(int, int)> noLeft, HashSet<(int, int)> noRight) =
-            ComputeSpills(sheet, lastRow, lastColumn, covered);
+            ComputeSpills(sheet, lastRow, lastColumn, covered, anchors);
 
         return new PageLayout
         {
@@ -562,7 +562,7 @@ public static class SpreadsheetPdfExporter
     // are removed. NoRightBorder/NoLeftBorder mark the internal cell edges to drop so the spanned run
     // reads as continuous — an edge is only removed when BOTH neighbours agree it is internal.
     private static (Dictionary<(int, int), (int Left, int Right)> Spills, HashSet<(int, int)> NoLeft, HashSet<(int, int)> NoRight)
-        ComputeSpills(SpreadsheetViewModel sheet, int lastRow, int lastColumn, HashSet<(int, int)> covered)
+        ComputeSpills(SpreadsheetViewModel sheet, int lastRow, int lastColumn, HashSet<(int, int)> covered, Dictionary<(int Row, int Column), MergeRange> anchors)
     {
         Dictionary<(int, int), (int, int)> spills = new();
         HashSet<(int, int)> noLeft = new();
@@ -573,6 +573,15 @@ public static class SpreadsheetPdfExporter
             for (int c = 0; c <= lastColumn && c < row.Cells.Count; c++)
             {
                 if (covered.Contains((r, c)))
+                {
+                    continue;
+                }
+
+                // A merged block never spills: it already spans several columns, but ComputeSpill
+                // measures only the ANCHOR column, so the overflow is wildly overestimated. The
+                // resulting spill span then REPLACES the merged text rect with a narrower one, which
+                // clips a wide centred title down to its first column. The grid guards this the same way.
+                if (anchors.TryGetValue((r, c), out MergeRange merge) && merge.ColumnSpan > 1)
                 {
                     continue;
                 }

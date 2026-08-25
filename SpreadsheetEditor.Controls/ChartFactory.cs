@@ -30,6 +30,34 @@ public static class ChartFactory
 
     private static IBrush PaletteBrush(int index) => new SolidColorBrush(Palette[index % Palette.Length]);
 
+    // Charts live in the sheet panel, which stays light in both themes (Excel-style dark mode), and
+    // their card is always white — so their colors are pinned here rather than theme-resolved. Left to
+    // the theme, dark mode paints a dark plot area and near-white labels on top of that white card.
+    private static readonly IBrush ChartText = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
+
+    private static readonly IBrush ChartGridLine = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0));
+
+    private static readonly IBrush ChartAxisLine = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+
+    // Transparent so the white card shows through, with dark title/legend/label text.
+    private static void ApplyLightChrome(ChartBase chart)
+    {
+        chart.Background = Brushes.Transparent;
+        chart.Foreground = ChartText;
+        chart.LabelForeground = ChartText;
+    }
+
+    // Light gridlines/axis lines and dark labels for one axis.
+    private static void ApplyLightAxis(ChartAxis axis)
+    {
+        axis.LabelForeground = ChartText;
+        axis.TitleForeground = ChartText;
+        axis.GridLineBrush = ChartGridLine;
+        axis.MinorGridLineBrush = ChartGridLine;
+        axis.AxisLineStroke = ChartAxisLine;
+        axis.TickLineStroke = ChartAxisLine;
+    }
+
     // A bindable data point (public props so the chart's ValuePath/CategoryPath reflection works).
     public sealed class ChartPoint
     {
@@ -71,6 +99,8 @@ public static class ChartFactory
             };
             if (chart is ChartBase cb)
             {
+                ApplyLightChrome(cb); // the sheet panel stays light even in dark mode
+
                 if (!string.IsNullOrWhiteSpace(title))
                 {
                     cb.Title = title;
@@ -122,6 +152,16 @@ public static class ChartFactory
         bool labelsFit = showDataLabels && barSpacing >= 18;
         double labelFontSize = Math.Clamp(barSpacing * 0.3, 6, 12);
 
+        // Category labels on X (Income/Expenses, months…); value labels + gridlines on Y. Auto fit
+        // lets the chart angle the labels when they'd be too crowded to sit horizontally (Excel-style)
+        // instead of silently dropping some; short labels that fit stay horizontal.
+        CategoryAxis categoryAxis = new()
+        {
+            ShowLabels = true,
+            ShowGridLines = false,
+            LabelFitMode = LabelFitMode.Auto,
+        };
+
         CartesianChart chart = new()
         {
             Width = width,
@@ -130,17 +170,16 @@ public static class ChartFactory
             // Inset so top/edge value labels have room instead of being clipped at the plot boundary
             // (extra on the sides for the first/last bar's label, a little on top for tall bars).
             Padding = labelsFit ? new Thickness(14, 8, 14, 0) : new Thickness(2, 4, 2, 0),
-            // Category labels on X (Income/Expenses, months…); value labels + gridlines on Y. Auto fit
-            // lets the chart angle the labels when they'd be too crowded to sit horizontally (Excel-
-            // style) instead of silently dropping some; short labels that fit stay horizontal.
-            HorizontalAxis = new CategoryAxis
-            {
-                ShowLabels = true,
-                ShowGridLines = false,
-                LabelFitMode = LabelFitMode.Auto,
-            },
+            HorizontalAxis = categoryAxis,
             VerticalAxis = valueAxis,
+            // Keep the plot area transparent so the white card shows through — otherwise dark mode
+            // fills it with a dark grey panel behind the bars — with light gridlines/axis lines.
+            PlotAreaBackground = Brushes.Transparent,
+            AxisBrush = ChartAxisLine,
+            GridLineBrush = ChartGridLine,
         };
+        ApplyLightAxis(valueAxis);
+        ApplyLightAxis(categoryAxis);
         for (int i = 0; i < series.Count; i++)
         {
             CartesianSeries cs = MakeCartesianSeries(kind, PaletteBrush(i));
@@ -200,7 +239,14 @@ public static class ChartFactory
 
     private static Control BuildRadar(IReadOnlyList<string> categories, IReadOnlyList<ChartSeriesData> series, double width, double height, bool showLegend)
     {
-        RadarChart chart = new() { Width = width, Height = height, ShowLegend = showLegend };
+        RadarChart chart = new()
+        {
+            Width = width,
+            Height = height,
+            ShowLegend = showLegend,
+            AxisBrush = ChartAxisLine,
+            GridLineBrush = ChartGridLine,
+        };
         for (int i = 0; i < series.Count; i++)
         {
             IBrush brush = PaletteBrush(i);
