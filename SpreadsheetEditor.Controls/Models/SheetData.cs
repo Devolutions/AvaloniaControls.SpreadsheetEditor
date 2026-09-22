@@ -2,6 +2,8 @@ namespace SpreadsheetEditor.Controls.Models;
 
 using System.Collections.Generic;
 
+using Avalonia.Media;
+
 // A whole-sheet snapshot for loading: cell values+formatting, per-column pixel widths, and merged
 // regions. Lets a host serializer (e.g. XLSX) hand the control everything needed to render a sheet
 // the way the source app did.
@@ -26,4 +28,7 @@ public sealed class SheetData
 
     // Conditional-formatting data bars (proportional in-cell bars).
     public IReadOnlyList<SheetDataBar> DataBars { get; init; } = new List<SheetDataBar>();
+
+    // Optional worksheet tab color from the workbook theme/direct color.
+    public Color? TabColor { get; init; }
 }

@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Threading.Tasks;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -19,6 +20,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
@@ -294,7 +296,8 @@ public partial class SpreadsheetEditor : UserControl
     public void SaveXlsx(Stream stream) => XlsxFile.Write(
         stream, this.GetCellData(), this.vm.Names, this.vm.Merges, this.vm.Name, this.vm.DataBars,
         this.Grid.BuildChartWriteData(this.vm.Name),
-        this.vm.Columns.Select(static c => c.Width).ToList());
+        this.vm.Columns.Select(static c => c.Width).ToList(),
+        this.vm.TabColor);
 
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
     // widths, merges, images, charts, data bars, and names.
@@ -351,6 +354,7 @@ public partial class SpreadsheetEditor : UserControl
         vm.SetImages(sheet.Images);
         vm.SetDataBars(sheet.DataBars);
         vm.SetCharts(sheet.Charts);
+        vm.TabColor = sheet.TabColor;
     }
 
     // ----- Overflow menu: spreadsheet-specific actions + formulas section -----
@@ -1157,17 +1161,30 @@ public partial class SpreadsheetEditor : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             FontWeight = active ? FontWeight.SemiBold : FontWeight.Normal,
         };
-        // Active tab reads as the "front" sheet: an elevated surface (light or dark) with a blue top
-        // edge; its label uses the inherited theme foreground so it stays legible in both themes.
+        Color? tabColor = sheet.TabColor;
+        if (!active && tabColor is { } color)
+        {
+            // Excel fills inactive colored tabs and switches the label for sufficient contrast.
+            double luminance = 0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B;
+            text.Foreground = luminance < 145 ? Brushes.White : Brushes.Black;
+        }
+
+        // Active tab reads as the "front" sheet: an elevated surface with its imported tab color as
+        // the accent edge (or the editor's blue accent when the workbook has no tab color).
         IBrush activeBackground = dark ? new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C)) : Brushes.White;
+        IBrush accent = tabColor is { } tc
+            ? new SolidColorBrush(tc)
+            : new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
         Button tab = new()
         {
             Content = text,
             Focusable = false,
             Padding = new Thickness(10, 3),
-            Background = active ? activeBackground : Brushes.Transparent,
+            Background = active
+                ? activeBackground
+                : tabColor is { } inactiveColor ? new SolidColorBrush(inactiveColor) : Brushes.Transparent,
             BorderThickness = new Thickness(1, active ? 2 : 1, 1, 0),
-            BorderBrush = active ? new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8)) : Brushes.Transparent,
+            BorderBrush = active ? accent : Brushes.Transparent,
         };
         tab.Click += (_, _) => this.SwitchToSheet(sheet);
 

@@ -7,9 +7,12 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
+
 using Avalonia.Media;
+
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
@@ -54,16 +57,26 @@ public static class XlsxFile
     private static SheetData ReadSheet(XLWorkbook workbook, IXLWorksheet sheet, byte[] bytes, int sheetIndex)
     {
         List<List<CellData>> rows = new();
-        int lastRow = sheet?.LastRowUsed()?.RowNumber() ?? 0;
-        int lastColumn = sheet?.LastColumnUsed()?.ColumnNumber() ?? 0;
+        int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
+        int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
+
+        // Empty cells inside an Excel Table are still part of the visible formatted table. ClosedXML's
+        // LastRowUsed/LastColumnUsed only report cells with content, so include every table's declared
+        // range or blank banded rows disappear after import.
+        foreach (IXLTable table in sheet.Tables)
+        {
+            lastRow = Math.Max(lastRow, table.RangeAddress.LastAddress.RowNumber);
+            lastColumn = Math.Max(lastColumn, table.RangeAddress.LastAddress.ColumnNumber);
+        }
 
         // Excel Table definitions, so structured references (Income[[#This Row],[Jan]:[Dec]], etc.) in
         // formulas can be translated to plain A1 ranges the engine understands.
         List<StructuredReferences.TableInfo> tables = StructuredReferences.ReadTables(sheet);
 
-        // Excel Table banding (header / total / striped-row fills) comes from the table style, not from
-        // per-cell fills — resolve it so those highlighted rows show up.
-        Dictionary<(int Row, int Column), Color> tableFills = BuildTableFills(bytes, sheet, workbook);
+        // Excel Table formatting (header / total / striped rows) comes from the table style, not from
+        // per-cell styles. Resolve both custom styles embedded in styles.xml and Excel's built-in
+        // TableStyleLight/Medium/Dark families.
+        Dictionary<(int Row, int Column), TableCellStyle> tableStyles = BuildTableStyles(bytes, sheet, workbook);
 
         for (int r = 1; r <= lastRow; r++)
         {
@@ -73,7 +86,8 @@ public static class XlsxFile
                 IXLCell cell = sheet!.Cell(r, c);
                 IXLFontBase font = cell.Style.Font;
 
-                // Font color: resolve (incl. theme) but drop default black so plain cells stay unstyled.
+                // Font color: resolve (incl. theme) but drop default black so plain cells stay unstyled
+                // and a table style can supply its own foreground.
                 Color? foreground = ResolveColor(workbook, font.FontColor);
                 if (foreground is { } f && f.R == 0 && f.G == 0 && f.B == 0)
                 {
@@ -84,10 +98,13 @@ public static class XlsxFile
                     ? ResolveColor(workbook, cell.Style.Fill.BackgroundColor)
                     : null;
 
-                // Fall back to the table's banded/header/total fill when the cell has no explicit fill.
-                if (background is null && tableFills.TryGetValue((r, c), out Color banded))
+                bool bold = font.Bold;
+                if (tableStyles.TryGetValue((r, c), out TableCellStyle tableStyle))
                 {
-                    background = banded;
+                    // Direct cell formatting wins; table formatting supplies only missing values.
+                    background ??= tableStyle.Background;
+                    foreground ??= tableStyle.Foreground;
+                    bold |= tableStyle.Bold;
                 }
 
                 // Import the live formula, or a raw number, so the engine can compute/recompute; the
@@ -117,7 +134,7 @@ public static class XlsxFile
 
                 row.Add(new CellData(
                     text,
-                    font.Bold,
+                    bold,
                     font.Italic,
                     font.Underline != XLFontUnderlineValues.None,
                     foreground,
@@ -167,8 +184,16 @@ public static class XlsxFile
 
         return new SheetData
         {
-            Cells = rows, ColumnWidths = widths, Merges = merges,
-            Images = images, Charts = charts, Names = names, DataBars = dataBars,
+            Cells = rows,
+            ColumnWidths = widths,
+            Merges = merges,
+            Images = images,
+            Charts = charts,
+            Names = names,
+            DataBars = dataBars,
+            TabColor = sheet!.TabColor is { } tabColor && tabColor != XLColor.NoColor
+                ? ResolveColor(workbook, tabColor)
+                : null,
         };
     }
 
@@ -310,21 +335,21 @@ public static class XlsxFile
             switch (color.ColorType)
             {
                 case XLColorType.Color:
-                {
-                    System.Drawing.Color c = color.Color;
-                    return Color.FromArgb(c.A, c.R, c.G, c.B);
-                }
-                case XLColorType.Theme:
-                {
-                    XLColor? baseColor = ThemeBase(workbook, color.ThemeColor);
-                    if (baseColor is null)
                     {
-                        return null;
+                        System.Drawing.Color c = color.Color;
+                        return Color.FromArgb(c.A, c.R, c.G, c.B);
                     }
+                case XLColorType.Theme:
+                    {
+                        XLColor? baseColor = ThemeBase(workbook, color.ThemeColor);
+                        if (baseColor is null)
+                        {
+                            return null;
+                        }
 
-                    System.Drawing.Color c = baseColor.Color;
-                    return ApplyTint(Color.FromArgb(c.A, c.R, c.G, c.B), color.ThemeTint);
-                }
+                        System.Drawing.Color c = baseColor.Color;
+                        return ApplyTint(Color.FromArgb(c.A, c.R, c.G, c.B), color.ThemeTint);
+                    }
                 default:
                     return null;
             }
@@ -350,7 +375,8 @@ public static class XlsxFile
         _ => null,
     };
 
-    // Applies an Excel tint (-1..1) to a color: negative darkens, positive lightens.
+    // Applies an Excel tint (-1..1) in the HLS color space Excel uses. A per-channel linear blend
+    // shifts saturated theme colors and produces noticeably wrong table stripes.
     private static Color ApplyTint(Color c, double tint)
     {
         if (tint == 0)
@@ -358,46 +384,129 @@ public static class XlsxFile
             return c;
         }
 
-        if (tint < 0)
+        const int hlsMax = 240;
+        const int rgbMax = 255;
+
+        int red = c.R;
+        int green = c.G;
+        int blue = c.B;
+        int maximum = Math.Max(red, Math.Max(green, blue));
+        int minimum = Math.Min(red, Math.Min(green, blue));
+        int sum = maximum + minimum;
+        int delta = maximum - minimum;
+        int luminance = (sum * hlsMax + rgbMax) / (2 * rgbMax);
+        int hue;
+        int saturation;
+
+        if (delta == 0)
         {
-            double f = 1.0 + tint;
-            return Color.FromArgb(c.A, (byte)(c.R * f), (byte)(c.G * f), (byte)(c.B * f));
+            hue = hlsMax * 2 / 3;
+            saturation = 0;
+        }
+        else
+        {
+            saturation = luminance <= hlsMax / 2
+                ? (delta * hlsMax + sum / 2) / sum
+                : (delta * hlsMax + (2 * rgbMax - sum) / 2) / (2 * rgbMax - sum);
+
+            int redDelta = ((maximum - red) * (hlsMax / 6) + delta / 2) / delta;
+            int greenDelta = ((maximum - green) * (hlsMax / 6) + delta / 2) / delta;
+            int blueDelta = ((maximum - blue) * (hlsMax / 6) + delta / 2) / delta;
+            hue = maximum == red
+                ? blueDelta - greenDelta
+                : maximum == green
+                    ? hlsMax / 3 + redDelta - blueDelta
+                    : 2 * hlsMax / 3 + greenDelta - redDelta;
+            if (hue < 0)
+            {
+                hue += hlsMax;
+            }
+            else if (hue > hlsMax)
+            {
+                hue -= hlsMax;
+            }
         }
 
-        return Color.FromArgb(c.A,
-            (byte)(c.R + (255 - c.R) * tint),
-            (byte)(c.G + (255 - c.G) * tint),
-            (byte)(c.B + (255 - c.B) * tint));
+        luminance = (int)Math.Round(
+            tint < 0 ? luminance * (1.0 + tint) : luminance * (1.0 - tint) + hlsMax * tint,
+            MidpointRounding.AwayFromZero);
+        luminance = Math.Clamp(luminance, 0, hlsMax);
+
+        if (saturation == 0)
+        {
+            byte gray = (byte)((luminance * rgbMax + hlsMax / 2) / hlsMax);
+            return Color.FromArgb(c.A, gray, gray, gray);
+        }
+
+        int magic2 = luminance <= hlsMax / 2
+            ? (luminance * (hlsMax + saturation) + hlsMax / 2) / hlsMax
+            : luminance + saturation - (luminance * saturation + hlsMax / 2) / hlsMax;
+        int magic1 = 2 * luminance - magic2;
+
+        byte ToRgb(int hueValue)
+        {
+            if (hueValue < 0)
+            {
+                hueValue += hlsMax;
+            }
+            else if (hueValue > hlsMax)
+            {
+                hueValue -= hlsMax;
+            }
+
+            int value;
+            if (hueValue < hlsMax / 6)
+            {
+                value = magic1 + ((magic2 - magic1) * hueValue + hlsMax / 12) / (hlsMax / 6);
+            }
+            else if (hueValue < hlsMax / 2)
+            {
+                value = magic2;
+            }
+            else if (hueValue < 2 * hlsMax / 3)
+            {
+                value = magic1 + ((magic2 - magic1) * (2 * hlsMax / 3 - hueValue) + hlsMax / 12) / (hlsMax / 6);
+            }
+            else
+            {
+                value = magic1;
+            }
+
+            return (byte)Math.Clamp((value * rgbMax + hlsMax / 2) / hlsMax, 0, rgbMax);
+        }
+
+        return Color.FromArgb(c.A, ToRgb(hue + hlsMax / 3), ToRgb(hue), ToRgb(hue - hlsMax / 3));
     }
 
-    // ----- Excel Table banding (header / total / striped-row fills from the table style) -----
+    // ----- Excel Table formatting (header / total / striped rows from the table style) -----
 
     private static readonly XNamespace Ssml = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
-    // Builds a per-cell fill map for the sheet's tables from their table styles (which color the header,
-    // totals, and alternating "striped" rows — Excel doesn't store these as per-cell fills).
-    private static Dictionary<(int Row, int Column), Color> BuildTableFills(byte[] bytes, IXLWorksheet? sheet, XLWorkbook workbook)
+    // Builds a per-cell style map for the sheet's tables. Excel stores custom table styles in
+    // styles.xml, but its built-in styles are referenced only by name and must be resolved from the
+    // workbook theme.
+    private static Dictionary<(int Row, int Column), TableCellStyle> BuildTableStyles(byte[] bytes, IXLWorksheet? sheet, XLWorkbook workbook)
     {
-        Dictionary<(int, int), Color> fills = new();
+        Dictionary<(int, int), TableCellStyle> cells = new();
         if (sheet is null || !sheet.Tables.Any())
         {
-            return fills;
+            return cells;
         }
 
         try
         {
-            // Resolve the workbook's table-style definitions (style name → its element dxf colors).
+            // Resolve the workbook's custom table-style definitions (style name → element DXFs).
             using ZipArchive archive = new(new MemoryStream(bytes), ZipArchiveMode.Read);
             ZipArchiveEntry? stylesEntry = archive.GetEntry("xl/styles.xml");
             if (stylesEntry is null)
             {
-                return fills;
+                return cells;
             }
 
             XDocument styles = XDocument.Load(stylesEntry.Open());
             List<XElement> dxfs = styles.Descendants(Ssml + "dxfs").Elements(Ssml + "dxf").ToList();
 
-            Dictionary<string, TableStyle> tableStyles = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ResolvedTableStyle> tableStyles = new(StringComparer.OrdinalIgnoreCase);
             foreach (XElement ts in styles.Descendants(Ssml + "tableStyle"))
             {
                 string? name = ts.Attribute("name")?.Value;
@@ -406,13 +515,13 @@ public static class XlsxFile
                     continue;
                 }
 
-                Color? Element(string type, out int size)
+                TableCellStyle Element(string type, out int size)
                 {
                     size = 1;
                     XElement? el = ts.Elements(Ssml + "tableStyleElement").FirstOrDefault(e => e.Attribute("type")?.Value == type);
                     if (el is null || !int.TryParse(el.Attribute("dxfId")?.Value, out int id) || id < 0 || id >= dxfs.Count)
                     {
-                        return null;
+                        return default;
                     }
 
                     if (int.TryParse(el.Attribute("size")?.Value, out int s) && s > 0)
@@ -420,20 +529,23 @@ public static class XlsxFile
                         size = s;
                     }
 
-                    return DxfFill(dxfs[id], workbook);
+                    return DxfStyle(dxfs[id], workbook);
                 }
 
-                Color? header = Element("headerRow", out _);
-                Color? total = Element("totalRow", out _);
-                Color? stripe1 = Element("firstRowStripe", out int size1);
-                Color? stripe2 = Element("secondRowStripe", out int size2);
-                tableStyles[name] = new TableStyle(header, total, stripe1, stripe2, size1, size2);
+                TableCellStyle whole = Element("wholeTable", out _);
+                TableCellStyle header = Element("headerRow", out _);
+                TableCellStyle total = Element("totalRow", out _);
+                TableCellStyle stripe1 = Element("firstRowStripe", out int size1);
+                TableCellStyle stripe2 = Element("secondRowStripe", out int size2);
+                tableStyles[name] = new ResolvedTableStyle(whole, header, total, stripe1, stripe2, size1, size2);
             }
 
             foreach (IXLTable table in sheet.Tables)
             {
                 string? styleName = table.Theme?.Name;
-                if (styleName is null || !tableStyles.TryGetValue(styleName, out TableStyle style))
+                if (styleName is null ||
+                    (!tableStyles.TryGetValue(styleName, out ResolvedTableStyle style) &&
+                     !TryBuiltInTableStyle(workbook, styleName, out style)))
                 {
                     continue;
                 }
@@ -446,17 +558,27 @@ public static class XlsxFile
                 int firstData = table.DataRange?.FirstRow().RowNumber() ?? range.FirstAddress.RowNumber;
                 int lastData = table.DataRange?.LastRow().RowNumber() ?? range.LastAddress.RowNumber;
 
-                void Paint(int row, Color? color)
+                void Paint(int row, TableCellStyle cellStyle)
                 {
-                    if (color is not { } c)
+                    if (row < 1 || cellStyle == default)
                     {
                         return;
                     }
 
                     for (int col = firstColumn; col <= lastColumn; col++)
                     {
-                        fills[(row, col)] = c;
+                        (int Row, int Column) key = (row, col);
+                        cells.TryGetValue(key, out TableCellStyle current);
+                        cells[key] = new TableCellStyle(
+                            cellStyle.Background ?? current.Background,
+                            cellStyle.Foreground ?? current.Foreground,
+                            current.Bold || cellStyle.Bold);
                     }
+                }
+
+                for (int row = range.FirstAddress.RowNumber; row <= range.LastAddress.RowNumber; row++)
+                {
+                    Paint(row, style.Whole);
                 }
 
                 Paint(headerRow, style.Header);
@@ -475,24 +597,222 @@ public static class XlsxFile
         }
         catch
         {
-            // Banding is cosmetic — never let it break opening the file.
+            // Table formatting is cosmetic — never let it break opening the file.
         }
 
-        return fills;
+        return cells;
     }
 
-    private readonly record struct TableStyle(Color? Header, Color? Total, Color? Stripe1, Color? Stripe2, int Stripe1Size, int Stripe2Size);
+    private readonly record struct TableCellStyle(Color? Background, Color? Foreground, bool Bold);
 
-    // Resolves a dxf's background fill color (rgb, or theme + tint) to an Avalonia color.
+    private readonly record struct ResolvedTableStyle(
+        TableCellStyle Whole,
+        TableCellStyle Header,
+        TableCellStyle Total,
+        TableCellStyle Stripe1,
+        TableCellStyle Stripe2,
+        int Stripe1Size,
+        int Stripe2Size);
+
+    // Excel's 60 built-in table styles are not serialized as DXFs. Their colors follow the workbook
+    // theme in groups of seven (Text1, Accent1..Accent6), with four medium and three light variants.
+    private static bool TryBuiltInTableStyle(XLWorkbook workbook, string name, out ResolvedTableStyle style)
+    {
+        style = default;
+        string family;
+        int maximum;
+        if (name.StartsWith("TableStyleLight", StringComparison.OrdinalIgnoreCase))
+        {
+            family = "Light";
+            maximum = 21;
+        }
+        else if (name.StartsWith("TableStyleMedium", StringComparison.OrdinalIgnoreCase))
+        {
+            family = "Medium";
+            maximum = 28;
+        }
+        else if (name.StartsWith("TableStyleDark", StringComparison.OrdinalIgnoreCase))
+        {
+            family = "Dark";
+            maximum = 11;
+        }
+        else
+        {
+            return false;
+        }
+
+        string numberText = name[("TableStyle".Length + family.Length)..];
+        if (!int.TryParse(numberText, NumberStyles.None, CultureInfo.InvariantCulture, out int number) ||
+            number < 1 || number > maximum)
+        {
+            return false;
+        }
+
+        Color black = ThemeTableColor(workbook, 0);
+        Color white = Color.FromRgb(0xFF, 0xFF, 0xFF);
+        int slot = (number - 1) % 7;
+        Color baseColor = ThemeTableColor(workbook, slot);
+        Color light = TableTint(baseColor, slot, slot == 0 ? 0.85 : 0.80);
+        Color mediumLight = TableTint(baseColor, slot, slot == 0 ? 0.65 : 0.60);
+        Color dark = slot == 0 ? black : TableTint(baseColor, slot, -0.25);
+
+        TableCellStyle None(Color? foreground = null, bool bold = false) => new(null, foreground, bold);
+        TableCellStyle Fill(Color background, Color? foreground = null, bool bold = false) => new(background, foreground, bold);
+
+        int group = (number - 1) / 7;
+        switch (family)
+        {
+            case "Light" when group == 0:
+                style = new ResolvedTableStyle(None(dark), None(dark, true), None(dark, true), Fill(light, dark), None(dark), 1, 1);
+                return true;
+            case "Light" when group == 1:
+                style = new ResolvedTableStyle(default, Fill(baseColor, white, true), None(black, true), default, default, 1, 1);
+                return true;
+            case "Light":
+                style = new ResolvedTableStyle(default, None(black, true), None(black, true), Fill(light, black), default, 1, 1);
+                return true;
+            case "Medium" when group == 0:
+                style = new ResolvedTableStyle(default, Fill(baseColor, white, true), None(black, true), Fill(light, black), default, 1, 1);
+                return true;
+            case "Medium" when group == 1:
+                style = new ResolvedTableStyle(default, Fill(baseColor, white, true), Fill(baseColor, white, true), Fill(mediumLight, black), Fill(light, black), 1, 1);
+                return true;
+            case "Medium" when group == 2:
+                style = new ResolvedTableStyle(default, Fill(baseColor, white, true), None(black), Fill(TableTint(black, 0, 0.85), black), default, 1, 1);
+                return true;
+            case "Medium":
+                style = new ResolvedTableStyle(default, Fill(light, black, true), Fill(light, black, true), Fill(mediumLight, black), Fill(light, black), 1, 1);
+                return true;
+            case "Dark" when number <= 7:
+                {
+                    Color stripe1 = TableTint(baseColor, slot, slot == 0 ? 0.25 : -0.25);
+                    Color stripe2 = slot == 0 ? TableTint(baseColor, slot, 0.45) : baseColor;
+                    Color total = TableTint(baseColor, slot, slot == 0 ? 0.15 : -0.50);
+                    style = new ResolvedTableStyle(None(white), Fill(black, white, true), Fill(total, white, true), Fill(stripe1, white), Fill(stripe2, white), 1, 1);
+                    return true;
+                }
+            case "Dark" when number == 8:
+                style = new ResolvedTableStyle(default, Fill(black, white), Fill(TableTint(black, 0, 0.85), black, true), Fill(TableTint(black, 0, 0.65), black), Fill(TableTint(black, 0, 0.85), black), 1, 1);
+                return true;
+            case "Dark":
+                {
+                    int accentPair = (number - 9) * 2 + 1;
+                    Color stripeBase = ThemeTableColor(workbook, accentPair);
+                    Color header = ThemeTableColor(workbook, accentPair + 1);
+                    Color stripeLight = TableTint(stripeBase, accentPair, 0.80);
+                    style = new ResolvedTableStyle(default, Fill(header, white), Fill(stripeLight, black, true), Fill(TableTint(stripeBase, accentPair, 0.60), black), Fill(stripeLight, black), 1, 1);
+                    return true;
+                }
+        }
+
+        return false;
+    }
+
+    private static Color ThemeTableColor(XLWorkbook workbook, int slot)
+    {
+        XLThemeColor theme = slot switch
+        {
+            1 => XLThemeColor.Accent1,
+            2 => XLThemeColor.Accent2,
+            3 => XLThemeColor.Accent3,
+            4 => XLThemeColor.Accent4,
+            5 => XLThemeColor.Accent5,
+            6 => XLThemeColor.Accent6,
+            _ => XLThemeColor.Text1,
+        };
+        Color fallback = DefaultTableColor(slot);
+        XLColor? themeColor = ThemeBase(workbook, theme);
+        return themeColor is null ? fallback : ResolveColor(workbook, themeColor) ?? fallback;
+    }
+
+    private static Color DefaultTableColor(int slot) => slot switch
+    {
+        1 => Color.FromRgb(0x44, 0x72, 0xC4),
+        2 => Color.FromRgb(0xED, 0x7D, 0x31),
+        3 => Color.FromRgb(0xA5, 0xA5, 0xA5),
+        4 => Color.FromRgb(0xFF, 0xC0, 0x00),
+        5 => Color.FromRgb(0x5B, 0x9B, 0xD5),
+        6 => Color.FromRgb(0x70, 0xAD, 0x47),
+        _ => Color.FromRgb(0x00, 0x00, 0x00),
+    };
+
+    // Excel's standard Office theme uses a fixed, well-known table-style palette. Preserve those
+    // exact RGB values; for a custom workbook theme, calculate the same relative tint instead.
+    private static Color TableTint(Color color, int slot, double tint)
+    {
+        if (color == DefaultTableColor(slot))
+        {
+            string? hex = (slot, tint) switch
+            {
+                (0, 0.85) => "D9D9D9",
+                (0, 0.65) => "A6A6A6",
+                (0, 0.25) => "404040",
+                (0, 0.45) => "737373",
+                (0, 0.15) => "262626",
+                (1, 0.80) => "D9E1F2",
+                (1, 0.60) => "B4C6E7",
+                (1, -0.25) => "305496",
+                (1, -0.50) => "203764",
+                (2, 0.80) => "FCE4D6",
+                (2, 0.60) => "F8CBAD",
+                (2, -0.25) => "C65911",
+                (2, -0.50) => "833C0C",
+                (3, 0.80) => "EDEDED",
+                (3, 0.60) => "DBDBDB",
+                (3, -0.25) => "7B7B7B",
+                (3, -0.50) => "525252",
+                (4, 0.80) => "FFF2CC",
+                (4, 0.60) => "FFE699",
+                (4, -0.25) => "BF8F00",
+                (4, -0.50) => "806000",
+                (5, 0.80) => "DDEBF7",
+                (5, 0.60) => "BDD7EE",
+                (5, -0.25) => "2F75B5",
+                (5, -0.50) => "1F4E78",
+                (6, 0.80) => "E2EFDA",
+                (6, 0.60) => "C6E0B4",
+                (6, -0.25) => "548235",
+                (6, -0.50) => "375623",
+                _ => null,
+            };
+            if (hex is not null)
+            {
+                return Color.FromRgb(
+                    Convert.ToByte(hex[..2], 16),
+                    Convert.ToByte(hex.Substring(2, 2), 16),
+                    Convert.ToByte(hex.Substring(4, 2), 16));
+            }
+        }
+
+        return ApplyTint(color, tint);
+    }
+
+    private static TableCellStyle DxfStyle(XElement dxf, XLWorkbook workbook)
+    {
+        XElement? font = dxf.Element(Ssml + "font");
+        return new TableCellStyle(
+            DxfFill(dxf, workbook),
+            DxfColor(font?.Element(Ssml + "color"), workbook),
+            font?.Element(Ssml + "b") is not null);
+    }
+
+    // Resolves a dxf fill. Solid SpreadsheetML fills use fgColor; bgColor is for the secondary
+    // color of patterned fills, so it is only a fallback here.
     private static Color? DxfFill(XElement dxf, XLWorkbook workbook)
     {
-        XElement? bg = dxf.Element(Ssml + "fill")?.Element(Ssml + "patternFill")?.Element(Ssml + "bgColor");
-        if (bg is null)
+        XElement? pattern = dxf.Element(Ssml + "fill")?.Element(Ssml + "patternFill");
+        XElement? color = pattern?.Element(Ssml + "fgColor") ?? pattern?.Element(Ssml + "bgColor");
+        return DxfColor(color, workbook);
+    }
+
+    private static Color? DxfColor(XElement? element, XLWorkbook workbook)
+    {
+        if (element is null)
         {
             return null;
         }
 
-        string? rgb = bg.Attribute("rgb")?.Value;
+        string? rgb = element.Attribute("rgb")?.Value;
         if (!string.IsNullOrEmpty(rgb) && rgb.Length >= 6)
         {
             string hex = rgb.Length == 8 ? rgb : "FF" + rgb;
@@ -501,9 +821,9 @@ public static class XlsxFile
                 Convert.ToByte(hex.Substring(4, 2), 16), Convert.ToByte(hex.Substring(6, 2), 16));
         }
 
-        if (int.TryParse(bg.Attribute("theme")?.Value, out int themeIndex))
+        if (int.TryParse(element.Attribute("theme")?.Value, out int themeIndex))
         {
-            double tint = double.TryParse(bg.Attribute("tint")?.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double t) ? t : 0;
+            double tint = double.TryParse(element.Attribute("tint")?.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double t) ? t : 0;
             XLColor? baseColor = ThemeBase(workbook, DxfThemeColor(themeIndex));
             if (baseColor is null)
             {
@@ -541,12 +861,17 @@ public static class XlsxFile
         string? sheetName = null,
         IReadOnlyList<SheetDataBar>? dataBars = null,
         IReadOnlyList<ChartWriteData>? charts = null,
-        IReadOnlyList<double>? columnWidths = null)
+        IReadOnlyList<double>? columnWidths = null,
+        Color? tabColor = null)
     {
         using XLWorkbook workbook = new();
         // Name the worksheet after the sheet so defined names qualified with that sheet (and the
         // engine's single-sheet resolution) still line up on the next open.
         IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(sheetName));
+        if (tabColor is { } tc)
+        {
+            sheet.TabColor = ToXl(tc);
+        }
 
         for (int r = 0; r < rows.Count; r++)
         {

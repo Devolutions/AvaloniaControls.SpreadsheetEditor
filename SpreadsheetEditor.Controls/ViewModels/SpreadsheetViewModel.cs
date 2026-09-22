@@ -4,8 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+
 using Avalonia.Collections;
+using Avalonia.Media;
+
 using CommunityToolkit.Mvvm.ComponentModel;
+
 using global::SpreadsheetEditor.Controls.Formulas;
 using global::SpreadsheetEditor.Controls.Models;
 
@@ -20,6 +24,10 @@ public partial class SpreadsheetViewModel : ObservableObject
     // The sheet's tab name (shown in the bottom tab strip).
     [ObservableProperty]
     private string name = "Sheet1";
+
+    // Optional color shown on the worksheet tab (imported from Excel and preserved on save).
+    [ObservableProperty]
+    private Color? tabColor;
 
     [ObservableProperty]
     private CellAddress activeCell;
