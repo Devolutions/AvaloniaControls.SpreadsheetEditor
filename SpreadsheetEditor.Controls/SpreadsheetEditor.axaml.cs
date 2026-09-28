@@ -11,16 +11,20 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
+using global::SpreadsheetEditor.Controls.Formulas;
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
@@ -93,12 +97,30 @@ public partial class SpreadsheetEditor : UserControl
 
     // The workbook: an ordered list of sheets, each its own view model; vm points at the active one.
     private readonly List<SpreadsheetViewModel> sheets = new();
+    private readonly HashSet<SpreadsheetViewModel> loadingSheets = new();
+    private readonly Dictionary<SpreadsheetViewModel, int> stagedSheetIndexes = new();
+    private readonly HashSet<int> previewedSheetIndexes = new();
+    private readonly HashSet<int> activeSheetLoadIndexes = new();
+    private readonly HashSet<int> failedSheetLoadIndexes = new();
+    private readonly Dictionary<SpreadsheetViewModel, HashSet<string>> sheetDependencies = new();
+    private readonly HashSet<SpreadsheetViewModel> pendingUserRecalculations = new();
+    private readonly HashSet<SpreadsheetViewModel> deferredEditRecalculations = new();
+    private readonly Dictionary<SpreadsheetViewModel, CancellationTokenSource> editRecalculationDelays = new();
+
+    private CancellationTokenSource? workbookLoadCancellation;
+    private byte[]? stagedWorkbookBytes;
+    private IReadOnlyList<XlsxSheetPreview>? stagedSheetMetadata;
+    private XlsxWorkbookReader? stagedWorkbookReader;
+    private int? pendingSheetActivationIndex;
+    private int workbookLoadGeneration;
+    private bool recalculatingWorkbookDependencies;
 
     private SpreadsheetViewModel vm = new();
 
     private CellViewModel? activeCell;
 
     private TextBox? formulaBar;
+    private SpreadsheetViewModel? formulaBarEditSheet;
 
     private bool suppressToolbar;
 
@@ -114,10 +136,24 @@ public partial class SpreadsheetEditor : UserControl
         this.vm.Initialize(this.InitialRowCount, this.InitialColumnCount);
         this.vm.Name = "Sheet1";
         this.sheets.Add(this.vm);
+        this.ConfigureWorkbookFormulaResolution(this.vm);
         this.DataContext = this.vm;
 
         this.Grid.Sheet = this.vm;
         this.Grid.CellActivated += address => this.SetActiveCell(address);
+        this.Grid.EditCompleted += this.CompleteDeferredEditRecalculation;
+
+        // Keep spreadsheet shortcuts inside the editor. In particular, Ctrl+F must not bubble to a
+        // host application's global search box.
+        this.AddHandler(KeyDownEvent, this.OnEditorKeyDown, RoutingStrategies.Tunnel);
+        this.FindNextButton.Click += (_, _) => this.FindMatch(backwards: false);
+        this.FindPreviousButton.Click += (_, _) => this.FindMatch(backwards: true);
+        this.ReplaceButton.Click += (_, _) => this.ReplaceCurrentMatch();
+        this.ReplaceAllButton.Click += (_, _) => this.ReplaceAllMatches();
+        this.CloseFindButton.Click += (_, _) => this.CloseFindReplace();
+        this.FindTextBox.TextChanged += (_, _) => this.FindStatusText.Text = string.Empty;
+        this.FindTextBox.KeyDown += (_, e) => this.OnFindBoxKeyDown(e);
+        this.ReplaceTextBox.KeyDown += (_, e) => this.OnFindBoxKeyDown(e);
 
         this.AddSheetButton.Click += (_, _) => this.AddSheet();
 
@@ -143,9 +179,27 @@ public partial class SpreadsheetEditor : UserControl
         this.Grid.SelectionFormatChanged += (_, _) => this.SyncFormatButtons();
 
         this.SetupFontControls();
-        this.AlignLeftButton.IsCheckedChanged += (_, _) => { if (!this.suppressToolbar && this.AlignLeftButton.IsChecked == true) this.SetAlignment(TextAlignment.Left); };
-        this.AlignCenterButton.IsCheckedChanged += (_, _) => { if (!this.suppressToolbar && this.AlignCenterButton.IsChecked == true) this.SetAlignment(TextAlignment.Center); };
-        this.AlignRightButton.IsCheckedChanged += (_, _) => { if (!this.suppressToolbar && this.AlignRightButton.IsChecked == true) this.SetAlignment(TextAlignment.Right); };
+        this.AlignLeftButton.IsCheckedChanged += (_, _) =>
+        {
+            if (!this.suppressToolbar && this.AlignLeftButton.IsChecked == true)
+            {
+                this.SetAlignment(TextAlignment.Left);
+            }
+        };
+        this.AlignCenterButton.IsCheckedChanged += (_, _) =>
+        {
+            if (!this.suppressToolbar && this.AlignCenterButton.IsChecked == true)
+            {
+                this.SetAlignment(TextAlignment.Center);
+            }
+        };
+        this.AlignRightButton.IsCheckedChanged += (_, _) =>
+        {
+            if (!this.suppressToolbar && this.AlignRightButton.IsChecked == true)
+            {
+                this.SetAlignment(TextAlignment.Right);
+            }
+        };
         this.Grid.ChartEditRequested += async chart => await this.EditChartAsync(chart);
 
         // History + clipboard buttons.
@@ -235,15 +289,21 @@ public partial class SpreadsheetEditor : UserControl
         }
     }
 
-    private void ApplyReadOnly()
+    private void ApplyReadOnly(bool raiseEvent = true)
     {
-        this.Grid.ReadOnly = this.IsReadOnly;
+        bool readOnly = this.IsReadOnly || this.loadingSheets.Contains(this.vm);
+        this.Grid.ReadOnly = readOnly;
+        this.ReplaceButton.IsEnabled = !readOnly;
+        this.ReplaceAllButton.IsEnabled = !readOnly;
         if (this.formulaBar is not null)
         {
-            this.formulaBar.IsReadOnly = this.IsReadOnly;
+            this.formulaBar.IsReadOnly = readOnly;
         }
 
-        this.IsReadOnlyChanged?.Invoke(this, EventArgs.Empty);
+        if (raiseEvent)
+        {
+            this.IsReadOnlyChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     // Index of the active sheet in sheets.
@@ -253,16 +313,21 @@ public partial class SpreadsheetEditor : UserControl
 
     public void NewSheet(int rows, int columns)
     {
+        this.CancelWorkbookLoad();
         this.DetachActiveCell();
         this.vm = new SpreadsheetViewModel { Name = "Sheet1" };
         this.vm.Initialize(rows, columns);
         this.sheets.Clear();
         this.sheets.Add(this.vm);
+        this.sheetDependencies.Clear();
+        this.pendingUserRecalculations.Clear();
+        this.ConfigureWorkbookFormulaResolution(this.vm);
         this.DataContext = this.vm;
         this.Grid.Sheet = this.vm;
         this.SetActiveCell(new CellAddress(0, 0));
         this.RebuildTabs();
         this.HookSheet();
+        this.ApplyReadOnly(raiseEvent: false);
     }
 
     public void LoadRows(IReadOnlyList<IReadOnlyList<string>> data)
@@ -291,6 +356,89 @@ public partial class SpreadsheetEditor : UserControl
     // bars, and named ranges — into the editor (one tab per worksheet).
     public void OpenXlsx(Stream stream) => this.LoadWorkbook(XlsxFile.ReadWorkbook(stream));
 
+    // Publishes all tab names/colors plus a screen-sized first-sheet preview. Other worksheets remain
+    // lightweight placeholders until selected; selection publishes the same fast preview before its
+    // full-fidelity worksheet is prepared away from the UI thread.
+    public async Task OpenXlsxAsync(Stream stream, CancellationToken cancellationToken = default)
+    {
+        this.CancelWorkbookLoad();
+        CancellationTokenSource loadCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CancellationToken loadToken = loadCancellation.Token;
+        this.workbookLoadCancellation = loadCancellation;
+        int generation = this.workbookLoadGeneration;
+        bool keepLoadLifetime = false;
+        this.LoadingOverlay.IsVisible = true;
+        try
+        {
+            // Copy first so the caller can dispose its stream while parsing continues and so even a
+            // non-seekable storage-provider stream can be read by ClosedXML on a worker thread.
+            using MemoryStream buffer = new();
+            await stream.CopyToAsync(buffer, loadToken);
+            byte[] bytes = buffer.ToArray();
+
+            // The lightweight preview reads workbook metadata, every tab color, first-sheet cells,
+            // and basic styles directly from OOXML. It avoids ClosedXML's eager whole-workbook
+            // construction and sizes the preview to roughly one visible viewport.
+            await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Render);
+            (int previewRows, int previewColumns) = this.Grid.SuggestedPreviewSize();
+            (XlsxWorkbookPreview Preview, List<SpreadsheetViewModel> Staged) prepared = await Task.Run(
+                () =>
+                {
+                    loadToken.ThrowIfCancellationRequested();
+                    XlsxWorkbookPreview preview = XlsxFile.ReadPreview(
+                        bytes,
+                        loadToken,
+                        previewRows,
+                        previewColumns);
+                    return (preview, PreparePreviewWorkbook(preview));
+                },
+                loadToken);
+            loadToken.ThrowIfCancellationRequested();
+            if (generation != this.workbookLoadGeneration)
+            {
+                return;
+            }
+
+            this.stagedWorkbookBytes = bytes;
+            this.stagedSheetMetadata = prepared.Preview.Sheets;
+            this.stagedWorkbookReader = new XlsxWorkbookReader(bytes);
+            this.LoadStagedWorkbook(prepared.Staged);
+            this.LoadingOverlay.IsVisible = false;
+            keepLoadLifetime = true;
+
+            // The first worksheet is selected as part of opening the workbook. Its preview is already
+            // visible, so begin only that worksheet's full import. Every other worksheet waits for a
+            // tab click before doing any cell work.
+            this.StartStagedSheetLoad(prepared.Staged[0], generation, loadToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A newer workbook/load operation superseded this one.
+        }
+        catch (OperationCanceledException)
+        {
+            this.StopStagedLoading(generation, "Worksheet loading canceled");
+            throw;
+        }
+        catch
+        {
+            this.StopStagedLoading(generation, "Worksheet could not be loaded");
+            throw;
+        }
+        finally
+        {
+            if (generation == this.workbookLoadGeneration)
+            {
+                this.LoadingOverlay.IsVisible = false;
+            }
+            if (!keepLoadLifetime && ReferenceEquals(this.workbookLoadCancellation, loadCancellation))
+            {
+                this.workbookLoadCancellation = null;
+                loadCancellation.Dispose();
+            }
+        }
+    }
+
     // Writes the ACTIVE sheet to an .xlsx stream (values/formulas + whole-cell formatting). Multi-sheet
     // export is not yet supported by the writer.
     public void SaveXlsx(Stream stream) => XlsxFile.Write(
@@ -308,23 +456,839 @@ public partial class SpreadsheetEditor : UserControl
     // opened .xlsx) and opens the first one.
     public void LoadWorkbook(IReadOnlyList<(string Name, SheetData Data)> sheets)
     {
+        this.CancelWorkbookLoad();
         if (sheets.Count == 0)
         {
             this.NewSheet(this.InitialRowCount, this.InitialColumnCount);
             return;
         }
 
-        this.DetachActiveCell();
-        this.sheets.Clear();
+        this.LoadPreparedWorkbook(PrepareWorkbook(sheets));
+    }
+
+    private static List<SpreadsheetViewModel> PrepareWorkbook(IReadOnlyList<(string Name, SheetData Data)> sheets)
+    {
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        List<SpreadsheetViewModel> prepared = new(sheets.Count);
         foreach ((string name, SheetData data) in sheets)
         {
-            SpreadsheetViewModel sheetVm = new() { Name = this.UniqueName(name) };
-            ApplySheetData(sheetVm, data);
-            this.sheets.Add(sheetVm);
+            string desired = string.IsNullOrWhiteSpace(name) ? "Sheet" : name.Trim();
+            string unique = desired;
+            for (int suffix = 2; !names.Add(unique); suffix++)
+            {
+                unique = $"{desired}{suffix}";
+            }
+
+            prepared.Add(PrepareSheet(unique, data));
+        }
+
+        return prepared;
+    }
+
+    private void LoadPreparedWorkbook(IReadOnlyList<SpreadsheetViewModel> prepared)
+    {
+        this.DetachActiveCell();
+        this.loadingSheets.Clear();
+        this.sheetDependencies.Clear();
+        this.pendingUserRecalculations.Clear();
+        this.sheets.Clear();
+        foreach (SpreadsheetViewModel sheet in prepared)
+        {
+            this.sheets.Add(sheet);
+            this.ConfigureWorkbookFormulaResolution(sheet);
+            this.sheetDependencies[sheet] = new HashSet<string>(sheet.ReferencedSheetNames(), StringComparer.OrdinalIgnoreCase);
         }
 
         this.ActivateSheet(0);
         this.RebuildTabs();
+    }
+
+    private static SpreadsheetViewModel PrepareSheet(string name, SheetData data)
+    {
+        SpreadsheetViewModel sheet = new() { Name = name };
+        ApplySheetData(sheet, data);
+        return sheet;
+    }
+
+    private static List<SpreadsheetViewModel> PreparePreviewWorkbook(XlsxWorkbookPreview preview)
+    {
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        List<SpreadsheetViewModel> staged = new(preview.Sheets.Count);
+        for (int index = 0; index < preview.Sheets.Count; index++)
+        {
+            XlsxSheetPreview metadata = preview.Sheets[index];
+            string desired = string.IsNullOrWhiteSpace(metadata.Name) ? "Sheet" : metadata.Name.Trim();
+            string unique = desired;
+            for (int suffix = 2; !names.Add(unique); suffix++)
+            {
+                unique = $"{desired}{suffix}";
+            }
+
+            if (index == 0)
+            {
+                staged.Add(PrepareSheet(unique, preview.FirstSheet));
+                continue;
+            }
+
+            SpreadsheetViewModel placeholder = new() { Name = unique };
+            placeholder.Initialize(1, 1);
+            placeholder.GetCell(new CellAddress(0, 0))!.Text = "Select this tab to load the worksheet";
+            placeholder.TabColor = metadata.TabColor;
+            staged.Add(placeholder);
+        }
+
+        return staged;
+    }
+
+    private void LoadStagedWorkbook(IReadOnlyList<SpreadsheetViewModel> staged)
+    {
+        this.DetachActiveCell();
+        this.sheets.Clear();
+        this.loadingSheets.Clear();
+        this.stagedSheetIndexes.Clear();
+        this.previewedSheetIndexes.Clear();
+        this.activeSheetLoadIndexes.Clear();
+        this.failedSheetLoadIndexes.Clear();
+        this.sheetDependencies.Clear();
+        this.pendingUserRecalculations.Clear();
+        this.pendingSheetActivationIndex = null;
+        for (int index = 0; index < staged.Count; index++)
+        {
+            SpreadsheetViewModel sheet = staged[index];
+            this.sheets.Add(sheet);
+            this.loadingSheets.Add(sheet);
+            this.stagedSheetIndexes[sheet] = index;
+            this.ConfigureWorkbookFormulaResolution(sheet);
+        }
+        this.previewedSheetIndexes.Add(0);
+
+        this.ActivateSheet(0);
+        this.RebuildTabs();
+    }
+
+    private void StartStagedSheetLoad(
+        SpreadsheetViewModel sheet,
+        int generation,
+        CancellationToken cancellationToken,
+        bool requireActive = true)
+    {
+        if (generation != this.workbookLoadGeneration ||
+            !this.loadingSheets.Contains(sheet) ||
+            !this.stagedSheetIndexes.TryGetValue(sheet, out int sheetIndex) ||
+            !this.activeSheetLoadIndexes.Add(sheetIndex))
+        {
+            return;
+        }
+
+        this.failedSheetLoadIndexes.Remove(sheetIndex);
+        (int previewRows, int previewColumns) = this.Grid.SuggestedPreviewSize();
+        this.RebuildTabs();
+        _ = this.LoadStagedSheetAsync(
+            sheet,
+            sheetIndex,
+            previewRows,
+            previewColumns,
+            generation,
+            cancellationToken,
+            requireActive);
+    }
+
+    private async Task LoadStagedSheetAsync(
+        SpreadsheetViewModel target,
+        int sheetIndex,
+        int previewRows,
+        int previewColumns,
+        int generation,
+        CancellationToken cancellationToken,
+        bool requireActive)
+    {
+        SpreadsheetViewModel current = target;
+        try
+        {
+            byte[] bytes = this.stagedWorkbookBytes ?? throw new InvalidOperationException("The staged workbook is unavailable.");
+            IReadOnlyList<XlsxSheetPreview> metadata = this.stagedSheetMetadata ??
+                throw new InvalidOperationException("The staged workbook metadata is unavailable.");
+            XlsxWorkbookReader reader = this.stagedWorkbookReader ??
+                throw new InvalidOperationException("The staged workbook reader is unavailable.");
+            if (sheetIndex < 0 || sheetIndex >= metadata.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sheetIndex));
+            }
+
+            if (!this.previewedSheetIndexes.Contains(sheetIndex))
+            {
+                string previewName = current.Name;
+                SpreadsheetViewModel preview = await Task.Run(
+                    () => PrepareSheet(
+                        previewName,
+                        XlsxFile.ReadWorksheetPreview(
+                            bytes,
+                            metadata[sheetIndex],
+                            previewRows,
+                            previewColumns,
+                            cancellationToken)),
+                    cancellationToken);
+                SpreadsheetViewModel? replacement = await Dispatcher.UIThread.InvokeAsync(
+                    () => this.ReplaceStagedSheet(generation, sheetIndex, current, preview, completed: false),
+                    DispatcherPriority.Background);
+                if (replacement is null)
+                {
+                    return;
+                }
+                current = replacement;
+            }
+
+            // A brief stability window prevents rapid tab browsing from queuing a full import for
+            // every tab the pointer passes through. Formula dependencies bypass this check.
+            if (requireActive)
+            {
+                await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+                bool stillActive = await Dispatcher.UIThread.InvokeAsync(
+                    () => this.stagedSheetIndexes.TryGetValue(this.vm, out int activeIndex) && activeIndex == sheetIndex,
+                    DispatcherPriority.Background);
+                if (!stillActive)
+                {
+                    return;
+                }
+            }
+
+            SheetData fullData = await reader.ReadWorksheetAsync(sheetIndex, cancellationToken).ConfigureAwait(false);
+            string loadedName = current.Name;
+            (SpreadsheetViewModel Loaded, HashSet<string> Dependencies) completedSheet = await Task.Run(
+                () =>
+                {
+                    SpreadsheetViewModel loaded = PrepareSheet(loadedName, fullData);
+                    return (loaded, new HashSet<string>(loaded.ReferencedSheetNames(), StringComparer.OrdinalIgnoreCase));
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(
+                () => this.ReplaceStagedSheet(
+                    generation,
+                    sheetIndex,
+                    current,
+                    completedSheet.Loaded,
+                    completed: true,
+                    completedSheet.Dependencies,
+                    cancellationToken),
+                DispatcherPriority.Background);
+        }
+        catch (OperationCanceledException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(
+                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, "Worksheet loading canceled"),
+                DispatcherPriority.Background);
+        }
+        catch
+        {
+            await Dispatcher.UIThread.InvokeAsync(
+                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, "Worksheet could not be loaded"),
+                DispatcherPriority.Background);
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(
+                () =>
+                {
+                    if (generation == this.workbookLoadGeneration)
+                    {
+                        this.activeSheetLoadIndexes.Remove(sheetIndex);
+                        this.RebuildTabs();
+                    }
+                },
+                DispatcherPriority.Background);
+        }
+    }
+
+    private SpreadsheetViewModel? ReplaceStagedSheet(
+        int generation,
+        int sheetIndex,
+        SpreadsheetViewModel target,
+        SpreadsheetViewModel replacement,
+        bool completed,
+        IReadOnlySet<string>? dependencies = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (generation != this.workbookLoadGeneration ||
+            !this.stagedSheetIndexes.TryGetValue(target, out int targetIndex) ||
+            targetIndex != sheetIndex)
+        {
+            return null;
+        }
+
+        int index = this.sheets.IndexOf(target);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        replacement.Name = target.Name;
+        replacement.TabColor ??= target.TabColor;
+        this.ConfigureWorkbookFormulaResolution(replacement);
+        bool active = ReferenceEquals(target, this.vm);
+        bool activatePreview = !completed && this.pendingSheetActivationIndex == sheetIndex;
+        CellAddress activeCell = target.ActiveCell;
+        this.sheets[index] = replacement;
+        this.stagedSheetIndexes.Remove(target);
+        this.stagedSheetIndexes[replacement] = sheetIndex;
+        this.sheetDependencies.Remove(target);
+        if (this.pendingUserRecalculations.Remove(target))
+        {
+            this.pendingUserRecalculations.Add(replacement);
+        }
+        this.loadingSheets.Remove(target);
+        if (completed)
+        {
+            this.failedSheetLoadIndexes.Remove(sheetIndex);
+            this.sheetDependencies[replacement] = new HashSet<string>(
+                dependencies ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            this.loadingSheets.Add(replacement);
+            this.previewedSheetIndexes.Add(sheetIndex);
+        }
+
+        if (active || activatePreview)
+        {
+            if (activatePreview)
+            {
+                this.pendingSheetActivationIndex = null;
+            }
+            this.DetachActiveCell();
+            this.vm = replacement;
+            this.DataContext = replacement;
+            this.Grid.Sheet = replacement;
+            this.SetActiveCell(new CellAddress(
+                Math.Clamp(activeCell.Row, 0, replacement.RowCount - 1),
+                Math.Clamp(activeCell.Column, 0, replacement.ColumnCount - 1)));
+            this.HookSheet();
+            this.ApplyReadOnly(raiseEvent: false);
+        }
+
+        this.RebuildTabs();
+        if (completed)
+        {
+            this.TryRunPendingUserRecalculations();
+        }
+        if (completed && this.loadingSheets.Count == 0)
+        {
+            this.stagedWorkbookBytes = null;
+            this.stagedSheetMetadata = null;
+            this.stagedWorkbookReader?.DisposeWhenIdle();
+            this.stagedWorkbookReader = null;
+            this.workbookLoadCancellation?.Dispose();
+            this.workbookLoadCancellation = null;
+        }
+        return replacement;
+    }
+
+    private void ConfigureWorkbookFormulaResolution(SpreadsheetViewModel sheet)
+    {
+        sheet.SetWorkbookCellResolver(this.ResolveWorkbookCell);
+        sheet.SetEditRecalculationGate(() => this.RequestUserEditRecalculation(sheet));
+    }
+
+    private bool RequestUserEditRecalculation(SpreadsheetViewModel sheet)
+    {
+        this.CancelScheduledEditRecalculation(sheet);
+        if (this.IsActivelyEditing(sheet))
+        {
+            this.deferredEditRecalculations.Add(sheet);
+        }
+        else if (this.AreDependenciesReady(sheet))
+        {
+            CancellationTokenSource delay = new();
+            this.editRecalculationDelays[sheet] = delay;
+            _ = this.RecalculateAfterTypingPauseAsync(sheet, delay, this.workbookLoadGeneration);
+        }
+        else
+        {
+            this.QueuePendingUserRecalculation(sheet);
+        }
+
+        // The edited text is already displayed. Notify the host immediately, while keeping formula
+        // work out of the per-character UI event.
+        this.ContentChanged?.Invoke(this, EventArgs.Empty);
+        return false;
+    }
+
+    private bool IsActivelyEditing(SpreadsheetViewModel sheet) =>
+        ReferenceEquals(sheet, this.vm) &&
+        (this.Grid.IsEditing ||
+         (ReferenceEquals(this.formulaBarEditSheet, sheet) && this.formulaBar?.IsFocused == true));
+
+    private void CompleteDeferredEditRecalculation(SpreadsheetViewModel sheet)
+    {
+        if (!this.deferredEditRecalculations.Contains(sheet))
+        {
+            return;
+        }
+
+        // Let the committed cell and selection paint first. If another edit has already started by
+        // this dispatcher pass, the next completion event owns the recalculation instead.
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!this.deferredEditRecalculations.Contains(sheet) || this.IsActivelyEditing(sheet))
+                {
+                    return;
+                }
+
+                this.deferredEditRecalculations.Remove(sheet);
+                this.CancelScheduledEditRecalculation(sheet);
+                if (this.AreDependenciesReady(sheet))
+                {
+                    this.RecalculateWorkbookFrom(sheet.Name, recalculateSource: true);
+                }
+                else
+                {
+                    this.QueuePendingUserRecalculation(sheet);
+                }
+            },
+            DispatcherPriority.Background);
+    }
+
+    private void QueuePendingUserRecalculation(SpreadsheetViewModel sheet)
+    {
+        this.pendingUserRecalculations.Add(sheet);
+        if (this.workbookLoadCancellation is { } loadCancellation)
+        {
+            this.QueueReferencedSheetLoads(sheet, this.workbookLoadGeneration, loadCancellation.Token);
+        }
+    }
+
+    private async Task RecalculateAfterTypingPauseAsync(
+        SpreadsheetViewModel sheet,
+        CancellationTokenSource delay,
+        int generation)
+    {
+        try
+        {
+            await Task.Delay(300, delay.Token).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(
+                () =>
+                {
+                    if (generation != this.workbookLoadGeneration ||
+                        !this.sheets.Contains(sheet) ||
+                        !this.editRecalculationDelays.TryGetValue(sheet, out CancellationTokenSource? current) ||
+                        !ReferenceEquals(current, delay))
+                    {
+                        return;
+                    }
+
+                    this.editRecalculationDelays.Remove(sheet);
+                    delay.Dispose();
+                    this.RecalculateWorkbookFrom(sheet.Name, recalculateSource: true);
+                },
+                DispatcherPriority.Background);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer keystroke replaced this debounce window.
+        }
+    }
+
+    private void CancelScheduledEditRecalculation(SpreadsheetViewModel sheet)
+    {
+        if (!this.editRecalculationDelays.Remove(sheet, out CancellationTokenSource? delay))
+        {
+            return;
+        }
+
+        delay.Cancel();
+        delay.Dispose();
+    }
+
+    private void CancelScheduledEditRecalculations()
+    {
+        foreach (CancellationTokenSource delay in this.editRecalculationDelays.Values)
+        {
+            delay.Cancel();
+            delay.Dispose();
+        }
+        this.editRecalculationDelays.Clear();
+    }
+
+    private CellValue? ResolveWorkbookCell(string sheetName, CellAddress address)
+    {
+        SpreadsheetViewModel? sheet = this.sheets.FirstOrDefault(
+            candidate => candidate.Name.Equals(sheetName, StringComparison.OrdinalIgnoreCase));
+        return sheet is null || this.loadingSheets.Contains(sheet)
+            ? null
+            : sheet.EvaluateCell(address);
+    }
+
+    private void QueueReferencedSheetLoads(
+        SpreadsheetViewModel source,
+        int generation,
+        CancellationToken cancellationToken)
+    {
+        if (!this.sheetDependencies.TryGetValue(source, out HashSet<string>? dependencies))
+        {
+            return;
+        }
+
+        foreach (string sheetName in dependencies)
+        {
+            SpreadsheetViewModel? dependency = this.sheets.FirstOrDefault(
+                candidate => candidate.Name.Equals(sheetName, StringComparison.OrdinalIgnoreCase));
+            if (dependency is not null && this.loadingSheets.Contains(dependency))
+            {
+                this.StartStagedSheetLoad(
+                    dependency,
+                    generation,
+                    cancellationToken,
+                    requireActive: false);
+            }
+        }
+    }
+
+    private void RecalculateWorkbookFrom(
+        string changedSheetName,
+        bool recalculateSource,
+        bool recalculateAll = false)
+    {
+        if (this.recalculatingWorkbookDependencies)
+        {
+            return;
+        }
+
+        this.recalculatingWorkbookDependencies = true;
+        try
+        {
+            if (recalculateAll)
+            {
+                foreach (SpreadsheetViewModel sheet in this.sheets.Where(sheet => !this.loadingSheets.Contains(sheet)))
+                {
+                    sheet.Recalculate();
+                }
+                return;
+            }
+
+            HashSet<SpreadsheetViewModel> recalculated = new();
+            Queue<string> changed = new();
+            changed.Enqueue(changedSheetName);
+            SpreadsheetViewModel? source = this.sheets.FirstOrDefault(
+                sheet => sheet.Name.Equals(changedSheetName, StringComparison.OrdinalIgnoreCase));
+            if (recalculateSource && source is not null && !this.loadingSheets.Contains(source))
+            {
+                source.Recalculate();
+                recalculated.Add(source);
+            }
+
+            while (changed.Count > 0)
+            {
+                string dependencyName = changed.Dequeue();
+                foreach ((SpreadsheetViewModel sheet, HashSet<string> dependencies) in this.sheetDependencies)
+                {
+                    if (recalculated.Contains(sheet) ||
+                        this.loadingSheets.Contains(sheet) ||
+                        !dependencies.Contains(dependencyName))
+                    {
+                        continue;
+                    }
+
+                    if (!this.AreDependenciesReady(sheet))
+                    {
+                        this.pendingUserRecalculations.Add(sheet);
+                        if (this.workbookLoadCancellation is { } loadCancellation)
+                        {
+                            this.QueueReferencedSheetLoads(sheet, this.workbookLoadGeneration, loadCancellation.Token);
+                        }
+                        continue;
+                    }
+
+                    sheet.Recalculate();
+                    recalculated.Add(sheet);
+                    changed.Enqueue(sheet.Name);
+                }
+            }
+        }
+        finally
+        {
+            this.recalculatingWorkbookDependencies = false;
+        }
+    }
+
+    private void TryRunPendingUserRecalculations()
+    {
+        if (this.recalculatingWorkbookDependencies)
+        {
+            return;
+        }
+
+        List<SpreadsheetViewModel> ready = this.pendingUserRecalculations
+            .Where(sheet => !this.loadingSheets.Contains(sheet) && this.AreDependenciesReady(sheet))
+            .ToList();
+        foreach (SpreadsheetViewModel sheet in ready)
+        {
+            this.pendingUserRecalculations.Remove(sheet);
+            this.CancelScheduledEditRecalculation(sheet);
+            this.RecalculateWorkbookFrom(sheet.Name, recalculateSource: true);
+        }
+    }
+
+    private bool AreDependenciesReady(SpreadsheetViewModel sheet)
+    {
+        if (!this.sheetDependencies.TryGetValue(sheet, out HashSet<string>? dependencies))
+        {
+            return true;
+        }
+
+        return dependencies.All(sheetName =>
+        {
+            SpreadsheetViewModel? dependency = this.sheets.FirstOrDefault(
+                candidate => candidate.Name.Equals(sheetName, StringComparison.OrdinalIgnoreCase));
+            return dependency is not null && !this.loadingSheets.Contains(dependency);
+        });
+    }
+
+    private void MarkStagedSheetLoadFailed(int generation, int sheetIndex, string placeholderText)
+    {
+        if (generation != this.workbookLoadGeneration)
+        {
+            return;
+        }
+
+        this.failedSheetLoadIndexes.Add(sheetIndex);
+        SpreadsheetViewModel? sheet = this.stagedSheetIndexes
+            .FirstOrDefault(pair => pair.Value == sheetIndex).Key;
+        CellViewModel? cell = sheet?.GetCell(new CellAddress(0, 0));
+        if (cell?.Text == "Select this tab to load the worksheet")
+        {
+            cell.Text = placeholderText;
+        }
+        this.ApplyReadOnly(raiseEvent: false);
+        this.RebuildTabs();
+    }
+
+    private void CancelWorkbookLoad()
+    {
+        this.workbookLoadGeneration++;
+        this.workbookLoadCancellation?.Cancel();
+        this.workbookLoadCancellation?.Dispose();
+        this.workbookLoadCancellation = null;
+        this.stagedWorkbookBytes = null;
+        this.stagedSheetMetadata = null;
+        this.stagedWorkbookReader?.DisposeWhenIdle();
+        this.stagedWorkbookReader = null;
+        this.loadingSheets.Clear();
+        this.stagedSheetIndexes.Clear();
+        this.previewedSheetIndexes.Clear();
+        this.activeSheetLoadIndexes.Clear();
+        this.failedSheetLoadIndexes.Clear();
+        this.sheetDependencies.Clear();
+        this.pendingUserRecalculations.Clear();
+        this.deferredEditRecalculations.Clear();
+        this.formulaBarEditSheet = null;
+        this.pendingSheetActivationIndex = null;
+        this.CancelScheduledEditRecalculations();
+    }
+
+    private void StopStagedLoading(int generation, string placeholderText)
+    {
+        if (generation != this.workbookLoadGeneration)
+        {
+            return;
+        }
+
+        foreach (SpreadsheetViewModel sheet in this.loadingSheets)
+        {
+            CellViewModel? cell = sheet.GetCell(new CellAddress(0, 0));
+            if (cell?.Text == "Select this tab to load the worksheet")
+            {
+                cell.Text = placeholderText;
+            }
+        }
+        foreach (int sheetIndex in this.stagedSheetIndexes.Values)
+        {
+            this.failedSheetLoadIndexes.Add(sheetIndex);
+        }
+        this.ApplyReadOnly(raiseEvent: false);
+        this.RebuildTabs();
+    }
+
+    // ----- Find and replace -----
+
+    private void OnEditorKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (e.Key == Key.Escape && this.FindReplaceBar.IsVisible)
+            {
+                this.CloseFindReplace();
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (e.Key == Key.F)
+        {
+            this.ShowFindReplace(focusReplace: false);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.H)
+        {
+            this.ShowFindReplace(focusReplace: true);
+            e.Handled = true;
+        }
+    }
+
+    private void OnFindBoxKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            this.FindMatch(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            this.CloseFindReplace();
+            e.Handled = true;
+        }
+    }
+
+    private void ShowFindReplace(bool focusReplace)
+    {
+        this.FindReplaceBar.IsVisible = true;
+        this.FindStatusText.Text = string.Empty;
+        Dispatcher.UIThread.Post(() =>
+        {
+            TextBox target = focusReplace ? this.ReplaceTextBox : this.FindTextBox;
+            target.Focus();
+            target.SelectAll();
+        }, DispatcherPriority.Input);
+    }
+
+    private void CloseFindReplace()
+    {
+        this.FindReplaceBar.IsVisible = false;
+        this.FindStatusText.Text = string.Empty;
+        this.Grid.FocusForSelection();
+    }
+
+    private void FindMatch(bool backwards)
+    {
+        string query = this.FindTextBox.Text ?? string.Empty;
+        if (string.IsNullOrEmpty(query) || this.vm.RowCount == 0 || this.vm.ColumnCount == 0)
+        {
+            this.FindStatusText.Text = "Enter text to find";
+            return;
+        }
+
+        int columns = this.vm.ColumnCount;
+        int total = this.vm.RowCount * columns;
+        int start = this.vm.ActiveCell.Row * columns + this.vm.ActiveCell.Column;
+        int direction = backwards ? -1 : 1;
+        for (int step = 1; step <= total; step++)
+        {
+            int index = (start + direction * step) % total;
+            if (index < 0)
+            {
+                index += total;
+            }
+
+            CellAddress address = new(index / columns, index % columns);
+            CellViewModel? cell = this.vm.GetCell(address);
+            if (cell is not null && CellContains(cell, query))
+            {
+                this.Grid.SelectCell(address);
+                this.FindStatusText.Text = address.ToA1();
+                return;
+            }
+        }
+
+        this.FindStatusText.Text = "No matches";
+    }
+
+    private static bool CellContains(CellViewModel cell, string query) =>
+        cell.Text.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+        (!string.Equals(cell.DisplayText, cell.Text, StringComparison.Ordinal) &&
+         cell.DisplayText.Contains(query, StringComparison.CurrentCultureIgnoreCase));
+
+    private void ReplaceCurrentMatch()
+    {
+        string query = this.FindTextBox.Text ?? string.Empty;
+        if (this.IsReadOnly || string.IsNullOrEmpty(query))
+        {
+            this.FindStatusText.Text = this.IsReadOnly ? "Read-only" : "Enter text to find";
+            return;
+        }
+
+        CellViewModel? cell = this.vm.GetCell(this.vm.ActiveCell);
+        if (cell is null || !cell.Text.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+        {
+            this.FindMatch(backwards: false);
+            return;
+        }
+
+        this.vm.Checkpoint();
+        cell.Text = cell.Text.Replace(query, this.ReplaceTextBox.Text ?? string.Empty, StringComparison.CurrentCultureIgnoreCase);
+        this.FindMatch(backwards: false);
+    }
+
+    private void ReplaceAllMatches()
+    {
+        string query = this.FindTextBox.Text ?? string.Empty;
+        if (this.IsReadOnly || string.IsNullOrEmpty(query))
+        {
+            this.FindStatusText.Text = this.IsReadOnly ? "Read-only" : "Enter text to find";
+            return;
+        }
+
+        string replacement = this.ReplaceTextBox.Text ?? string.Empty;
+        List<(CellViewModel Cell, string Text, int Count)> changes = new();
+        int total = 0;
+        foreach (RowViewModel row in this.vm.Rows)
+        {
+            foreach (CellViewModel cell in row.Cells)
+            {
+                int count = CountOccurrences(cell.Text, query);
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                changes.Add((cell, cell.Text.Replace(query, replacement, StringComparison.CurrentCultureIgnoreCase), count));
+                total += count;
+            }
+        }
+
+        if (changes.Count == 0)
+        {
+            this.FindStatusText.Text = "No matches";
+            return;
+        }
+
+        this.vm.Checkpoint();
+        this.vm.RunBatch(() =>
+        {
+            foreach ((CellViewModel cell, string text, _) in changes)
+            {
+                cell.Text = text;
+            }
+        });
+        this.FindStatusText.Text = $"Replaced {total:N0}";
+    }
+
+    private static int CountOccurrences(string text, string query)
+    {
+        int count = 0;
+        for (int index = 0; index <= text.Length - query.Length;)
+        {
+            int match = text.IndexOf(query, index, StringComparison.CurrentCultureIgnoreCase);
+            if (match < 0)
+            {
+                break;
+            }
+
+            count++;
+            index = match + query.Length;
+        }
+
+        return count;
     }
 
     // Adds a new blank sheet at the end and switches to it.
@@ -332,6 +1296,7 @@ public partial class SpreadsheetEditor : UserControl
     {
         SpreadsheetViewModel sheetVm = new() { Name = this.UniqueName("Sheet") };
         sheetVm.Initialize(this.InitialRowCount, this.InitialColumnCount);
+        this.ConfigureWorkbookFormulaResolution(sheetVm);
         this.sheets.Add(sheetVm);
         this.ActivateSheet(this.sheets.Count - 1);
         this.RebuildTabs();
@@ -341,7 +1306,13 @@ public partial class SpreadsheetEditor : UserControl
     private static void ApplySheetData(SpreadsheetViewModel vm, SheetData sheet)
     {
         vm.SetNames(sheet.Names);
-        vm.LoadCellData(sheet.Cells);
+        // XLSX files already contain the last values calculated by Excel. Keep those cached results
+        // during import; recalculating here both delays the first paint and can replace valid values
+        // before every referenced worksheet is available.
+        bool hasUncachedFormula = sheet.Cells
+            .SelectMany(static row => row)
+            .Any(static cell => FormulaEngine.IsFormula(cell.Text) && cell.FormulaResult is null);
+        vm.LoadCellData(sheet.Cells, recalculate: hasUncachedFormula);
         for (int i = 0; i < vm.Columns.Count && i < sheet.ColumnWidths.Count; i++)
         {
             if (sheet.ColumnWidths[i] > 0)
@@ -362,6 +1333,11 @@ public partial class SpreadsheetEditor : UserControl
     private MenuFlyout BuildOverflowMenu()
     {
         MenuFlyout menu = new();
+
+        MenuItem find = new() { Header = "Find and replace… (Ctrl+F)" };
+        find.Click += (_, _) => this.ShowFindReplace(focusReplace: false);
+        menu.Items.Add(find);
+        menu.Items.Add(new Separator());
 
         MenuItem chart = new() { Header = "Insert chart…" };
         chart.Click += async (_, _) => await this.ShowChartBuilderAsync();
@@ -853,7 +1829,15 @@ public partial class SpreadsheetEditor : UserControl
         this.RefreshUndoButtons();
     }
 
-    private void OnSheetContentChanged() => this.ContentChanged?.Invoke(this, EventArgs.Empty);
+    private void OnSheetContentChanged()
+    {
+        if (!this.recalculatingWorkbookDependencies && this.hookedSheet is { } changedSheet)
+        {
+            this.RecalculateWorkbookFrom(changedSheet.Name, recalculateSource: false);
+        }
+
+        this.ContentChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     private void RefreshUndoButtons()
     {
@@ -1058,6 +2042,15 @@ public partial class SpreadsheetEditor : UserControl
         {
             this.vm.Checkpoint();
             this.Grid.SuspendEditor();
+            this.formulaBarEditSheet = this.vm;
+        };
+        this.formulaBar.LostFocus += (_, _) =>
+        {
+            if (this.formulaBarEditSheet is { } editedSheet)
+            {
+                this.formulaBarEditSheet = null;
+                this.CompleteDeferredEditRecalculation(editedSheet);
+            }
         };
         this.EditorHost.Child = this.formulaBar;
     }
@@ -1072,23 +2065,51 @@ public partial class SpreadsheetEditor : UserControl
             return;
         }
 
+        if (this.formulaBarEditSheet is { } formulaSheet)
+        {
+            this.formulaBarEditSheet = null;
+            this.CompleteDeferredEditRecalculation(formulaSheet);
+        }
+        this.Grid.SuspendEditor();
         this.DetachActiveCell();
         this.vm = this.sheets[index];
         this.DataContext = this.vm;
         this.Grid.Sheet = this.vm;            // rebinds + rebuilds the grid for this sheet
         this.SetActiveCell(new CellAddress(0, 0));
         this.HookSheet();
+        this.ApplyReadOnly(raiseEvent: false);
     }
 
-    private void SwitchToSheet(SpreadsheetViewModel sheet)
+    private Task SwitchToSheetAsync(SpreadsheetViewModel sheet)
     {
-        if (ReferenceEquals(sheet, this.vm))
+        bool loading = this.loadingSheets.Contains(sheet);
+        if (loading &&
+            this.stagedSheetIndexes.TryGetValue(sheet, out int stagedIndex) &&
+            !this.previewedSheetIndexes.Contains(stagedIndex) &&
+            this.workbookLoadCancellation is { } previewCancellation)
         {
-            return;
+            // Keep the current frame on screen until the selected worksheet's viewport preview is
+            // ready. The tab is highlighted immediately, then ReplaceStagedSheet performs one atomic
+            // grid swap instead of briefly drawing the placeholder first.
+            this.pendingSheetActivationIndex = stagedIndex;
+            this.RebuildTabs();
+            this.StartStagedSheetLoad(sheet, this.workbookLoadGeneration, previewCancellation.Token);
+            return Task.CompletedTask;
         }
 
-        this.ActivateSheet(this.sheets.IndexOf(sheet));
-        this.RebuildTabs();
+        this.pendingSheetActivationIndex = null;
+        if (!ReferenceEquals(sheet, this.vm))
+        {
+            this.ActivateSheet(this.sheets.IndexOf(sheet));
+            this.RebuildTabs();
+        }
+
+        if (loading && this.workbookLoadCancellation is { } loadCancellation)
+        {
+            this.StartStagedSheetLoad(sheet, this.workbookLoadGeneration, loadCancellation.Token);
+        }
+
+        return Task.CompletedTask;
     }
 
     private void RenameSheet(SpreadsheetViewModel sheet, string name)
@@ -1113,6 +2134,24 @@ public partial class SpreadsheetEditor : UserControl
         int index = this.sheets.IndexOf(sheet);
         bool wasActive = ReferenceEquals(sheet, this.vm);
         this.sheets.Remove(sheet);
+        this.loadingSheets.Remove(sheet);
+        this.sheetDependencies.Remove(sheet);
+        this.pendingUserRecalculations.Remove(sheet);
+        this.deferredEditRecalculations.Remove(sheet);
+        if (ReferenceEquals(this.formulaBarEditSheet, sheet))
+        {
+            this.formulaBarEditSheet = null;
+        }
+        this.CancelScheduledEditRecalculation(sheet);
+        if (this.stagedSheetIndexes.Remove(sheet, out int stagedIndex))
+        {
+            if (this.pendingSheetActivationIndex == stagedIndex)
+            {
+                this.pendingSheetActivationIndex = null;
+            }
+            this.previewedSheetIndexes.Remove(stagedIndex);
+            this.failedSheetLoadIndexes.Remove(stagedIndex);
+        }
         if (wasActive)
         {
             this.ActivateSheet(Math.Min(index, this.sheets.Count - 1));
@@ -1153,16 +2192,28 @@ public partial class SpreadsheetEditor : UserControl
 
     private Control BuildTab(SpreadsheetViewModel sheet)
     {
-        bool active = ReferenceEquals(sheet, this.vm);
+        bool pending = this.loadingSheets.Contains(sheet);
+        bool staged = this.stagedSheetIndexes.TryGetValue(sheet, out int sheetIndex);
+        bool active = ReferenceEquals(sheet, this.vm) ||
+            (staged && this.pendingSheetActivationIndex == sheetIndex);
+        bool loading = staged && this.activeSheetLoadIndexes.Contains(sheetIndex);
+        bool failed = staged && this.failedSheetLoadIndexes.Contains(sheetIndex);
         bool dark = this.ActualThemeVariant == ThemeVariant.Dark;
         TextBlock text = new()
         {
-            Text = sheet.Name,
+            Text = loading ? $"{sheet.Name} …" : sheet.Name,
+            Opacity = 1,
             VerticalAlignment = VerticalAlignment.Center,
             FontWeight = active ? FontWeight.SemiBold : FontWeight.Normal,
         };
         Color? tabColor = sheet.TabColor;
-        if (!active && tabColor is { } color)
+        if (active)
+        {
+            // Do not rely on a host's Button foreground theme here: the active tab uses an explicit
+            // surface and must keep its label readable in both light and dark mode.
+            text.Foreground = dark ? Brushes.White : Brushes.Black;
+        }
+        else if (tabColor is { } color)
         {
             // Excel fills inactive colored tabs and switches the label for sufficient contrast.
             double luminance = 0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B;
@@ -1186,7 +2237,19 @@ public partial class SpreadsheetEditor : UserControl
             BorderThickness = new Thickness(1, active ? 2 : 1, 1, 0),
             BorderBrush = active ? accent : Brushes.Transparent,
         };
-        tab.Click += (_, _) => this.SwitchToSheet(sheet);
+        if (failed)
+        {
+            ToolTip.SetTip(tab, "Worksheet loading failed; click to retry");
+        }
+        else if (loading)
+        {
+            ToolTip.SetTip(tab, "Loading selected worksheet in the background");
+        }
+        else if (pending)
+        {
+            ToolTip.SetTip(tab, "Select this tab to load the worksheet");
+        }
+        tab.Click += async (_, _) => await this.SwitchToSheetAsync(sheet);
 
         // Double-click a tab to rename it inline.
         tab.AddHandler(PointerPressedEvent, (_, e) =>

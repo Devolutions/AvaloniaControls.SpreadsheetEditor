@@ -3,6 +3,7 @@ namespace SpreadsheetEditor.Controls.Formulas;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // Thrown during evaluation to short-circuit with an Excel error literal; caught by the engine.
@@ -14,7 +15,7 @@ internal sealed class FormulaRuntimeException(string error) : Exception(error)
 // Walks a parsed FormulaNode to a CellValue. Cell references are resolved through a callback (so the
 // engine can memoize and detect cycles). Errors propagate by throwing FormulaRuntimeException, which
 // lets IFERROR catch them naturally.
-public sealed class FormulaEvaluator(Func<CellAddress, CellValue> resolveCell, Func<string, FormulaNode?>? resolveName = null)
+public sealed class FormulaEvaluator(Func<string?, CellAddress, CellValue> resolveCell, Func<string, FormulaNode?>? resolveName = null)
 {
     private readonly HashSet<string> namesVisiting = new(StringComparer.OrdinalIgnoreCase);
 
@@ -33,7 +34,7 @@ public sealed class FormulaEvaluator(Func<CellAddress, CellValue> resolveCell, F
                 return this.EvalName(name.Name);
 
             case CellNode c:
-                CellValue v = resolveCell(c.Address);
+                CellValue v = resolveCell(c.SheetName, c.Address);
                 if (v.IsError)
                 {
                     throw new FormulaRuntimeException(v.Text);
@@ -120,7 +121,7 @@ public sealed class FormulaEvaluator(Func<CellAddress, CellValue> resolveCell, F
             {
                 for (int c = c1; c <= c2; c++)
                 {
-                    yield return resolveCell(new CellAddress(r, c));
+                    yield return resolveCell(range.SheetName, new CellAddress(r, c));
                 }
             }
         }

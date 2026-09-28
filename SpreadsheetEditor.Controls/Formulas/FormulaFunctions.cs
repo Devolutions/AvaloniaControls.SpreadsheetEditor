@@ -2,6 +2,7 @@ namespace SpreadsheetEditor.Controls.Formulas;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 // The built-in worksheet functions. Each takes the evaluator and the (unevaluated) arg
@@ -30,6 +31,12 @@ public static class FormulaFunctions
         },
         ["COUNT"] = static (ev, a) => CellValue.FromNumber(CountWhere(ev, a, static v => v.Kind == CellValueKind.Number)),
         ["COUNTA"] = static (ev, a) => CellValue.FromNumber(CountWhere(ev, a, static v => v.Kind != CellValueKind.Empty)),
+        ["COUNTIF"] = static (ev, a) =>
+        {
+            Arity(a, 2, 2);
+            CellValue criterion = ev.Eval(a[1]);
+            return CellValue.FromNumber(ev.Flatten(a[0]).Count(value => MatchesCriterion(value, criterion)));
+        },
 
         // SUBTOTAL(function_num, ref, ...). function_num 1-11 (and 101-111, which ignore manually
         // hidden rows — treated identically here since the grid has no hidden rows) selects the
@@ -327,6 +334,55 @@ public static class FormulaFunctions
         }
 
         return count;
+    }
+
+    private static bool MatchesCriterion(CellValue value, CellValue criterion)
+    {
+        if (criterion.Kind == CellValueKind.Boolean)
+        {
+            return value.Kind == CellValueKind.Boolean && value.Boolean == criterion.Boolean;
+        }
+
+        if (criterion.Kind == CellValueKind.Number)
+        {
+            return value.TryAsNumber(out double number) && number == criterion.Number;
+        }
+
+        string expression = criterion.AsText();
+        string op = expression.StartsWith("<=", StringComparison.Ordinal) ||
+            expression.StartsWith(">=", StringComparison.Ordinal) ||
+            expression.StartsWith("<>", StringComparison.Ordinal)
+                ? expression[..2]
+                : expression.StartsWith('<') || expression.StartsWith('>') || expression.StartsWith('=')
+                    ? expression[..1]
+                    : "=";
+        string expected = op == "=" && !expression.StartsWith('=') ? expression : expression[op.Length..];
+
+        int comparison;
+        if (double.TryParse(expected, NumberStyles.Any, CultureInfo.InvariantCulture, out double expectedNumber) &&
+            value.TryAsNumber(out double actualNumber))
+        {
+            comparison = actualNumber.CompareTo(expectedNumber);
+        }
+        else if (bool.TryParse(expected, out bool expectedBoolean) && value.Kind == CellValueKind.Boolean)
+        {
+            comparison = value.Boolean.CompareTo(expectedBoolean);
+        }
+        else
+        {
+            comparison = string.Compare(value.AsText(), expected, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return op switch
+        {
+            "=" => comparison == 0,
+            "<>" => comparison != 0,
+            "<" => comparison < 0,
+            ">" => comparison > 0,
+            "<=" => comparison <= 0,
+            ">=" => comparison >= 0,
+            _ => false,
+        };
     }
 
     private static CellValue One(IReadOnlyList<FormulaNode> a, Func<FormulaNode, double> compute)

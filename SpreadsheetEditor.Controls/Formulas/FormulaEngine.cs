@@ -3,6 +3,7 @@ namespace SpreadsheetEditor.Controls.Formulas;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // Computes cell values for a sheet. Reads each cell's raw text through a callback; a cell whose text
@@ -20,14 +21,19 @@ public sealed class FormulaEngine
     private readonly FormulaEvaluator evaluator;
 
     private readonly Func<string, string?>? resolveNameFormula;
+    private readonly Func<string?, CellAddress, CellValue>? resolveCellReference;
 
-    public FormulaEngine(Func<CellAddress, string> readRaw, Func<string, string?>? resolveName = null)
+    public FormulaEngine(
+        Func<CellAddress, string> readRaw,
+        Func<string, string?>? resolveName = null,
+        Func<string?, CellAddress, CellValue>? resolveCell = null)
     {
         this.readRaw = readRaw;
         this.resolveNameFormula = resolveName;
+        this.resolveCellReference = resolveCell;
 
         // refs resolve back through this engine
-        this.evaluator = new FormulaEvaluator(this.Evaluate, this.ResolveNameNode);
+        this.evaluator = new FormulaEvaluator(this.ResolveCell, this.ResolveNameNode);
     }
 
     // True if a raw cell string is a formula (starts with '=' and has a body).
@@ -92,6 +98,16 @@ public sealed class FormulaEngine
 
         this.memo[address] = result;
         return result;
+    }
+
+    private CellValue ResolveCell(string? sheetName, CellAddress address)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName))
+        {
+            return this.Evaluate(address);
+        }
+
+        return this.resolveCellReference?.Invoke(sheetName, address) ?? CellValue.FromError(FormulaErrors.Ref);
     }
 
     // Parses a defined name's formula into an AST (cached), or null if unknown/unparseable.

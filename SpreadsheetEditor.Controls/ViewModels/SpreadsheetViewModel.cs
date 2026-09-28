@@ -60,12 +60,15 @@ public partial class SpreadsheetViewModel : ObservableObject
     public event Action? DataChanged;
 
     private readonly FormulaEngine engine;
+    private readonly HashSet<CellAddress> formulaCells = new();
 
     private bool suspendRecalc;
 
     private Dictionary<string, string> names = new(StringComparer.OrdinalIgnoreCase);
+    private Func<string, CellAddress, CellValue?>? workbookCellResolver;
+    private Func<bool>? editRecalculationGate;
 
-    public SpreadsheetViewModel() => this.engine = new FormulaEngine(this.ReadRaw, this.ResolveName);
+    public SpreadsheetViewModel() => this.engine = new FormulaEngine(this.ReadRaw, this.ResolveName, this.ResolveCellReference);
 
     // Defined names mapped to their formula text (e.g. NetIncome -> "O36",
     // TotalMonthlyIncome -> "SUM('Sheet'!$C$7:$C$10)") so formulas like =NetIncome resolve.
@@ -78,9 +81,53 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     private string? ResolveName(string name) => this.names.TryGetValue(name, out string? f) ? f : null;
 
+    internal void SetWorkbookCellResolver(Func<string, CellAddress, CellValue?>? resolver) =>
+        this.workbookCellResolver = resolver;
+
+    // Lets the workbook host postpone a recalculation until lazily loaded cross-sheet references are
+    // available. Standalone view models keep their normal immediate-recalculation behavior.
+    internal void SetEditRecalculationGate(Func<bool>? gate) => this.editRecalculationGate = gate;
+
+    internal CellValue EvaluateCell(CellAddress address) => this.engine.Evaluate(address);
+
+    internal IReadOnlySet<string> ReferencedSheetNames()
+    {
+        HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
+        IEnumerable<string> formulas = this.formulaCells
+            .Select(address => this.GetCell(address)?.Text ?? string.Empty)
+            .Where(FormulaEngine.IsFormula)
+            .Select(static formula => formula[1..])
+            .Concat(this.names.Values.Select(static formula => formula.TrimStart('=')));
+        foreach (string formula in formulas)
+        {
+            try
+            {
+                referenced.UnionWith(FormulaParser.ReferencedSheets(formula));
+            }
+            catch (FormulaParseException)
+            {
+                // The normal evaluator will surface the parse error in the cell. Dependency discovery
+                // remains best-effort so one unsupported formula does not block workbook loading.
+            }
+        }
+
+        referenced.Remove(this.Name);
+        return referenced;
+    }
+
     public SpreadsheetViewModel(int rows, int columns) : this() => this.Initialize(rows, columns);
 
     private string ReadRaw(CellAddress a) => this.IsValid(a) ? this.Rows[a.Row].Cells[a.Column].Text : string.Empty;
+
+    private CellValue ResolveCellReference(string? sheetName, CellAddress address)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName) || sheetName.Equals(this.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return this.engine.Evaluate(address);
+        }
+
+        return this.workbookCellResolver?.Invoke(sheetName, address) ?? CellValue.FromError(FormulaErrors.Ref);
+    }
 
     // Runs a bulk edit with recalculation suspended, then recalculates once at the end.
     public void RunBatch(Action action)
@@ -98,19 +145,11 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Recalculate();
     }
 
-    // Recomputes every formula cell from the current cell contents.
+    // Recomputes only formula cells. Literal cells are resolved on demand by formulas, so walking the
+    // entire grid here would make typing cost proportional to worksheet size.
     public void Recalculate()
     {
-        List<CellAddress> addresses = new(this.RowCount * this.ColumnCount);
-        for (int r = 0; r < this.RowCount; r++)
-        {
-            for (int c = 0; c < this.Rows[r].Cells.Count; c++)
-            {
-                addresses.Add(new CellAddress(r, c));
-            }
-        }
-
-        this.engine.Recalculate(addresses, (addr, value) =>
+        this.engine.Recalculate(this.formulaCells, (addr, value) =>
         {
             CellViewModel cell = this.Rows[addr.Row].Cells[addr.Column];
             cell.ComputedValue = value is { } v ? FormatComputed(v, cell.NumberFormat) : null;
@@ -430,13 +469,30 @@ public partial class SpreadsheetViewModel : ObservableObject
             : value.Display();
 
     // Subscribes a cell so editing its text triggers a recalculation (unless suspended for a bulk load).
-    private void HookCell(CellViewModel cell)
+    private void HookCell(CellViewModel cell, CellAddress address)
     {
         cell.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(CellViewModel.Text) && !this.suspendRecalc)
+            if (e.PropertyName != nameof(CellViewModel.Text))
             {
-                this.Recalculate();
+                return;
+            }
+
+            if (FormulaEngine.IsFormula(cell.Text))
+            {
+                this.formulaCells.Add(address);
+            }
+            else
+            {
+                this.formulaCells.Remove(address);
+            }
+
+            if (!this.suspendRecalc)
+            {
+                if (this.editRecalculationGate?.Invoke() ?? true)
+                {
+                    this.Recalculate();
+                }
             }
         };
     }
@@ -446,6 +502,7 @@ public partial class SpreadsheetViewModel : ObservableObject
     {
         this.Columns.Clear();
         this.Rows.Clear();
+        this.formulaCells.Clear();
         this.Charts.Clear();
         this.Merges = new List<MergeRange>();
         this.Images = new List<SheetImage>();
@@ -463,9 +520,9 @@ public partial class SpreadsheetViewModel : ObservableObject
         for (int r = 0; r < rows; r++)
         {
             RowViewModel row = new(r + 1, columns);
-            foreach (CellViewModel cell in row.Cells)
+            for (int c = 0; c < row.Cells.Count; c++)
             {
-                this.HookCell(cell);
+                this.HookCell(row.Cells[c], new CellAddress(r, c));
             }
 
             newRows[r] = row;
@@ -539,6 +596,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
         else
         {
+            this.formulaCells.RemoveWhere(address => address.Row >= rows);
             while (this.RowCount > rows)
             {
                 this.Rows.RemoveAt(this.RowCount - 1);
@@ -558,6 +616,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
         else
         {
+            this.formulaCells.RemoveWhere(address => address.Column >= columns);
             while (this.ColumnCount > columns)
             {
                 this.Columns.RemoveAt(this.ColumnCount - 1);
@@ -576,20 +635,20 @@ public partial class SpreadsheetViewModel : ObservableObject
         {
             int index = this.ColumnCount;
             this.Columns.Add(new ColumnViewModel(index, this.DefaultColumnWidth));
-            foreach (RowViewModel row in this.Rows)
+            for (int rowIndex = 0; rowIndex < this.Rows.Count; rowIndex++)
             {
                 CellViewModel cell = new();
-                this.HookCell(cell);
-                row.Cells.Add(cell);
+                this.HookCell(cell, new CellAddress(rowIndex, index));
+                this.Rows[rowIndex].Cells.Add(cell);
             }
         }
 
         while (this.RowCount < rows)
         {
             RowViewModel row = new(this.RowCount + 1, this.ColumnCount);
-            foreach (CellViewModel cell in row.Cells)
+            for (int column = 0; column < row.Cells.Count; column++)
             {
-                this.HookCell(cell);
+                this.HookCell(row.Cells[column], new CellAddress(this.RowCount, column));
             }
 
             this.Rows.Add(row);
@@ -620,7 +679,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Rows.Select(r => r.Cells.Select(c => c.Text).ToList()).ToList();
 
     // Replaces all content from rows of CellData (value + formatting).
-    public void LoadCellData(IReadOnlyList<IReadOnlyList<CellData>> data)
+    public void LoadCellData(IReadOnlyList<IReadOnlyList<CellData>> data, bool recalculate = true)
     {
         int rows = Math.Max(data.Count, 1);
         int cols = Math.Max(data.Count == 0 ? 1 : data.Max(r => r.Count), 1);
@@ -635,7 +694,10 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
 
         this.suspendRecalc = false;
-        this.Recalculate();
+        if (recalculate)
+        {
+            this.Recalculate();
+        }
     }
 
     // Projects the sheet to rows of CellData (value + formatting).

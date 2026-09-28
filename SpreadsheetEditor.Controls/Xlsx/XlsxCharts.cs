@@ -7,7 +7,9 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
+
 using ClosedXML.Excel;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // Reads charts embedded in an .xlsx package. ClosedXML drops charts, so this parses the OOXML parts
@@ -32,11 +34,6 @@ public static class XlsxCharts
     public static List<SheetChart> Read(byte[] bytes, IXLWorksheet? sheet, int sheetIndex = 0)
     {
         List<SheetChart> charts = new();
-        if (sheet is null)
-        {
-            return charts;
-        }
-
         try
         {
             using ZipArchive archive = new(new MemoryStream(bytes), ZipArchiveMode.Read);
@@ -397,7 +394,7 @@ public static class XlsxCharts
 
     // ----- stitching -----
 
-    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend, Anchor anchor, IXLWorksheet sheet)
+    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend, Anchor anchor, IXLWorksheet? sheet)
     {
         List<ChartSeriesSpec> series = new();
         CellRange? categories = null;
@@ -529,7 +526,7 @@ public static class XlsxCharts
         return range;
     }
 
-    private static string? ResolveTitle(RawSeries raw, IXLWorksheet sheet)
+    private static string? ResolveTitle(RawSeries raw, IXLWorksheet? sheet)
     {
         if (!string.IsNullOrEmpty(raw.TitleLiteral))
         {
@@ -537,7 +534,7 @@ public static class XlsxCharts
         }
 
         CellRange? range = ParseRange(raw.TitleFormula);
-        if (range is null)
+        if (range is null || sheet is null)
         {
             return null;
         }

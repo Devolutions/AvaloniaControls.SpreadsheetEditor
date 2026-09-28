@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // Thrown on a malformed formula; carries the Excel error literal to surface.
@@ -32,6 +33,44 @@ public static class FormulaParser
         }
 
         return node;
+    }
+
+    // Returns worksheet names referenced by a formula. The lazy workbook loader uses this to load
+    // formula dependencies even when their tabs have not been selected yet.
+    public static IReadOnlySet<string> ReferencedSheets(string formulaBody)
+    {
+        HashSet<string> sheets = new(StringComparer.OrdinalIgnoreCase);
+        CollectReferencedSheets(Parse(formulaBody), sheets);
+        return sheets;
+    }
+
+    private static void CollectReferencedSheets(FormulaNode node, ISet<string> sheets)
+    {
+        switch (node)
+        {
+            case CellNode { SheetName: { Length: > 0 } sheetName }:
+                sheets.Add(sheetName);
+                break;
+            case RangeNode { SheetName: { Length: > 0 } sheetName }:
+                sheets.Add(sheetName);
+                break;
+            case UnaryNode unary:
+                CollectReferencedSheets(unary.Operand, sheets);
+                break;
+            case PercentNode percent:
+                CollectReferencedSheets(percent.Operand, sheets);
+                break;
+            case BinaryNode binary:
+                CollectReferencedSheets(binary.Left, sheets);
+                CollectReferencedSheets(binary.Right, sheets);
+                break;
+            case FunctionNode function:
+                foreach (FormulaNode argument in function.Args)
+                {
+                    CollectReferencedSheets(argument, sheets);
+                }
+                break;
+        }
     }
 
     // ----- Tokens -----
@@ -381,10 +420,9 @@ public static class FormulaParser
                 case TokKind.Word:
                     return this.ParseWord();
                 case TokKind.Sheet:
-                    // 'Sheet name'!ref — we render a single sheet, so discard the qualifier.
-                    this.Next();
+                    string quotedSheetName = this.Next().Text;
                     this.Expect(TokKind.Bang);
-                    return this.ParseRefWord();
+                    return this.ParseRefWord(quotedSheetName);
                 default:
                     throw new FormulaParseException(FormulaErrors.Value);
             }
@@ -394,11 +432,11 @@ public static class FormulaParser
         {
             string word = this.Next().Text;
 
-            // Sheet-qualified reference: Sheet!ref — discard the sheet (single-sheet support).
+            // Sheet-qualified reference: Sheet!ref.
             if (this.Peek.Kind == TokKind.Bang)
             {
                 this.Next();
-                return this.ParseRefWord();
+                return this.ParseRefWord(word);
             }
 
             // Function call: WORD( args )
@@ -452,7 +490,7 @@ public static class FormulaParser
         }
 
         // Parses a cell/range reference that follows a sheet qualifier (Sheet!A1 / Sheet!A1:B2).
-        private FormulaNode ParseRefWord()
+        private FormulaNode ParseRefWord(string sheetName)
         {
             if (this.Peek.Kind != TokKind.Word || !TryParseCell(this.Next().Text, out CellAddress from))
             {
@@ -475,10 +513,10 @@ public static class FormulaParser
                     throw new FormulaParseException(FormulaErrors.Ref);
                 }
 
-                return new RangeNode(from, to);
+                return new RangeNode(from, to, sheetName);
             }
 
-            return new CellNode(from);
+            return new CellNode(from, sheetName);
         }
 
         private void Expect(TokKind kind)

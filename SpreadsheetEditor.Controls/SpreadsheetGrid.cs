@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -22,6 +23,7 @@ using Avalonia.Reactive;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
@@ -68,9 +70,9 @@ public class SpreadsheetGrid : UserControl
     private readonly ScrollViewer rowHeaderScroller = new()
     { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
 
-    private readonly Grid columnHeaders = new();
-    private readonly Grid rowHeaders = new();
-    private readonly Grid cells = new();
+    private readonly Canvas columnHeaders = new();
+    private readonly Canvas rowHeaders = new();
+    private readonly Canvas cells = new();
     private readonly Border selection = new()
     {
         BorderBrush = SelectionBorder,
@@ -155,6 +157,10 @@ public class SpreadsheetGrid : UserControl
             if (this.editingSession)
             {
                 this.editingSession = false; // editing ended → refresh spill for the edited cell
+                if (this.sheet is { } editedSheet)
+                {
+                    this.EditCompleted?.Invoke(editedSheet);
+                }
                 Dispatcher.UIThread.Post(this.Rebuild, DispatcherPriority.Background);
             }
         }
@@ -164,6 +170,14 @@ public class SpreadsheetGrid : UserControl
     private bool adjustingColumns;         // reentrancy guard for dynamic column growth/trim
     private const int RowBuffer = 25;       // rows kept past the last visible/used row
     private const int ColumnBuffer = 8;     // columns kept past the last visible/used column
+
+    // Only cell/header controls near the viewport are materialized. Canvas extents preserve the full
+    // scrollable sheet without allocating a RowDefinition and ColumnDefinition for every row/cell.
+    private const int ViewportRowBuffer = 8;
+    private const int ViewportColumnBuffer = 2;
+    private bool viewportRenderPending;
+    private int viewportRenderGeneration;
+    private (int FirstRow, int LastRow, int FirstColumn, int LastColumn)? renderedViewport;
 
     private SpreadsheetViewModel? sheet;
 
@@ -177,14 +191,42 @@ public class SpreadsheetGrid : UserControl
 
     private double[] columnWidths = Array.Empty<double>();
     private double[] rowHeights = Array.Empty<double>();
+    private double[] columnOffsets = Array.Empty<double>();
+    private double[] rowOffsets = Array.Empty<double>();
     private bool[,]? covered;
     private (int RowSpan, int ColumnSpan)[,]? spans;
     private readonly List<(CellViewModel Cell, PropertyChangedEventHandler Handler)> cellSubscriptions = new();
 
     public event Action<CellAddress>? CellActivated;
 
+    // Raised once when an in-cell editing session is committed by Enter/Tab, selecting another cell,
+    // moving focus to the formula bar, or otherwise returning to selection mode.
+    public event Action<SpreadsheetViewModel>? EditCompleted;
+
+    public bool IsEditing => !this.editorSuspended;
+
     // When true, the grid blocks all content mutation (editing, typing, paste/cut/clear, formatting).
     public bool ReadOnly { get; set; }
+
+    // Returns one viewport plus a small scroll buffer for the lightweight worksheet preview. The
+    // fallback covers startup before Avalonia has completed the first layout pass.
+    internal (int Rows, int Columns) SuggestedPreviewSize()
+    {
+        double height = this.cellScroller.Viewport.Height;
+        double width = this.cellScroller.Viewport.Width;
+        if (!double.IsFinite(height) || height <= 0)
+        {
+            height = Math.Max(480, this.Bounds.Height - ColumnHeaderHeight);
+        }
+        if (!double.IsFinite(width) || width <= 0)
+        {
+            width = Math.Max(800, this.Bounds.Width - RowHeaderWidth);
+        }
+
+        int rows = (int)Math.Ceiling(height / Math.Max(1, DefaultRowHeight * this.zoom)) + (ViewportRowBuffer * 2);
+        int columns = (int)Math.Ceiling(width / Math.Max(1, 96 * this.zoom)) + (ViewportColumnBuffer * 2);
+        return (Math.Clamp(rows, 32, 128), Math.Clamp(columns, 12, 64));
+    }
 
     public SpreadsheetGrid()
     {
@@ -215,6 +257,15 @@ public class SpreadsheetGrid : UserControl
         this.rowHeaderScroller.Content = this.rowHeaders;
         Grid.SetRow(this.rowHeaderScroller, 1); Grid.SetColumn(this.rowHeaderScroller, 0);
 
+        this.imageOverlay.ZIndex = 3;
+        this.chartOverlay.ZIndex = 4;
+        foreach (Border part in this.fillParts)
+        {
+            part.ZIndex = 5;
+        }
+        this.selection.ZIndex = 6;
+        this.anchorBorder.ZIndex = 7;
+        this.editorHost.ZIndex = 8;
         this.cells.Children.Add(this.selection);
         this.cells.Children.Add(this.editorHost);
         this.cellScroller.Content = this.cells;
@@ -232,6 +283,7 @@ public class SpreadsheetGrid : UserControl
         {
             this.AdjustRowsForScroll();
             this.AdjustColumnsForScroll();
+            this.ScheduleViewportRender();
         };
 
         // Ctrl + mouse wheel zooms (like Excel). Handled in the tunnel so the ScrollViewer doesn't
@@ -441,16 +493,7 @@ public class SpreadsheetGrid : UserControl
     // The column index at a given X pixel within the cell area.
     private int ColAtX(double x)
     {
-        double acc = 0;
-        for (int c = 0; c < this.columnWidths.Length; c++)
-        {
-            acc += this.columnWidths[c];
-            if (acc >= x)
-            {
-                return c;
-            }
-        }
-        return Math.Max(0, this.columnWidths.Length - 1);
+        return IndexAtOffset(this.columnOffsets, x);
     }
 
     // Selects a chart (highlights it; the Delete key then removes it) and focuses the grid.
@@ -593,6 +636,17 @@ public class SpreadsheetGrid : UserControl
         this.Focus();
     }
 
+    // Selects and scrolls to a cell programmatically (used by find/replace and host integrations).
+    public void SelectCell(CellAddress address)
+    {
+        if (this.sheet is null || !this.sheet.IsValid(address))
+        {
+            return;
+        }
+
+        this.MoveSelection(address);
+    }
+
     public SpreadsheetViewModel? Sheet
     {
         get => this.sheet;
@@ -671,25 +725,20 @@ public class SpreadsheetGrid : UserControl
     // Rebuilds the entire grid from the current sheet (call after structural changes / load).
     public void Rebuild()
     {
-        foreach ((CellViewModel cell, PropertyChangedEventHandler handler) in this.cellSubscriptions)
-        {
-            cell.PropertyChanged -= handler;
-        }
-        this.cellSubscriptions.Clear();
+        this.ClearCellSubscriptions();
+        this.renderedViewport = null;
 
         this.columnHeaders.Children.Clear();
         this.rowHeaders.Children.Clear();
         this.cells.Children.Clear();
         this.imageOverlay.Children.Clear();
-        this.columnHeaders.ColumnDefinitions.Clear();
-        this.columnHeaders.RowDefinitions.Clear();
-        this.rowHeaders.RowDefinitions.Clear();
-        this.rowHeaders.ColumnDefinitions.Clear();
-        this.cells.ColumnDefinitions.Clear();
-        this.cells.RowDefinitions.Clear();
 
         if (this.sheet is null || this.sheet.RowCount == 0 || this.sheet.ColumnCount == 0)
         {
+            this.columnHeaders.Width = 0;
+            this.rowHeaders.Height = 0;
+            this.cells.Width = 0;
+            this.cells.Height = 0;
             return;
         }
 
@@ -699,122 +748,164 @@ public class SpreadsheetGrid : UserControl
         // Column widths / row heights are stored as logical size × zoom so layout and pointer mapping
         // stay consistent at any scale (the model keeps the unscaled logical sizes).
         this.columnWidths = new double[cols];
+        this.columnOffsets = new double[cols + 1];
         for (int c = 0; c < cols; c++)
         {
             double logical = this.sheet.Columns[c].Width > 0 ? this.sheet.Columns[c].Width : this.sheet.DefaultColumnWidth;
             this.columnWidths[c] = logical * this.zoom;
+            this.columnOffsets[c + 1] = this.columnOffsets[c] + this.columnWidths[c];
         }
 
         this.rowHeights = new double[rows];
+        this.rowOffsets = new double[rows + 1];
         for (int r = 0; r < rows; r++)
         {
             if (this.sheet.Rows[r].Height is { } explicitHeight)
             {
                 this.rowHeights[r] = explicitHeight * this.zoom;
-                continue;
             }
-            double maxFont = this.sheet.Rows[r].Cells.Count == 0 ? CellViewModel.DefaultFontSize : this.sheet.Rows[r].Cells.Max(c => c.FontSize);
-            this.rowHeights[r] = Math.Max(DefaultRowHeight, maxFont + 8) * this.zoom;
+            else
+            {
+                double maxFont = this.sheet.Rows[r].Cells.Count == 0 ? CellViewModel.DefaultFontSize : this.sheet.Rows[r].Cells.Max(c => c.FontSize);
+                this.rowHeights[r] = Math.Max(DefaultRowHeight, maxFont + 8) * this.zoom;
+            }
+            this.rowOffsets[r + 1] = this.rowOffsets[r] + this.rowHeights[r];
         }
 
         this.BuildMergeMaps(rows, cols);
 
-        // Column/row definitions shared in layout across headers + cells (so they stay aligned).
-        foreach (double w in this.columnWidths)
-        {
-            this.columnHeaders.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(w)));
-            this.cells.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(w)));
-        }
-        this.columnHeaders.RowDefinitions.Add(new RowDefinition(new GridLength(ColumnHeaderHeight * this.zoom)));
-        this.rowHeaders.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(RowHeaderWidth * this.zoom)));
+        this.UpdateCanvasExtents();
 
         // The frozen top-left corner must match the (zoom-scaled) header sizes, or a gap appears below
         // the column headers / beside the row headers at any zoom other than 100%.
         this.cornerBox.Width = RowHeaderWidth * this.zoom;
         this.cornerBox.Height = ColumnHeaderHeight * this.zoom;
-        foreach (double h in this.rowHeights)
-        {
-            this.rowHeaders.RowDefinitions.Add(new RowDefinition(new GridLength(h)));
-            this.cells.RowDefinitions.Add(new RowDefinition(new GridLength(h)));
-        }
 
-        for (int c = 0; c < cols; c++)
-        {
-            this.columnHeaders.Children.Add(HeaderCell(CellAddress.ColumnToLetters(c), 0, c));
-            this.columnHeaders.Children.Add(this.ColumnResizeHandle(c));
-        }
-        for (int r = 0; r < rows; r++)
-        {
-            this.rowHeaders.Children.Add(HeaderCell((r + 1).ToString(), r, 0));
-            this.rowHeaders.Children.Add(this.RowResizeHandle(r));
-        }
-
-        // Pass 1: compute which cells spill their text into empty neighbours. Where a cell spills, the
-        // gridlines *between* it and those neighbours are removed so the text reads as one continuous
-        // run (Excel/Sheets behaviour) — every column in the spill span except the last drops its right
-        // border. Computed up-front because a leftward spill removes borders of cells built earlier.
-        Dictionary<(int Row, int Column), (int Left, int Right)> spillMap = new();
-        HashSet<(int Row, int Column)> noRightBorder = new();
-        for (int r = 0; r < rows; r++)
-        {
-            for (int c = 0; c < cols && c < this.sheet.Rows[r].Cells.Count; c++)
-            {
-                if (this.covered![r, c])
-                {
-                    continue;
-                }
-                (int rowSpan, int colSpan) = this.spans![r, c];
-                if (colSpan != 1)
-                {
-                    continue;
-                }
-                (int spillLeft, int spillRight) = this.ComputeSpill(r, c, this.sheet.Rows[r].Cells[c]);
-                if (spillLeft + spillRight == 0)
-                {
-                    continue;
-                }
-                spillMap[(r, c)] = (spillLeft, spillRight);
-                for (int k = c - spillLeft; k < c + spillRight; k++)
-                {
-                    noRightBorder.Add((r, k));
-                }
-            }
-        }
-
-        List<Control> spillOverlays = new();
-        for (int r = 0; r < rows; r++)
-        {
-            for (int c = 0; c < cols && c < this.sheet.Rows[r].Cells.Count; c++)
-            {
-                if (this.covered![r, c])
-                {
-                    continue;
-                }
-                (int rowSpan, int colSpan) = this.spans![r, c];
-                CellViewModel cell = this.sheet.Rows[r].Cells[c];
-                bool spilling = spillMap.ContainsKey((r, c));
-                this.cells.Children.Add(this.BuildCell(cell, r, c, rowSpan, colSpan, spilling: spilling, omitRightBorder: noRightBorder.Contains((r, c))));
-                if (spilling)
-                {
-                    (int spillLeft, int spillRight) = spillMap[(r, c)];
-                    spillOverlays.Add(this.BuildSpillText(cell, r, c - spillLeft, spillLeft + 1 + spillRight));
-                }
-            }
-        }
-
-        // Spilling text sits above the cell grid (so it overflows empty neighbours' gridlines) but is
-        // not hit-testable, so the underlying cells stay selectable.
-        foreach (Control overlay in spillOverlays)
-        {
-            this.cells.Children.Add(overlay);
-        }
-
-        // Layer order (last = on top): cell fills/text < images < charts < selection < editor.
         this.BuildImages(rows, cols);
-        Grid.SetRowSpan(this.imageOverlay, rows);
-        Grid.SetColumnSpan(this.imageOverlay, cols);
-        Grid.SetRowSpan(this.chartOverlay, rows);
-        Grid.SetColumnSpan(this.chartOverlay, cols);
+        this.RefreshCharts();
+        this.RenderViewport(force: true);
+
+        // The first rebuild can happen before layout gives the ScrollViewer a viewport. Refresh once
+        // after layout so the initial materialized window exactly fits the visible area.
+        Dispatcher.UIThread.Post(this.ScheduleViewportRender, DispatcherPriority.Background);
+    }
+
+    private void UpdateCanvasExtents()
+    {
+        double width = this.columnOffsets.Length == 0 ? 0 : this.columnOffsets[^1];
+        double height = this.rowOffsets.Length == 0 ? 0 : this.rowOffsets[^1];
+        double headerHeight = ColumnHeaderHeight * this.zoom;
+        double headerWidth = RowHeaderWidth * this.zoom;
+
+        this.columnHeaders.Width = width;
+        this.columnHeaders.Height = headerHeight;
+        this.rowHeaders.Width = headerWidth;
+        this.rowHeaders.Height = height;
+        this.cells.Width = width;
+        this.cells.Height = height;
+        this.imageOverlay.Width = width;
+        this.imageOverlay.Height = height;
+        this.chartOverlay.Width = width;
+        this.chartOverlay.Height = height;
+        Canvas.SetLeft(this.imageOverlay, 0);
+        Canvas.SetTop(this.imageOverlay, 0);
+        Canvas.SetLeft(this.chartOverlay, 0);
+        Canvas.SetTop(this.chartOverlay, 0);
+    }
+
+    private void ClearCellSubscriptions()
+    {
+        foreach ((CellViewModel cell, PropertyChangedEventHandler handler) in this.cellSubscriptions)
+        {
+            cell.PropertyChanged -= handler;
+        }
+        this.cellSubscriptions.Clear();
+    }
+
+    private void ScheduleViewportRender()
+    {
+        if (this.viewportRenderPending)
+        {
+            return;
+        }
+
+        this.viewportRenderPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            this.viewportRenderPending = false;
+            this.RenderViewport();
+        }, DispatcherPriority.Render);
+    }
+
+    private (int FirstRow, int LastRow, int FirstColumn, int LastColumn) VisibleViewport()
+    {
+        int rows = this.rowHeights.Length;
+        int columns = this.columnWidths.Length;
+        double height = this.cellScroller.Viewport.Height;
+        double width = this.cellScroller.Viewport.Width;
+        Vector offset = this.cellScroller.Offset;
+
+        int firstRow = this.RowAtY(Math.Max(0, offset.Y));
+        int firstColumn = this.ColAtX(Math.Max(0, offset.X));
+        int lastRow = height > 0
+            ? this.RowAtY(offset.Y + height)
+            : Math.Min(rows - 1, firstRow + 50);
+        int lastColumn = width > 0
+            ? this.ColAtX(offset.X + width)
+            : Math.Min(columns - 1, firstColumn + 15);
+
+        return (firstRow, lastRow, firstColumn, lastColumn);
+    }
+
+    // Replaces only the visible cell/header controls. Cached sheet-wide offsets position them on
+    // canvases whose dimensions provide the full scroll extent.
+    private void RenderViewport(bool force = false)
+    {
+        if (this.sheet is null || this.rowHeights.Length == 0 || this.columnWidths.Length == 0 ||
+            this.covered is null || this.spans is null)
+        {
+            return;
+        }
+
+        (int FirstRow, int LastRow, int FirstColumn, int LastColumn) visible = this.VisibleViewport();
+        if (!force && this.renderedViewport is { } current)
+        {
+            const int rowGuard = 2;
+            const int columnGuard = 1;
+            bool rowsCovered = visible.FirstRow >= current.FirstRow && visible.LastRow <= current.LastRow &&
+                               (current.FirstRow == 0 || visible.FirstRow - current.FirstRow > rowGuard) &&
+                               (current.LastRow == this.rowHeights.Length - 1 || current.LastRow - visible.LastRow > rowGuard);
+            bool columnsCovered = visible.FirstColumn >= current.FirstColumn && visible.LastColumn <= current.LastColumn &&
+                                  (current.FirstColumn == 0 || visible.FirstColumn - current.FirstColumn > columnGuard) &&
+                                  (current.LastColumn == this.columnWidths.Length - 1 || current.LastColumn - visible.LastColumn > columnGuard);
+            if (rowsCovered && columnsCovered)
+            {
+                return;
+            }
+        }
+
+        (int FirstRow, int LastRow, int FirstColumn, int LastColumn) viewport = (
+            Math.Max(0, visible.FirstRow - ViewportRowBuffer),
+            Math.Min(this.rowHeights.Length - 1, visible.LastRow + ViewportRowBuffer),
+            Math.Max(0, visible.FirstColumn - ViewportColumnBuffer),
+            Math.Min(this.columnWidths.Length - 1, visible.LastColumn + ViewportColumnBuffer));
+        this.renderedViewport = viewport;
+
+        this.ClearCellSubscriptions();
+        this.columnHeaders.Children.Clear();
+        this.rowHeaders.Children.Clear();
+        this.cells.Children.Clear();
+        int generation = ++this.viewportRenderGeneration;
+
+        for (int column = viewport.FirstColumn; column <= viewport.LastColumn; column++)
+        {
+            Border header = this.HeaderCell(CellAddress.ColumnToLetters(column));
+            this.PlaceColumnHeader(header, column);
+            this.columnHeaders.Children.Add(header);
+            this.columnHeaders.Children.Add(this.ColumnResizeHandle(column));
+        }
+        // Persistent layers use explicit Z-order so visible cells can be created in short batches
+        // without ever covering images, charts, selection, or the editor.
         this.cells.Children.Add(this.imageOverlay);
         this.cells.Children.Add(this.chartOverlay);
         foreach (Border part in this.fillParts)
@@ -824,9 +915,106 @@ public class SpreadsheetGrid : UserControl
         this.cells.Children.Add(this.selection);
         this.cells.Children.Add(this.anchorBorder);
         this.cells.Children.Add(this.editorHost);
-
-        this.RefreshCharts();
         this.UpdateSelection();
+
+        HashSet<(int Row, int Column)> renderedCells = new();
+        int nextRow = viewport.FirstRow;
+        Action? renderBatch = null;
+        renderBatch = () =>
+        {
+            if (generation != this.viewportRenderGeneration || this.sheet is null ||
+                this.covered is null || this.spans is null)
+            {
+                return;
+            }
+
+            // Four rows keep each UI-thread slice short while the viewport fills progressively.
+            int batchLastRow = Math.Min(viewport.LastRow, nextRow + 3);
+            for (; nextRow <= batchLastRow; nextRow++)
+            {
+                int row = nextRow;
+                Border header = this.HeaderCell((row + 1).ToString());
+                this.PlaceRowHeader(header, row);
+                this.rowHeaders.Children.Add(header);
+                this.rowHeaders.Children.Add(this.RowResizeHandle(row));
+
+                Dictionary<int, (int Left, int Right)> spillMap = new();
+                HashSet<int> noRightBorder = new();
+                int lastCellColumn = Math.Min(viewport.LastColumn, this.sheet.Rows[row].Cells.Count - 1);
+                for (int column = viewport.FirstColumn; column <= lastCellColumn; column++)
+                {
+                    if (this.covered[row, column] || this.spans[row, column].ColumnSpan != 1)
+                    {
+                        continue;
+                    }
+
+                    (int spillLeft, int spillRight) = this.ComputeSpill(row, column, this.sheet.Rows[row].Cells[column]);
+                    if (spillLeft + spillRight == 0)
+                    {
+                        continue;
+                    }
+
+                    spillMap[column] = (spillLeft, spillRight);
+                    for (int hiddenBorder = column - spillLeft; hiddenBorder < column + spillRight; hiddenBorder++)
+                    {
+                        noRightBorder.Add(hiddenBorder);
+                    }
+                }
+
+                for (int column = viewport.FirstColumn; column <= lastCellColumn; column++)
+                {
+                    if (this.covered[row, column])
+                    {
+                        continue;
+                    }
+
+                    (int rowSpan, int columnSpan) = this.spans[row, column];
+                    CellViewModel cell = this.sheet.Rows[row].Cells[column];
+                    bool spilling = spillMap.ContainsKey(column);
+                    this.cells.Children.Add(this.BuildCell(
+                        cell, row, column, rowSpan, columnSpan, spilling,
+                        omitRightBorder: noRightBorder.Contains(column)));
+                    renderedCells.Add((row, column));
+
+                    if (spilling)
+                    {
+                        (int spillLeft, int spillRight) = spillMap[column];
+                        Control overlay = this.BuildSpillText(cell, row, column - spillLeft, spillLeft + 1 + spillRight);
+                        overlay.ZIndex = 2;
+                        this.cells.Children.Add(overlay);
+                    }
+                }
+            }
+
+            if (nextRow <= viewport.LastRow)
+            {
+                // A short timer guarantees the dispatcher can process input and paint between slices;
+                // reposting immediately at the same priority can be drained in one long render pass.
+                DispatcherTimer.RunOnce(renderBatch!, TimeSpan.FromMilliseconds(1), DispatcherPriority.Render);
+                return;
+            }
+
+            // A merged region can intersect the viewport while its top-left cell is outside it.
+            foreach (MergeRange merge in this.sheet.Merges)
+            {
+                int mergeLastRow = merge.Row + merge.RowSpan - 1;
+                int mergeLastColumn = merge.Column + merge.ColumnSpan - 1;
+                bool intersects = merge.Row <= viewport.LastRow && mergeLastRow >= viewport.FirstRow &&
+                                  merge.Column <= viewport.LastColumn && mergeLastColumn >= viewport.FirstColumn;
+                if (!intersects || renderedCells.Contains((merge.Row, merge.Column)) ||
+                    merge.Row < 0 || merge.Column < 0 || merge.Row >= this.sheet.RowCount ||
+                    merge.Column >= this.sheet.Rows[merge.Row].Cells.Count)
+                {
+                    continue;
+                }
+
+                (int rowSpan, int columnSpan) = this.spans[merge.Row, merge.Column];
+                this.cells.Children.Add(this.BuildCell(
+                    this.sheet.Rows[merge.Row].Cells[merge.Column], merge.Row, merge.Column, rowSpan, columnSpan));
+            }
+        };
+
+        renderBatch();
     }
 
     // Places each embedded picture on the overlay canvas, positioned from the running sum of our
@@ -877,37 +1065,31 @@ public class SpreadsheetGrid : UserControl
 
     private double OffsetToColumn(int column)
     {
-        double x = 0;
-        for (int c = 0; c < column && c < this.columnWidths.Length; c++)
-        {
-            x += this.columnWidths[c];
-        }
-        return x;
+        return this.columnOffsets.Length == 0 ? 0 : this.columnOffsets[Math.Clamp(column, 0, this.columnOffsets.Length - 1)];
     }
 
     private double OffsetToRow(int row)
     {
-        double y = 0;
-        for (int r = 0; r < row && r < this.rowHeights.Length; r++)
-        {
-            y += this.rowHeights[r];
-        }
-        return y;
+        return this.rowOffsets.Length == 0 ? 0 : this.rowOffsets[Math.Clamp(row, 0, this.rowOffsets.Length - 1)];
     }
 
     // The row index at a given Y pixel within the cell area.
-    private int RowAtY(double y)
+    private int RowAtY(double y) => IndexAtOffset(this.rowOffsets, y);
+
+    private static int IndexAtOffset(double[] offsets, double value)
     {
-        double acc = 0;
-        for (int r = 0; r < this.rowHeights.Length; r++)
+        if (offsets.Length <= 1)
         {
-            acc += this.rowHeights[r];
-            if (acc >= y)
-            {
-                return r;
-            }
+            return 0;
         }
-        return Math.Max(0, this.rowHeights.Length - 1);
+
+        int index = Array.BinarySearch(offsets, Math.Max(0, value));
+        if (index >= 0)
+        {
+            return Math.Clamp(index == 0 ? 0 : index - 1, 0, offsets.Length - 2);
+        }
+
+        return Math.Clamp((~index) - 1, 0, offsets.Length - 2);
     }
 
     // Grows the sheet when the user nears the bottom and trims surplus empty rows when they scroll
@@ -1534,9 +1716,9 @@ public class SpreadsheetGrid : UserControl
         }
     }
 
-    private Border HeaderCell(string text, int row, int column)
+    private Border HeaderCell(string text)
     {
-        Border border = new()
+        return new Border
         {
             Background = this.headerBackground,
             BorderBrush = this.headerLine,
@@ -1550,9 +1732,22 @@ public class SpreadsheetGrid : UserControl
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
-        Grid.SetRow(border, row);
-        Grid.SetColumn(border, column);
-        return border;
+    }
+
+    private void PlaceColumnHeader(Control control, int column)
+    {
+        Canvas.SetLeft(control, this.OffsetToColumn(column));
+        Canvas.SetTop(control, 0);
+        control.Width = this.columnWidths[column];
+        control.Height = ColumnHeaderHeight * this.zoom;
+    }
+
+    private void PlaceRowHeader(Control control, int row)
+    {
+        Canvas.SetLeft(control, 0);
+        Canvas.SetTop(control, this.OffsetToRow(row));
+        control.Width = RowHeaderWidth * this.zoom;
+        control.Height = this.rowHeights[row];
     }
 
     // ----- Drag-to-resize columns/rows from the header boundaries (Excel-style) -----
@@ -1570,11 +1765,11 @@ public class SpreadsheetGrid : UserControl
         {
             Background = Brushes.Transparent,
             Width = 6,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 0, -3, 0),
+            Height = ColumnHeaderHeight * this.zoom,
             Cursor = new Cursor(StandardCursorType.SizeWestEast),
         };
-        Grid.SetColumn(handle, column);
+        Canvas.SetLeft(handle, this.OffsetToColumn(column + 1) - 3);
+        Canvas.SetTop(handle, 0);
         handle.PointerPressed += (_, e) =>
         {
             this.dragStart = e.GetPosition(this).X;
@@ -1611,12 +1806,12 @@ public class SpreadsheetGrid : UserControl
         Border handle = new()
         {
             Background = Brushes.Transparent,
+            Width = RowHeaderWidth * this.zoom,
             Height = 6,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, -3),
             Cursor = new Cursor(StandardCursorType.SizeNorthSouth),
         };
-        Grid.SetRow(handle, row);
+        Canvas.SetLeft(handle, 0);
+        Canvas.SetTop(handle, this.OffsetToRow(row + 1) - 3);
         handle.PointerPressed += (_, e) =>
         {
             this.dragStart = e.GetPosition(this).Y;
@@ -1655,14 +1850,13 @@ public class SpreadsheetGrid : UserControl
             return;
         }
         this.columnWidths[column] = width;
-        if (column < this.columnHeaders.ColumnDefinitions.Count)
+        for (int c = column; c < this.columnWidths.Length; c++)
         {
-            this.columnHeaders.ColumnDefinitions[column].Width = new GridLength(width);
+            this.columnOffsets[c + 1] = this.columnOffsets[c] + this.columnWidths[c];
         }
-        if (column < this.cells.ColumnDefinitions.Count)
-        {
-            this.cells.ColumnDefinitions[column].Width = new GridLength(width);
-        }
+        this.UpdateCanvasExtents();
+        this.renderedViewport = null;
+        this.ScheduleViewportRender();
         if (this.sheet is not null && column < this.sheet.ColumnCount)
         {
             // Store the logical (unscaled) width so zoom doesn't leak into the model / saved file.
@@ -1678,14 +1872,13 @@ public class SpreadsheetGrid : UserControl
             return;
         }
         this.rowHeights[row] = height;
-        if (row < this.rowHeaders.RowDefinitions.Count)
+        for (int r = row; r < this.rowHeights.Length; r++)
         {
-            this.rowHeaders.RowDefinitions[row].Height = new GridLength(height);
+            this.rowOffsets[r + 1] = this.rowOffsets[r] + this.rowHeights[r];
         }
-        if (row < this.cells.RowDefinitions.Count)
-        {
-            this.cells.RowDefinitions[row].Height = new GridLength(height);
-        }
+        this.UpdateCanvasExtents();
+        this.renderedViewport = null;
+        this.ScheduleViewportRender();
         if (this.sheet is not null && row < this.sheet.RowCount)
         {
             // Store the logical (unscaled) height so zoom doesn't leak into the model.
@@ -1831,9 +2024,7 @@ public class SpreadsheetGrid : UserControl
             text.FontFamily = new FontFamily(cell.FontFamily);
         }
         RenderInlines(text, cell);
-        Grid.SetRow(text, row);
-        Grid.SetColumn(text, startColumn);
-        Grid.SetColumnSpan(text, span);
+        this.PlaceSheetControl(text, row, startColumn, 1, span);
         return text;
     }
 
@@ -1888,16 +2079,7 @@ public class SpreadsheetGrid : UserControl
             Background = cell.Background ?? Brushes.Transparent,
             Child = barGrid is null ? text : Layered(barGrid, text),
         };
-        Grid.SetRow(border, row);
-        Grid.SetColumn(border, column);
-        if (rowSpan > 1)
-        {
-            Grid.SetRowSpan(border, rowSpan);
-        }
-        if (columnSpan > 1)
-        {
-            Grid.SetColumnSpan(border, columnSpan);
-        }
+        this.PlaceSheetControl(border, row, column, rowSpan, columnSpan);
 
         CellAddress address = new(row, column);
         border.PointerPressed += (_, e) =>
@@ -1953,6 +2135,13 @@ public class SpreadsheetGrid : UserControl
             switch (e.PropertyName)
             {
                 case nameof(CellViewModel.EffectiveRuns) or nameof(CellViewModel.Text):
+                    // The editor already paints the live text. Defer the comparatively expensive
+                    // spill calculation/rebuild until the editing session is committed.
+                    if (this.editingSession)
+                    {
+                        break;
+                    }
+
                     // The text changed, so the spill extent may have too. Rebuild when the cell spills
                     // now OR spilled before — a spilling cell's text lives in a separate overlay whose
                     // span (and the neighbour gridlines it clears) is only recomputed on a rebuild.
@@ -1993,6 +2182,18 @@ public class SpreadsheetGrid : UserControl
         cell.PropertyChanged += handler;
         this.cellSubscriptions.Add((cell, handler));
         return border;
+    }
+
+    private void PlaceSheetControl(Control control, int row, int column, int rowSpan, int columnSpan)
+    {
+        int lastRow = Math.Clamp(row + Math.Max(1, rowSpan), 0, this.rowOffsets.Length - 1);
+        int lastColumn = Math.Clamp(column + Math.Max(1, columnSpan), 0, this.columnOffsets.Length - 1);
+        double left = this.OffsetToColumn(column);
+        double top = this.OffsetToRow(row);
+        Canvas.SetLeft(control, left);
+        Canvas.SetTop(control, top);
+        control.Width = Math.Max(0, this.OffsetToColumn(lastColumn) - left);
+        control.Height = Math.Max(0, this.OffsetToRow(lastRow) - top);
     }
 
     private SheetDataBar? FindDataBar(int row, int column)
@@ -2081,14 +2282,11 @@ public class SpreadsheetGrid : UserControl
         }
     }
 
-    private static void SetFillPart(Border part, int row, int col, int rowSpan, int colSpan, bool show)
+    private void SetFillPart(Border part, int row, int col, int rowSpan, int colSpan, bool show)
     {
         if (show && rowSpan > 0 && colSpan > 0)
         {
-            Grid.SetRow(part, row);
-            Grid.SetColumn(part, col);
-            Grid.SetRowSpan(part, rowSpan);
-            Grid.SetColumnSpan(part, colSpan);
+            this.PlaceSheetControl(part, row, col, rowSpan, colSpan);
             part.IsVisible = true;
         }
         else
@@ -2155,28 +2353,19 @@ public class SpreadsheetGrid : UserControl
             (int ar1, int ac1, int ar2, int ac2) = (row, col, row + rowSpan - 1, col + colSpan - 1);
             int r2 = selRow + selRowSpan - 1;
             int c2 = selCol + selColSpan - 1;
-            SetFillPart(this.fillParts[0], selRow, selCol, ar1 - selRow, selColSpan, ar1 > selRow);                 // above anchor
-            SetFillPart(this.fillParts[1], ar2 + 1, selCol, r2 - ar2, selColSpan, ar2 < r2);                        // below anchor
-            SetFillPart(this.fillParts[2], ar1, selCol, ar2 - ar1 + 1, ac1 - selCol, ac1 > selCol);                 // left of anchor
-            SetFillPart(this.fillParts[3], ar1, ac2 + 1, ar2 - ar1 + 1, c2 - ac2, ac2 < c2);                        // right of anchor
+            this.SetFillPart(this.fillParts[0], selRow, selCol, ar1 - selRow, selColSpan, ar1 > selRow);             // above anchor
+            this.SetFillPart(this.fillParts[1], ar2 + 1, selCol, r2 - ar2, selColSpan, ar2 < r2);                    // below anchor
+            this.SetFillPart(this.fillParts[2], ar1, selCol, ar2 - ar1 + 1, ac1 - selCol, ac1 > selCol);             // left of anchor
+            this.SetFillPart(this.fillParts[3], ar1, ac2 + 1, ar2 - ar1 + 1, c2 - ac2, ac2 < c2);                   // right of anchor
 
-            Grid.SetRow(this.anchorBorder, ar1);
-            Grid.SetColumn(this.anchorBorder, ac1);
-            Grid.SetRowSpan(this.anchorBorder, rowSpan);
-            Grid.SetColumnSpan(this.anchorBorder, colSpan);
+            this.PlaceSheetControl(this.anchorBorder, ar1, ac1, rowSpan, colSpan);
             this.anchorBorder.IsVisible = true;
         }
-        Grid.SetRow(this.selection, selRow);
-        Grid.SetColumn(this.selection, selCol);
-        Grid.SetRowSpan(this.selection, selRowSpan);
-        Grid.SetColumnSpan(this.selection, selColSpan);
+        this.PlaceSheetControl(this.selection, selRow, selCol, selRowSpan, selColSpan);
         this.selection.IsVisible = true;
 
         // Position the shared editor over the anchor cell and load that cell's content.
-        Grid.SetRow(this.editorHost, row);
-        Grid.SetColumn(this.editorHost, col);
-        Grid.SetRowSpan(this.editorHost, rowSpan);
-        Grid.SetColumnSpan(this.editorHost, colSpan);
+        this.PlaceSheetControl(this.editorHost, row, col, rowSpan, colSpan);
         CellViewModel? cell = this.sheet.GetCell(new CellAddress(row, col));
         // Opaque background (cell fill, else white) so the editor covers the display text beneath it.
         this.editorHost.Background = cell?.Background ?? SheetSurface;

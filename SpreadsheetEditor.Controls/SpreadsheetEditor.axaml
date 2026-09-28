@@ -21,7 +21,7 @@
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
         <!-- Formatting toolbar (above the editor) — grouped icon buttons styled after the
              RichTextEditor's toolbar: history · clipboard · font · color · B/I/U/S · align · overflow. -->
@@ -179,8 +179,28 @@
                     BorderThickness="1" BorderBrush="{DynamicResource ChromeBorder}" CornerRadius="3" />
         </Grid>
 
+        <!-- Find and replace stays inside the editor so Ctrl+F is handled here instead of bubbling to
+             the host application's global search. -->
+        <Border x:Name="FindReplaceBar" Grid.Row="2" IsVisible="False" Padding="6,4"
+                BorderThickness="0,1,0,1" BorderBrush="{DynamicResource ChromeBorder}"
+                Background="{DynamicResource ChromeBackground}">
+            <Grid ColumnDefinitions="Auto,180,Auto,Auto,Auto,180,Auto,Auto,*,Auto" ColumnSpacing="5">
+                <TextBlock Grid.Column="0" Text="Find" VerticalAlignment="Center" />
+                <TextBox x:Name="FindTextBox" Grid.Column="1" MinWidth="120" VerticalContentAlignment="Center" />
+                <Button x:Name="FindPreviousButton" Grid.Column="2" Content="Previous" Padding="8,3" />
+                <Button x:Name="FindNextButton" Grid.Column="3" Content="Next" Padding="8,3" />
+                <TextBlock Grid.Column="4" Text="Replace with" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <TextBox x:Name="ReplaceTextBox" Grid.Column="5" MinWidth="120" VerticalContentAlignment="Center" />
+                <Button x:Name="ReplaceButton" Grid.Column="6" Content="Replace" Padding="8,3" />
+                <Button x:Name="ReplaceAllButton" Grid.Column="7" Content="Replace all" Padding="8,3" />
+                <TextBlock x:Name="FindStatusText" Grid.Column="8" Margin="8,0" VerticalAlignment="Center" Opacity="0.75" />
+                <Button x:Name="CloseFindButton" Grid.Column="9" Content="&#x2715;" Width="28" Padding="0"
+                        ToolTip.Tip="Close find and replace" />
+            </Grid>
+        </Border>
+
         <!-- License/fallback notice (hidden when the Pro RichTextEditor activates) -->
-        <Border x:Name="LicenseWarning" Grid.Row="2" IsVisible="False"
+        <Border x:Name="LicenseWarning" Grid.Row="3" IsVisible="False"
                 Background="#33B00020" Padding="8,4" Margin="4,0,4,4">
             <TextBlock x:Name="LicenseWarningText" TextWrapping="Wrap" Foreground="#B00020" />
         </Border>
@@ -188,10 +208,19 @@
         <!-- The spreadsheet grid: a custom control (not the Avalonia DataGrid) so cells can span
              (merge) and host rich content — which the DataGrid can't do. Renders from the
              SpreadsheetViewModel; click-to-select drives the active cell. -->
-        <local:SpreadsheetGrid x:Name="Grid" Grid.Row="3" />
+        <local:SpreadsheetGrid x:Name="Grid" Grid.Row="4" />
+
+        <!-- Shown while a workbook or worksheet is prepared without blocking the window. -->
+        <Border x:Name="LoadingOverlay" Grid.Row="4" IsVisible="False"
+                Background="{DynamicResource ChromeBackground}" Opacity="0.96">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Width="240">
+                <TextBlock Text="Loading…" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                <ProgressBar IsIndeterminate="True" Height="4" />
+            </StackPanel>
+        </Border>
 
         <!-- Sheet tabs (Excel-style) + add-sheet button, with a zoom control docked right. -->
-        <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,2">
+        <Border Grid.Row="5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,2">
             <DockPanel LastChildFill="True">
                 <!-- Zoom control (Excel-style): − · 100% · + -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,2,0">

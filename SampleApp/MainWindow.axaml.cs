@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -114,17 +115,14 @@ public partial class MainWindow : Window
 
             IStorageFile file = files[0];
             await using Stream stream = await file.OpenReadAsync();
-            using MemoryStream buffer = new();
-            await stream.CopyToAsync(buffer);
-            buffer.Position = 0;
 
             if (IsXlsx(file.Name))
             {
-                this.Editor.OpenXlsx(buffer);
+                await this.Editor.OpenXlsxAsync(stream);
             }
             else
             {
-                using StreamReader reader = new(buffer);
+                using StreamReader reader = new(stream);
                 string text = await reader.ReadToEndAsync();
                 this.Editor.LoadRows(SpreadsheetFile.Parse(text, SpreadsheetFile.DelimiterFor(file.Name)));
             }

@@ -6,6 +6,9 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Xml;
 using System.Xml.Linq;
 
 using Avalonia.Media;
@@ -13,11 +16,75 @@ using Avalonia.Media;
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
 
+using global::SpreadsheetEditor.Controls.Formulas;
 using global::SpreadsheetEditor.Controls.Models;
 
 // .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
 // text/formulas plus whole-cell formatting (bold/italic/underline/strikethrough, colors, number format,
 // font). ReadWorkbook reads every worksheet; Write emits a single "Sheet1". Part of the control library.
+internal sealed record XlsxSheetPreview(int Index, string Name, string PartPath, Color? TabColor);
+
+internal sealed record XlsxWorkbookPreview(IReadOnlyList<XlsxSheetPreview> Sheets, SheetData FirstSheet);
+
+// Owns one ClosedXML workbook for the lifetime of a staged import. Selected worksheets are converted
+// serially so rapid tab switching cannot create several simultaneous full-workbook parsers.
+internal sealed class XlsxWorkbookReader(byte[] bytes)
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private XLWorkbook? workbook;
+    private volatile bool disposeRequested;
+
+    internal async Task<SheetData> ReadWorksheetAsync(int sheetIndex, CancellationToken cancellationToken)
+    {
+        await this.gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (this.disposeRequested)
+            {
+                throw new ObjectDisposedException(nameof(XlsxWorkbookReader));
+            }
+
+            return await Task.Run(
+                () =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    this.workbook ??= new XLWorkbook(new MemoryStream(bytes, writable: false));
+                    cancellationToken.ThrowIfCancellationRequested();
+                    IXLWorksheet? sheet = this.workbook.Worksheets.Skip(sheetIndex).FirstOrDefault();
+                    if (sheet is null)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(sheetIndex));
+                    }
+
+                    return XlsxFile.ReadSheet(this.workbook, sheet, bytes, sheetIndex, cancellationToken);
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            this.gate.Release();
+        }
+    }
+
+    internal void DisposeWhenIdle()
+    {
+        this.disposeRequested = true;
+        _ = Task.Run(async () =>
+        {
+            await this.gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                this.workbook?.Dispose();
+                this.workbook = null;
+            }
+            finally
+            {
+                this.gate.Release();
+            }
+        });
+    }
+}
+
 public static class XlsxFile
 {
     // Reads the first worksheet of an .xlsx stream into a SheetData
@@ -40,22 +107,635 @@ public static class XlsxFile
         stream.CopyTo(ms);
         byte[] bytes = ms.ToArray();
 
-        using XLWorkbook workbook = new(new MemoryStream(bytes));
         List<(string, SheetData)> result = new();
+        ReadWorkbookIncrementally(bytes, (index, name, data) => result.Add((name, data)), CancellationToken.None);
+
+        return result;
+    }
+
+    // Reads the workbook once and publishes each completed worksheet immediately. Callers run this
+    // on a worker thread and can progressively replace placeholder tabs without retaining every
+    // SheetData snapshot at once.
+    internal static void ReadWorkbookIncrementally(
+        byte[] bytes,
+        Action<int, string, SheetData> sheetRead,
+        CancellationToken cancellationToken)
+    {
+        using XLWorkbook workbook = new(new MemoryStream(bytes, writable: false));
         int index = 0;
         foreach (IXLWorksheet sheet in workbook.Worksheets)
         {
-            result.Add((sheet.Name, ReadSheet(workbook, sheet, bytes, index)));
+            cancellationToken.ThrowIfCancellationRequested();
+            SheetData data = ReadSheet(workbook, sheet, bytes, index, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            sheetRead(index, sheet.Name, data);
+            index++;
+        }
+    }
+
+    // Reads one full-fidelity worksheet. ClosedXML still has to open the package, so callers keep
+    // this work off the UI thread and invoke it only after the worksheet has been selected.
+    internal static SheetData ReadWorksheet(byte[] bytes, int sheetIndex, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using XLWorkbook workbook = new(new MemoryStream(bytes, writable: false));
+        cancellationToken.ThrowIfCancellationRequested();
+        IXLWorksheet? sheet = workbook.Worksheets.Skip(sheetIndex).FirstOrDefault();
+        if (sheet is null)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sheetIndex));
+        }
+
+        SheetData data = ReadSheet(workbook, sheet, bytes, sheetIndex, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return data;
+    }
+
+    // Produces a fast, read-only first-sheet preview directly from the OOXML package. This avoids
+    // ClosedXML's eager whole-workbook construction, which dominates open time for large files.
+    // The normal reader subsequently replaces this preview with the full-fidelity worksheet.
+    internal static XlsxWorkbookPreview ReadPreview(
+        byte[] bytes,
+        CancellationToken cancellationToken,
+        int rowLimit = 128,
+        int columnLimit = 64)
+    {
+        using ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read);
+        XDocument workbook = ReadXmlPart(archive, "xl/workbook.xml");
+        XDocument relationships = ReadXmlPart(archive, "xl/_rels/workbook.xml.rels");
+        XNamespace relationshipNamespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        XNamespace packageRelationships = "http://schemas.openxmlformats.org/package/2006/relationships";
+
+        Dictionary<string, string> targets = relationships
+            .Descendants(packageRelationships + "Relationship")
+            .Where(static relationship =>
+                relationship.Attribute("Id") is not null &&
+                relationship.Attribute("Target") is not null &&
+                relationship.Attribute("Type")?.Value.EndsWith("/worksheet", StringComparison.Ordinal) == true)
+            .ToDictionary(
+                relationship => relationship.Attribute("Id")!.Value,
+                relationship => ResolvePartPath("xl/workbook.xml", relationship.Attribute("Target")!.Value),
+                StringComparer.Ordinal);
+
+        IReadOnlyList<Color?> theme = ReadThemeColors(archive);
+        List<XlsxSheetPreview> sheets = new();
+        foreach (XElement sheet in workbook.Descendants(Ssml + "sheet"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string name = sheet.Attribute("name")?.Value?.Trim() ?? string.Empty;
+            string relationshipId = sheet.Attribute(relationshipNamespace + "id")?.Value ?? string.Empty;
+            if (targets.TryGetValue(relationshipId, out string? part))
+            {
+                string resolvedName = string.IsNullOrWhiteSpace(name) ? $"Sheet{sheets.Count + 1}" : name;
+                Color? tabColor = ReadPreviewTabColor(archive, part, theme, cancellationToken);
+                sheets.Add(new XlsxSheetPreview(sheets.Count, resolvedName, part, tabColor));
+            }
+        }
+
+        if (sheets.Count == 0)
+        {
+            return new XlsxWorkbookPreview(
+                new[] { new XlsxSheetPreview(0, "Sheet1", string.Empty, null) },
+                new SheetData { Cells = new List<IReadOnlyList<CellData>> { new List<CellData> { CellData.Plain(string.Empty) } } });
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        SheetData firstSheet = ReadPreviewSheet(
+            archive,
+            bytes,
+            sheets[0].PartPath,
+            sheets[0].Index,
+            sheets[0].TabColor,
+            rowLimit,
+            columnLimit,
+            cancellationToken);
+        return new XlsxWorkbookPreview(sheets, firstSheet);
+    }
+
+    // Reads only a screen-sized slice of a selected worksheet. The metadata object carries its
+    // already-resolved tab color so this pass does not need to rescan any unrelated worksheets.
+    internal static SheetData ReadWorksheetPreview(
+        byte[] bytes,
+        XlsxSheetPreview sheet,
+        int rowLimit,
+        int columnLimit,
+        CancellationToken cancellationToken)
+    {
+        using ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read);
+        return ReadPreviewSheet(
+            archive,
+            bytes,
+            sheet.PartPath,
+            sheet.Index,
+            sheet.TabColor,
+            rowLimit,
+            columnLimit,
+            cancellationToken);
+    }
+
+    private static SheetData ReadPreviewSheet(
+        ZipArchive archive,
+        byte[] bytes,
+        string partPath,
+        int sheetIndex,
+        Color? tabColor,
+        int rowLimit,
+        int columnLimit,
+        CancellationToken cancellationToken)
+    {
+        PreviewWorksheetSlice slice = ReadPreviewWorksheetSlice(
+            archive,
+            partPath,
+            rowLimit,
+            columnLimit,
+            cancellationToken);
+        List<XElement> cells = slice.Cells;
+        HashSet<int> sharedStringIndexes = new();
+        foreach (XElement cell in cells)
+        {
+            if (cell.Attribute("t")?.Value == "s" &&
+                int.TryParse(cell.Element(Ssml + "v")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
+            {
+                sharedStringIndexes.Add(index);
+            }
+        }
+
+        Dictionary<int, string> sharedStrings = ReadSharedStrings(archive, sharedStringIndexes, cancellationToken);
+        List<PreviewCellStyle> styles = ReadPreviewStyles(archive);
+        Dictionary<(int Row, int Column), CellData> values = new();
+        int lastRow = slice.RowCount;
+        int lastColumn = slice.ColumnCount;
+        foreach (XElement cell in cells)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryParseCellAddress(cell.Attribute("r")?.Value, out int row, out int column))
+            {
+                continue;
+            }
+
+            int styleIndex = int.TryParse(cell.Attribute("s")?.Value, out int parsedStyle) ? parsedStyle : 0;
+            PreviewCellStyle style = styleIndex >= 0 && styleIndex < styles.Count ? styles[styleIndex] : default;
+            (string text, string? formulaResult) = PreviewCellText(cell, sharedStrings, style.NumberFormat);
+            values[(row, column)] = new CellData(
+                text,
+                style.Bold,
+                style.Italic,
+                style.Underline,
+                style.Foreground,
+                style.Background,
+                style.FontSize,
+                style.Alignment,
+                style.NumberFormat,
+                style.FontFamily,
+                style.Strikethrough,
+                formulaResult);
+        }
+
+        lastRow = Math.Max(1, lastRow);
+        lastColumn = Math.Max(1, lastColumn);
+        List<IReadOnlyList<CellData>> rows = new(lastRow);
+        for (int row = 0; row < lastRow; row++)
+        {
+            List<CellData> rowData = new(lastColumn);
+            for (int column = 0; column < lastColumn; column++)
+            {
+                rowData.Add(values.TryGetValue((row, column), out CellData value) ? value : CellData.Plain(string.Empty));
+            }
+            rows.Add(rowData);
+        }
+
+        List<double> widths = Enumerable.Repeat(0d, lastColumn).ToList();
+        foreach ((int min, int max, double width) in slice.Columns)
+        {
+            double pixels = Math.Clamp(width * 7.0 + 5.0, 24.0, 400.0);
+            for (int index = Math.Max(1, min); index <= Math.Min(lastColumn, max); index++)
+            {
+                widths[index - 1] = pixels;
+            }
+        }
+
+        return new SheetData
+        {
+            Cells = rows,
+            ColumnWidths = widths,
+            Merges = slice.Merges,
+            Charts = XlsxCharts.Read(bytes, sheet: null, sheetIndex),
+            TabColor = tabColor ?? PreviewColor(slice.TabColor, ReadThemeColors(archive)),
+        };
+    }
+
+    private static PreviewWorksheetSlice ReadPreviewWorksheetSlice(
+        ZipArchive archive,
+        string partPath,
+        int rowLimit,
+        int columnLimit,
+        CancellationToken cancellationToken)
+    {
+        rowLimit = Math.Clamp(rowLimit, 1, 2048);
+        columnLimit = Math.Clamp(columnLimit, 1, 256);
+        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException($"Missing workbook part '{partPath}'.");
+        List<XElement> cells = new();
+        List<(int Min, int Max, double Width)> columns = new();
+        List<MergeRange> merges = new();
+        XElement? tabColor = null;
+        int dimensionRows = 0;
+        int dimensionColumns = 0;
+        int lastLoadedRow = 0;
+        int lastLoadedColumn = 0;
+
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+        });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType != XmlNodeType.Element)
+            {
+                reader.Read();
+                continue;
+            }
+
+            if (reader.LocalName == "dimension" &&
+                CellRange.TryParse(reader.GetAttribute("ref"), out CellRange dimension))
+            {
+                dimensionRows = dimension.Row + dimension.RowSpan;
+                dimensionColumns = dimension.Column + dimension.ColumnSpan;
+                reader.Read();
+                continue;
+            }
+
+            if (reader.LocalName == "sheetPr")
+            {
+                XElement properties = (XElement)XNode.ReadFrom(reader);
+                tabColor = properties.Element(Ssml + "tabColor");
+                continue;
+            }
+
+            if (reader.LocalName == "col")
+            {
+                if (int.TryParse(reader.GetAttribute("min"), out int min) &&
+                    int.TryParse(reader.GetAttribute("max"), out int max) &&
+                    double.TryParse(reader.GetAttribute("width"), NumberStyles.Float, CultureInfo.InvariantCulture, out double width))
+                {
+                    columns.Add((min, max, width));
+                    lastLoadedColumn = Math.Max(lastLoadedColumn, Math.Min(columnLimit, max));
+                }
+                reader.Read();
+                continue;
+            }
+
+            if (reader.LocalName == "row")
+            {
+                int oneBasedRow = int.TryParse(reader.GetAttribute("r"), out int parsedRow)
+                    ? parsedRow
+                    : lastLoadedRow + 1;
+                if (oneBasedRow > rowLimit)
+                {
+                    break;
+                }
+
+                XElement row = (XElement)XNode.ReadFrom(reader);
+                foreach (XElement cell in row.Descendants(Ssml + "c"))
+                {
+                    if (!TryParseCellAddress(cell.Attribute("r")?.Value, out _, out int column) || column >= columnLimit)
+                    {
+                        continue;
+                    }
+                    cells.Add(cell);
+                    lastLoadedColumn = Math.Max(lastLoadedColumn, column + 1);
+                }
+                lastLoadedRow = Math.Max(lastLoadedRow, oneBasedRow);
+                continue;
+            }
+
+            // Merge definitions come after sheetData. They are available without scanning a large
+            // sheet only when the first slice already contains the full worksheet.
+            if (dimensionRows <= rowLimit && reader.LocalName == "mergeCell" &&
+                CellRange.TryParse(reader.GetAttribute("ref"), out CellRange range) &&
+                range.Row < rowLimit && range.Column < columnLimit)
+            {
+                int rowSpan = Math.Min(range.RowSpan, rowLimit - range.Row);
+                int columnSpan = Math.Min(range.ColumnSpan, columnLimit - range.Column);
+                merges.Add(new MergeRange(range.Row, range.Column, rowSpan, columnSpan));
+            }
+            reader.Read();
+        }
+
+        int rowCount = Math.Max(1, Math.Min(rowLimit, dimensionRows > 0 ? dimensionRows : lastLoadedRow));
+        int columnCount = Math.Max(1, Math.Min(columnLimit, dimensionColumns > 0 ? dimensionColumns : lastLoadedColumn));
+        return new PreviewWorksheetSlice(cells, columns, merges, tabColor, rowCount, columnCount);
+    }
+
+    private static Dictionary<int, string> ReadSharedStrings(
+        ZipArchive archive,
+        HashSet<int> requested,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, string> result = new();
+        if (requested.Count == 0 || archive.GetEntry("xl/sharedStrings.xml") is not { } entry)
+        {
+            return result;
+        }
+
+        int maximum = requested.Max();
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+        int index = 0;
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "si")
+            {
+                reader.Read();
+                continue;
+            }
+
+            XElement item = (XElement)XNode.ReadFrom(reader);
+            if (requested.Contains(index))
+            {
+                result[index] = string.Concat(item.Descendants(Ssml + "t").Select(static text => text.Value));
+            }
+            if (index >= maximum)
+            {
+                break;
+            }
             index++;
         }
 
         return result;
     }
 
+    private static (string Text, string? FormulaResult) PreviewCellText(
+        XElement cell,
+        IReadOnlyDictionary<int, string> sharedStrings,
+        string? numberFormat)
+    {
+        XElement? formula = cell.Element(Ssml + "f");
+        string type = cell.Attribute("t")?.Value ?? string.Empty;
+        string raw = cell.Element(Ssml + "v")?.Value ?? string.Empty;
+        string value = type switch
+        {
+            "s" when int.TryParse(raw, out int index) && sharedStrings.TryGetValue(index, out string? shared) => shared,
+            "inlineStr" => string.Concat(cell.Descendants(Ssml + "t").Select(static text => text.Value)),
+            "b" => raw == "1" ? "TRUE" : "FALSE",
+            _ => raw,
+        };
+
+        // Shared-formula followers can carry an empty <f/>. Show their cached value in the small
+        // preview; ClosedXML expands the formula when the full sheet is imported.
+        string cachedResult = type.Length == 0 &&
+            double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out double number)
+                ? NumberFormatter.Format(number, numberFormat)
+                : value;
+        return formula is not null && !string.IsNullOrWhiteSpace(formula.Value)
+            ? ("=" + formula.Value, cachedResult)
+            : (value, null);
+    }
+
+    private static List<PreviewCellStyle> ReadPreviewStyles(ZipArchive archive)
+    {
+        if (archive.GetEntry("xl/styles.xml") is not { } entry)
+        {
+            return new List<PreviewCellStyle> { default };
+        }
+
+        XDocument document;
+        using (Stream stream = entry.Open())
+        {
+            document = XDocument.Load(stream);
+        }
+
+        IReadOnlyList<Color?> theme = ReadThemeColors(archive);
+        List<XElement> fonts = document.Descendants(Ssml + "fonts").Elements(Ssml + "font").ToList();
+        List<XElement> fills = document.Descendants(Ssml + "fills").Elements(Ssml + "fill").ToList();
+        Dictionary<int, string> numberFormats = document.Descendants(Ssml + "numFmt")
+            .Where(static format => int.TryParse(format.Attribute("numFmtId")?.Value, out _) && format.Attribute("formatCode") is not null)
+            .ToDictionary(
+                format => int.Parse(format.Attribute("numFmtId")!.Value, CultureInfo.InvariantCulture),
+                format => format.Attribute("formatCode")!.Value);
+
+        List<PreviewCellStyle> result = new();
+        foreach (XElement xf in document.Descendants(Ssml + "cellXfs").Elements(Ssml + "xf"))
+        {
+            int fontId = int.TryParse(xf.Attribute("fontId")?.Value, out int parsedFont) ? parsedFont : 0;
+            int fillId = int.TryParse(xf.Attribute("fillId")?.Value, out int parsedFill) ? parsedFill : 0;
+            int numberFormatId = int.TryParse(xf.Attribute("numFmtId")?.Value, out int parsedFormat) ? parsedFormat : 0;
+            XElement? font = fontId >= 0 && fontId < fonts.Count ? fonts[fontId] : null;
+            XElement? fill = fillId >= 0 && fillId < fills.Count ? fills[fillId] : null;
+            Color? foreground = PreviewColor(font?.Element(Ssml + "color"), theme);
+            if (foreground is { R: 0, G: 0, B: 0 })
+            {
+                foreground = null;
+            }
+
+            string? numberFormat = numberFormats.TryGetValue(numberFormatId, out string? custom)
+                ? custom
+                : BuiltInNumberFormat(numberFormatId);
+            string horizontal = xf.Element(Ssml + "alignment")?.Attribute("horizontal")?.Value ?? string.Empty;
+            result.Add(new PreviewCellStyle(
+                font?.Element(Ssml + "b") is not null,
+                font?.Element(Ssml + "i") is not null,
+                font?.Element(Ssml + "u") is not null,
+                font?.Element(Ssml + "strike") is not null,
+                foreground,
+                PreviewColor(fill?.Element(Ssml + "patternFill")?.Element(Ssml + "fgColor"), theme),
+                double.TryParse(font?.Element(Ssml + "sz")?.Attribute("val")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double size)
+                    ? size * 4.0 / 3.0
+                    : 0,
+                font?.Element(Ssml + "name")?.Attribute("val")?.Value,
+                numberFormat,
+                horizontal is "center" or "centerContinuous" ? TextAlignment.Center : horizontal == "right" ? TextAlignment.Right : TextAlignment.Left));
+        }
+
+        return result.Count == 0 ? new List<PreviewCellStyle> { default } : result;
+    }
+
+    private static IReadOnlyList<Color?> ReadThemeColors(ZipArchive archive)
+    {
+        Color?[] theme = new Color?[12];
+        if (archive.GetEntry("xl/theme/theme1.xml") is not { } entry)
+        {
+            return theme;
+        }
+
+        XDocument document;
+        using (Stream stream = entry.Open())
+        {
+            document = XDocument.Load(stream);
+        }
+
+        XNamespace drawing = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        XElement? scheme = document.Descendants(drawing + "clrScheme").FirstOrDefault();
+        if (scheme is null)
+        {
+            return theme;
+        }
+
+        string[] order = { "lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink" };
+        for (int index = 0; index < order.Length; index++)
+        {
+            XElement? color = scheme.Element(drawing + order[index])?.Elements().FirstOrDefault();
+            string? hex = color?.Attribute("lastClr")?.Value ?? color?.Attribute("val")?.Value;
+            theme[index] = ParseRgb(hex);
+        }
+
+        return theme;
+    }
+
+    // sheetPr is located before sheetData, so tab color can be read without scanning cell rows.
+    // This makes every tab look final during the initial workbook metadata pass.
+    private static Color? ReadPreviewTabColor(
+        ZipArchive archive,
+        string partPath,
+        IReadOnlyList<Color?> theme,
+        CancellationToken cancellationToken)
+    {
+        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException($"Missing workbook part '{partPath}'.");
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+        });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType != XmlNodeType.Element)
+            {
+                reader.Read();
+                continue;
+            }
+
+            if (reader.LocalName == "sheetPr")
+            {
+                XElement properties = (XElement)XNode.ReadFrom(reader);
+                return PreviewColor(properties.Element(Ssml + "tabColor"), theme);
+            }
+
+            if (reader.LocalName == "sheetData")
+            {
+                break;
+            }
+
+            reader.Read();
+        }
+
+        return null;
+    }
+
+    private static Color? PreviewColor(XElement? element, IReadOnlyList<Color?> theme)
+    {
+        if (element is null)
+        {
+            return null;
+        }
+
+        Color? color = ParseRgb(element.Attribute("rgb")?.Value);
+        if (color is null && int.TryParse(element.Attribute("theme")?.Value, out int themeIndex) &&
+            themeIndex >= 0 && themeIndex < theme.Count)
+        {
+            color = theme[themeIndex];
+        }
+
+        if (color is { } resolved &&
+            double.TryParse(element.Attribute("tint")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double tint))
+        {
+            color = ApplyTint(resolved, tint);
+        }
+        return color;
+    }
+
+    private static Color? ParseRgb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string hex = value.Trim().TrimStart('#');
+        if (hex.Length == 8)
+        {
+            hex = hex[2..];
+        }
+        return hex.Length == 6 && uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint rgb)
+            ? Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb)
+            : null;
+    }
+
+    private static XDocument ReadXmlPart(ZipArchive archive, string path)
+    {
+        ZipArchiveEntry entry = archive.GetEntry(path) ?? throw new InvalidDataException($"Missing workbook part '{path}'.");
+        using Stream stream = entry.Open();
+        return XDocument.Load(stream);
+    }
+
+    private static string ResolvePartPath(string sourcePart, string target)
+    {
+        Uri packageRoot = new("http://package/");
+        Uri source = new(packageRoot, sourcePart);
+        return Uri.UnescapeDataString(new Uri(source, target.Replace('\\', '/')).AbsolutePath.TrimStart('/'));
+    }
+
+    private static bool TryParseCellAddress(string? reference, out int row, out int column)
+    {
+        row = 0;
+        column = 0;
+        if (string.IsNullOrWhiteSpace(reference))
+        {
+            return false;
+        }
+
+        string clean = reference.Replace("$", string.Empty, StringComparison.Ordinal);
+        int split = 0;
+        while (split < clean.Length && char.IsLetter(clean[split]))
+        {
+            split++;
+        }
+        if (split == 0 || split == clean.Length || !int.TryParse(clean[split..], out int oneBasedRow))
+        {
+            return false;
+        }
+
+        column = CellAddress.LettersToColumn(clean[..split]);
+        row = oneBasedRow - 1;
+        return row >= 0 && column >= 0;
+    }
+
+    private readonly record struct PreviewCellStyle(
+        bool Bold,
+        bool Italic,
+        bool Underline,
+        bool Strikethrough,
+        Color? Foreground,
+        Color? Background,
+        double FontSize,
+        string? FontFamily,
+        string? NumberFormat,
+        TextAlignment Alignment);
+
+    private sealed record PreviewWorksheetSlice(
+        List<XElement> Cells,
+        List<(int Min, int Max, double Width)> Columns,
+        List<MergeRange> Merges,
+        XElement? TabColor,
+        int RowCount,
+        int ColumnCount);
+
     // Reads one worksheet into a SheetData. sheetIndex is the
     // 0-based position in the workbook (used to find this sheet's drawing/charts).
-    private static SheetData ReadSheet(XLWorkbook workbook, IXLWorksheet sheet, byte[] bytes, int sheetIndex)
+    internal static SheetData ReadSheet(
+        XLWorkbook workbook,
+        IXLWorksheet sheet,
+        byte[] bytes,
+        int sheetIndex,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         List<List<CellData>> rows = new();
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
@@ -77,28 +757,29 @@ public static class XlsxFile
         // per-cell styles. Resolve both custom styles embedded in styles.xml and Excel's built-in
         // TableStyleLight/Medium/Dark families.
         Dictionary<(int Row, int Column), TableCellStyle> tableStyles = BuildTableStyles(bytes, sheet, workbook);
+        Dictionary<IXLStyle, ImportedCellStyle> styleCache = new();
 
         for (int r = 1; r <= lastRow; r++)
         {
+            if ((r & 63) == 1)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             List<CellData> row = new(lastColumn);
             for (int c = 1; c <= lastColumn; c++)
             {
                 IXLCell cell = sheet!.Cell(r, c);
-                IXLFontBase font = cell.Style.Font;
-
-                // Font color: resolve (incl. theme) but drop default black so plain cells stay unstyled
-                // and a table style can supply its own foreground.
-                Color? foreground = ResolveColor(workbook, font.FontColor);
-                if (foreground is { } f && f.R == 0 && f.G == 0 && f.B == 0)
+                IXLStyle xlStyle = cell.Style;
+                if (!styleCache.TryGetValue(xlStyle, out ImportedCellStyle importedStyle))
                 {
-                    foreground = null;
+                    importedStyle = ReadCellStyle(workbook, xlStyle);
+                    styleCache[xlStyle] = importedStyle;
                 }
 
-                Color? background = cell.Style.Fill.PatternType != XLFillPatternValues.None
-                    ? ResolveColor(workbook, cell.Style.Fill.BackgroundColor)
-                    : null;
-
-                bool bold = font.Bold;
+                Color? foreground = importedStyle.Foreground;
+                Color? background = importedStyle.Background;
+                bool bold = importedStyle.Bold;
                 if (tableStyles.TryGetValue((r, c), out TableCellStyle tableStyle))
                 {
                     // Direct cell formatting wins; table formatting supplies only missing values.
@@ -111,39 +792,47 @@ public static class XlsxFile
                 // number format renders it (e.g. $50,000). Text/dates keep their formatted string.
                 // Prefer the explicit format code; for built-in formats (percent, thousands, …) ClosedXML
                 // leaves Format empty and only sets NumberFormatId, so map that to its implied code.
-                string? format = cell.Style.NumberFormat.Format;
-                format = string.IsNullOrWhiteSpace(format)
-                    ? BuiltInNumberFormat(cell.Style.NumberFormat.NumberFormatId)
-                    : format;
+                string? format = importedStyle.NumberFormat;
                 string text;
                 string? numberFormat = null;
+                string? formulaResult = null;
                 if (cell.HasFormula)
                 {
                     text = "=" + StructuredReferences.Translate(cell.FormulaA1, r, c, tables);
                     numberFormat = format;
+                    formulaResult = CachedFormulaText(cell.CachedValue, format);
                 }
                 else if (cell.DataType == XLDataType.Number)
                 {
                     text = cell.GetDouble().ToString(CultureInfo.InvariantCulture);
                     numberFormat = format;
                 }
+                else if (cell.DataType == XLDataType.Text)
+                {
+                    text = cell.GetString();
+                }
+                else if (cell.DataType == XLDataType.Boolean)
+                {
+                    text = cell.GetBoolean() ? "TRUE" : "FALSE";
+                }
                 else
                 {
-                    text = cell.GetFormattedString(); // text / dates / booleans: show as Excel formatted them
+                    text = cell.GetFormattedString(); // dates/errors: show as Excel formatted them
                 }
 
                 row.Add(new CellData(
                     text,
                     bold,
-                    font.Italic,
-                    font.Underline != XLFontUnderlineValues.None,
+                    importedStyle.Italic,
+                    importedStyle.Underline,
                     foreground,
                     background,
-                    font.FontSize * 4.0 / 3.0,           // points -> device pixels (96/72)
-                    AlignmentOf(cell),
+                    importedStyle.FontSize,
+                    AlignmentOf(importedStyle.HorizontalAlignment, cell.DataType),
                     numberFormat,
-                    string.IsNullOrWhiteSpace(font.FontName) ? null : font.FontName,
-                    font.Strikethrough));
+                    importedStyle.FontFamily,
+                    importedStyle.Strikethrough,
+                    formulaResult));
             }
 
             rows.Add(row);
@@ -178,6 +867,7 @@ public static class XlsxFile
         }
 
         List<SheetImage> images = ReadImages(sheet);
+        cancellationToken.ThrowIfCancellationRequested();
         List<SheetChart> charts = XlsxCharts.Read(bytes, sheet, sheetIndex);
         Dictionary<string, string> names = ReadNames(workbook, sheet);
         List<SheetDataBar> dataBars = ReadDataBars(workbook, sheet);
@@ -604,6 +1294,72 @@ public static class XlsxFile
     }
 
     private readonly record struct TableCellStyle(Color? Background, Color? Foreground, bool Bold);
+
+    private readonly record struct ImportedCellStyle(
+        bool Bold,
+        bool Italic,
+        bool Underline,
+        bool Strikethrough,
+        Color? Foreground,
+        Color? Background,
+        double FontSize,
+        string? FontFamily,
+        string? NumberFormat,
+        XLAlignmentHorizontalValues HorizontalAlignment);
+
+    private static string CachedFormulaText(XLCellValue value, string? numberFormat) => value.Type switch
+    {
+        XLDataType.Blank => string.Empty,
+        XLDataType.Boolean => value.GetBoolean() ? "TRUE" : "FALSE",
+        XLDataType.Number => NumberFormatter.Format(value.GetNumber(), numberFormat),
+        XLDataType.Text => value.GetText(),
+        XLDataType.Error => value.GetError() switch
+        {
+            XLError.NullValue => "#NULL!",
+            XLError.DivisionByZero => "#DIV/0!",
+            XLError.IncompatibleValue => "#VALUE!",
+            XLError.CellReference => "#REF!",
+            XLError.NameNotRecognized => "#NAME?",
+            XLError.NumberInvalid => "#NUM!",
+            XLError.NoValueAvailable => "#N/A",
+            _ => "#VALUE!",
+        },
+        XLDataType.DateTime => value.GetDateTime().ToString(CultureInfo.InvariantCulture),
+        XLDataType.TimeSpan => value.GetTimeSpan().ToString(),
+        _ => value.ToString(CultureInfo.InvariantCulture),
+    };
+
+    private static ImportedCellStyle ReadCellStyle(XLWorkbook workbook, IXLStyle style)
+    {
+        IXLFontBase font = style.Font;
+
+        // Drop default black so plain cells stay unstyled and a table style can supply its foreground.
+        Color? foreground = ResolveColor(workbook, font.FontColor);
+        if (foreground is { } color && color.R == 0 && color.G == 0 && color.B == 0)
+        {
+            foreground = null;
+        }
+
+        Color? background = style.Fill.PatternType != XLFillPatternValues.None
+            ? ResolveColor(workbook, style.Fill.BackgroundColor)
+            : null;
+        string? numberFormat = style.NumberFormat.Format;
+        numberFormat = string.IsNullOrWhiteSpace(numberFormat)
+            ? BuiltInNumberFormat(style.NumberFormat.NumberFormatId)
+            : numberFormat;
+
+        return new ImportedCellStyle(
+            font.Bold,
+            font.Italic,
+            font.Underline != XLFontUnderlineValues.None,
+            font.Strikethrough,
+            foreground,
+            background,
+            font.FontSize * 4.0 / 3.0, // points -> device pixels (96/72)
+            string.IsNullOrWhiteSpace(font.FontName) ? null : font.FontName,
+            numberFormat,
+            style.Alignment.Horizontal);
+    }
 
     private readonly record struct ResolvedTableStyle(
         TableCellStyle Whole,
@@ -1091,14 +1847,14 @@ public static class XlsxFile
 
     // Maps a cell's horizontal alignment, defaulting General to Excel's behavior
     // (numbers right-aligned, text left-aligned).
-    private static TextAlignment AlignmentOf(IXLCell cell)
+    private static TextAlignment AlignmentOf(XLAlignmentHorizontalValues horizontal, XLDataType dataType)
     {
-        return cell.Style.Alignment.Horizontal switch
+        return horizontal switch
         {
             XLAlignmentHorizontalValues.Center or XLAlignmentHorizontalValues.CenterContinuous => TextAlignment.Center,
             XLAlignmentHorizontalValues.Right => TextAlignment.Right,
             XLAlignmentHorizontalValues.Left => TextAlignment.Left,
-            _ => cell.DataType == XLDataType.Number ? TextAlignment.Right : TextAlignment.Left,
+            _ => dataType == XLDataType.Number ? TextAlignment.Right : TextAlignment.Left,
         };
     }
 

@@ -4,8 +4,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+
 using Avalonia.Media;
+
 using CommunityToolkit.Mvvm.ComponentModel;
+
 using global::SpreadsheetEditor.Controls.Formulas;
 using global::SpreadsheetEditor.Controls.Models;
 
@@ -169,7 +172,7 @@ public partial class CellViewModel : ObservableObject
         this.applyingRuns = true;
         this.Text = text;
         this.applyingRuns = false;
-        this.OnPropertyChanged(nameof(EffectiveRuns));
+        this.OnPropertyChanged(nameof(this.EffectiveRuns));
     }
 
     // Sets mixed-run rich content (from the formula bar) and the matching plain text.
@@ -179,7 +182,7 @@ public partial class CellViewModel : ObservableObject
         this.applyingRuns = true;
         this.Text = string.Concat(runs.Select(r => r.Text));
         this.applyingRuns = false;
-        this.OnPropertyChanged(nameof(EffectiveRuns));
+        this.OnPropertyChanged(nameof(this.EffectiveRuns));
     }
 
     // ----- Whole-cell formatting (applied when the cell is selected, not being edited) -----
@@ -255,12 +258,24 @@ public partial class CellViewModel : ObservableObject
     {
         if (this.runs is null)
         {
-            this.OnPropertyChanged(nameof(EffectiveRuns));
+            this.OnPropertyChanged(nameof(this.EffectiveRuns));
         }
     }
 
     public CellData ToData() =>
-        new(this.Text, this.Bold, this.Italic, this.Underline, this.ForegroundColor, this.BackgroundColor, this.FontSize, this.TextAlignment, this.NumberFormat, this.FontFamily, this.Strikethrough);
+        new(
+            this.Text,
+            this.Bold,
+            this.Italic,
+            this.Underline,
+            this.ForegroundColor,
+            this.BackgroundColor,
+            this.FontSize,
+            this.TextAlignment,
+            this.NumberFormat,
+            this.FontFamily,
+            this.Strikethrough,
+            this.IsFormula ? this.ComputedValue : null);
 
     public void ApplyData(CellData data)
     {
@@ -276,6 +291,7 @@ public partial class CellViewModel : ObservableObject
         this.TextAlignment = data.Alignment;
         this.NumberFormat = data.NumberFormat;
         this.FontFamily = data.FontFamily;
-        this.OnPropertyChanged(nameof(EffectiveRuns));
+        this.ComputedValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaResult : null;
+        this.OnPropertyChanged(nameof(this.EffectiveRuns));
     }
 }

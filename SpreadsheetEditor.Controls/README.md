@@ -50,12 +50,25 @@ using System.IO;
 
 // Load an .xlsx (every worksheet → one tab) into the control:
 await using (FileStream fs = File.OpenRead("book.xlsx"))
-    editor.OpenXlsx(fs);
+    await editor.OpenXlsxAsync(fs); // keeps the UI responsive for large workbooks
 
 // Save the active sheet back to .xlsx:
 await using (FileStream fs = File.Create("out.xlsx"))
     editor.SaveXlsx(fs);
 ```
+
+`OpenXlsx(Stream)` remains available for synchronous callers.
+
+`OpenXlsxAsync` reads workbook tab names and colors immediately, then reads roughly one visible
+viewport of the first worksheet, including its cached Excel formula results and charts. Other
+worksheets remain lightweight, correctly styled placeholders until selected. Selecting a tab displays
+its viewport-sized preview first and starts only that worksheet's full-fidelity import in the
+background. The previous frame stays visible until that preview is ready, avoiding a placeholder
+flash during the handoff. Preview sheets are read-only until their complete data is ready. A single
+serialized ClosedXML reader is reused for the workbook, so browsing several tabs does not queue repeated
+full-workbook parses. Opening a workbook preserves Excel's saved formula results instead of
+recalculating every sheet. After a cell edit, any worksheet needed by a sheet-qualified reference such
+as `Users!A1` loads on demand, then the affected formulas recalculate.
 
 For headless / non-UI use, the readers/writers are also available directly via
 `SpreadsheetEditor.Controls.Xlsx.XlsxFile` (`ReadWorkbook`/`Read`/`Write`) returning the library's
