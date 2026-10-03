@@ -623,7 +623,10 @@ public class SpreadsheetGrid : UserControl
         this.editorSuspended = false;
         cell.Text = e.Text;       // replace existing content with the typed character (Excel-style)
         this.UpdateSelection();   // shows + loads the editor with the new text
-        Dispatcher.UIThread.Post(() => this.FocusEditor());
+        // The editor has only just been made visible. Focusing at background priority lets its rich
+        // text surface finish realization first; otherwise the grid keeps focus and only this initial
+        // character is accepted.
+        Dispatcher.UIThread.Post(() => this.FocusEditor(), DispatcherPriority.Background);
         e.Handled = true;
     }
 
@@ -1509,15 +1512,22 @@ public class SpreadsheetGrid : UserControl
     // (qualified with the sheet name) plus the live values/labels so a saved workbook keeps its charts.
     public IReadOnlyList<ChartWriteData> BuildChartWriteData(string sheetName)
     {
-        List<ChartWriteData> result = new();
         if (this.sheet is null)
         {
-            return result;
+            return Array.Empty<ChartWriteData>();
         }
 
-        foreach (SheetChart chart in this.sheet.Charts)
+        return BuildChartWriteData(this.sheet, sheetName);
+    }
+
+    internal static IReadOnlyList<ChartWriteData> BuildChartWriteData(
+        SpreadsheetViewModel sheet,
+        string sheetName)
+    {
+        List<ChartWriteData> result = new();
+        foreach (SheetChart chart in sheet.Charts)
         {
-            (List<string> categories, List<ChartSeriesData> series) = this.ExtractChartData(chart);
+            (List<string> categories, List<ChartSeriesData> series) = ExtractChartData(sheet, chart);
 
             List<ChartWriteSeries> written = new();
             for (int i = 0; i < chart.Series.Count; i++)
@@ -1530,14 +1540,14 @@ public class SpreadsheetGrid : UserControl
             // Reproduce the chart's on-screen rectangle exactly (same math as RefreshCharts): a
             // two-cell-anchored chart is sized by its from→to span, otherwise by its stored size. We
             // persist it as an anchor + explicit pixel extent so position and size survive the round-trip.
-            double left = this.OffsetToColumn(chart.AnchorColumn) + chart.OffsetX;
-            double top = this.OffsetToRow(chart.AnchorRow) + chart.OffsetY;
+            double left = LogicalColumnOffset(sheet, chart.AnchorColumn) + chart.OffsetX;
+            double top = LogicalRowOffset(sheet, chart.AnchorRow) + chart.OffsetY;
             double width = chart.Width;
             double height = chart.Height;
             if (chart.ToColumn is { } toColumn && chart.ToRow is { } toRow)
             {
-                width = this.OffsetToColumn(toColumn) + chart.ToOffsetX - left;
-                height = this.OffsetToRow(toRow) + chart.ToOffsetY - top;
+                width = LogicalColumnOffset(sheet, toColumn) + chart.ToOffsetX - left;
+                height = LogicalRowOffset(sheet, toRow) + chart.ToOffsetY - top;
             }
 
             width = Math.Clamp(width, 120, 2400);
@@ -1552,6 +1562,13 @@ public class SpreadsheetGrid : UserControl
 
         return result;
     }
+
+    private static double LogicalColumnOffset(SpreadsheetViewModel sheet, int column) =>
+        sheet.Columns.Take(Math.Clamp(column, 0, sheet.ColumnCount)).Sum(static item => item.Width);
+
+    private static double LogicalRowOffset(SpreadsheetViewModel sheet, int row) =>
+        sheet.Rows.Take(Math.Clamp(row, 0, sheet.RowCount)).Sum(static item =>
+            item.Height ?? Math.Max(DefaultRowHeight, item.Cells.DefaultIfEmpty().Max(static cell => cell?.FontSize ?? CellViewModel.DefaultFontSize) + 8));
 
     // Builds the OOXML value reference for a series: one sheet-qualified range, or a parenthesised
     // multi-area reference (e.g. ('Budget'!$C$7,'Budget'!$C$10)) when the series spans several ranges.
@@ -1579,9 +1596,14 @@ public class SpreadsheetGrid : UserControl
 
     // Reads a chart's explicit series + category ranges into the data the factory needs, pulling the
     // live computed cell values.
-    private (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(SheetChart chart)
+    private (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(SheetChart chart) =>
+        ExtractChartData(this.sheet!, chart);
+
+    private static (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(
+        SpreadsheetViewModel sheet,
+        SheetChart chart)
     {
-        string Display(CellAddress a) => this.sheet!.GetCell(a)?.DisplayText ?? string.Empty;
+        string Display(CellAddress a) => sheet.GetCell(a)?.DisplayText ?? string.Empty;
 
         // True when the range resolves to at least one non-empty cell in the loaded sheet, i.e. the
         // chart's data lives here and should be read live (so edits/recalcs update the chart). When
@@ -1593,7 +1615,7 @@ public class SpreadsheetGrid : UserControl
                 return false;
             }
 
-            return this.EnumerateRange(range).Any(a => !string.IsNullOrWhiteSpace(Display(a)));
+            return EnumerateRange(sheet, range).Any(a => !string.IsNullOrWhiteSpace(Display(a)));
         }
 
         List<ChartSeriesData> series = new();
@@ -1601,7 +1623,7 @@ public class SpreadsheetGrid : UserControl
         {
             // A series can span several ranges/cells — concatenate their cells in order into one series.
             List<double> values = spec.Ranges.Any(RangeHasData)
-                ? spec.Ranges.SelectMany(this.EnumerateRange).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
+                ? spec.Ranges.SelectMany(range => EnumerateRange(sheet, range)).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
                 : spec.CachedValues?.ToList() ?? new List<double>();
             series.Add(new ChartSeriesData(spec.Title, values));
         }
@@ -1610,7 +1632,7 @@ public class SpreadsheetGrid : UserControl
         List<string> categories;
         if (chart.Categories is { } cats && RangeHasData(cats))
         {
-            categories = this.EnumerateRange(cats).Select(Display).ToList();
+            categories = EnumerateRange(sheet, cats).Select(Display).ToList();
         }
         else if (chart.CachedCategories is { Count: > 0 } cached)
         {
@@ -1618,7 +1640,7 @@ public class SpreadsheetGrid : UserControl
         }
         else if (chart.Categories is { } cats2)
         {
-            categories = this.EnumerateRange(cats2).Select(Display).ToList();
+            categories = EnumerateRange(sheet, cats2).Select(Display).ToList();
         }
         else
         {
@@ -1641,10 +1663,10 @@ public class SpreadsheetGrid : UserControl
     }
 
     // Yields a range's cell addresses in row-major order (clamped to the sheet).
-    private IEnumerable<CellAddress> EnumerateRange(CellRange range)
+    private static IEnumerable<CellAddress> EnumerateRange(SpreadsheetViewModel sheet, CellRange range)
     {
-        int rowEnd = Math.Min(range.Row + range.RowSpan - 1, this.sheet!.RowCount - 1);
-        int colEnd = Math.Min(range.Column + range.ColumnSpan - 1, this.sheet.ColumnCount - 1);
+        int rowEnd = Math.Min(range.Row + range.RowSpan - 1, sheet.RowCount - 1);
+        int colEnd = Math.Min(range.Column + range.ColumnSpan - 1, sheet.ColumnCount - 1);
         for (int r = Math.Max(0, range.Row); r <= rowEnd; r++)
         {
             for (int c = Math.Max(0, range.Column); c <= colEnd; c++)

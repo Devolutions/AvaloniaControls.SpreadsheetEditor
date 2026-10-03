@@ -8,6 +8,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
+
 using global::SpreadsheetEditor.Controls.Models;
 
 // Writes charts into a ClosedXML-produced .xlsx by hand-authoring the OOXML chart/drawing parts and
@@ -33,7 +34,7 @@ internal static class XlsxChartWriter
 
     // Injects the charts into the given .xlsx bytes and returns the new bytes. On any failure the
     // original bytes are returned unchanged (charts are best-effort, never break a save).
-    public static byte[] Inject(byte[] xlsxBytes, IReadOnlyList<ChartWriteData> charts)
+    public static byte[] Inject(byte[] xlsxBytes, IReadOnlyList<ChartWriteData> charts, int sheetIndex = 0)
     {
         if (charts is null || charts.Count == 0)
         {
@@ -45,8 +46,11 @@ internal static class XlsxChartWriter
             // Read the whole package into memory so we can freely add/replace parts.
             Dictionary<string, byte[]> parts = ReadParts(xlsxBytes);
 
-            string? worksheetPart = parts.Keys.FirstOrDefault(k =>
-                k.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) && k.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+            string? worksheetPart = parts.Keys
+                .Where(k => k.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) &&
+                    k.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(WorksheetPartNumber)
+                .ElementAtOrDefault(sheetIndex);
             if (worksheetPart is null)
             {
                 return xlsxBytes;
@@ -55,31 +59,36 @@ internal static class XlsxChartWriter
             string sheetFile = Path.GetFileName(worksheetPart);
             string sheetRelsPart = $"xl/worksheets/_rels/{sheetFile}.rels";
 
-            // Build one drawing that holds every chart anchor; each chart gets its own chart part.
+            // Build one drawing for this worksheet. Sheet-qualified part names let repeated calls add
+            // charts to multiple worksheets without replacing an earlier sheet's drawing/chart parts.
+            int partNumber = sheetIndex + 1;
+            string drawingPart = $"xl/drawings/drawing{partNumber}.xml";
+            string drawingRelsPart = $"xl/drawings/_rels/drawing{partNumber}.xml.rels";
             const string drawingRelId = "rIdSseChartDrawing";
             XElement wsDr = new(Xdr + "wsDr");
             List<(string Id, string Target)> drawingRels = new();
             for (int i = 0; i < charts.Count; i++)
             {
                 string chartRelId = $"rId{i + 1}";
-                string chartPart = $"xl/charts/chart{i + 1}.xml";
+                string chartFile = $"chart{partNumber}_{i + 1}.xml";
+                string chartPart = $"xl/charts/{chartFile}";
                 parts[chartPart] = ToBytes(BuildChartXml(charts[i]));
-                drawingRels.Add((chartRelId, $"../charts/chart{i + 1}.xml"));
+                drawingRels.Add((chartRelId, $"../charts/{chartFile}"));
                 wsDr.Add(BuildAnchor(charts[i], chartRelId));
             }
 
-            parts["xl/drawings/drawing1.xml"] = ToBytes(new XDocument(wsDr));
-            parts["xl/drawings/_rels/drawing1.xml.rels"] = ToBytes(BuildRels(drawingRels.Select(r => (r.Id, ChartRelType, r.Target))));
+            parts[drawingPart] = ToBytes(new XDocument(wsDr));
+            parts[drawingRelsPart] = ToBytes(BuildRels(drawingRels.Select(r => (r.Id, ChartRelType, r.Target))));
 
             // Point the worksheet at the drawing (element + relationship).
             parts[worksheetPart] = ToBytes(AddDrawingElement(parts[worksheetPart], drawingRelId));
-            parts[sheetRelsPart] = ToBytes(AddRelationship(parts.TryGetValue(sheetRelsPart, out byte[]? existing) ? existing : null, drawingRelId, DrawingRelType, "../drawings/drawing1.xml"));
+            parts[sheetRelsPart] = ToBytes(AddRelationship(parts.TryGetValue(sheetRelsPart, out byte[]? existing) ? existing : null, drawingRelId, DrawingRelType, $"../drawings/drawing{partNumber}.xml"));
 
             // Register content types for the new parts.
-            List<(string PartName, string ContentType)> overrides = new() { ("/xl/drawings/drawing1.xml", DrawingContentType) };
+            List<(string PartName, string ContentType)> overrides = new() { ($"/{drawingPart}", DrawingContentType) };
             for (int i = 0; i < charts.Count; i++)
             {
-                overrides.Add(($"/xl/charts/chart{i + 1}.xml", ChartContentType));
+                overrides.Add(($"/xl/charts/chart{partNumber}_{i + 1}.xml", ChartContentType));
             }
 
             parts["[Content_Types].xml"] = ToBytes(AddContentTypes(parts["[Content_Types].xml"], overrides));
@@ -90,6 +99,15 @@ internal static class XlsxChartWriter
         {
             return xlsxBytes;
         }
+    }
+
+    private static int WorksheetPartNumber(string path)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        return name.StartsWith("sheet", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(name[5..], out int number)
+            ? number
+            : int.MaxValue;
     }
 
     private static Dictionary<string, byte[]> ReadParts(byte[] bytes)

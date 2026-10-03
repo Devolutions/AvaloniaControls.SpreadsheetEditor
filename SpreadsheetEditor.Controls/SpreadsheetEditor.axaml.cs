@@ -439,13 +439,30 @@ public partial class SpreadsheetEditor : UserControl
         }
     }
 
-    // Writes the ACTIVE sheet to an .xlsx stream (values/formulas + whole-cell formatting). Multi-sheet
-    // export is not yet supported by the writer.
-    public void SaveXlsx(Stream stream) => XlsxFile.Write(
-        stream, this.GetCellData(), this.vm.Names, this.vm.Merges, this.vm.Name, this.vm.DataBars,
-        this.Grid.BuildChartWriteData(this.vm.Name),
-        this.vm.Columns.Select(static c => c.Width).ToList(),
-        this.vm.TabColor);
+    // Writes the complete workbook in tab order, including sheets created during this session.
+    public void SaveXlsx(Stream stream)
+    {
+        this.Grid.SuspendEditor();
+        List<XlsxSheetWriteData> workbook = this.sheets
+            .Select(sheet => new XlsxSheetWriteData(
+                sheet.Name,
+                CaptureSheetData(sheet),
+                SpreadsheetGrid.BuildChartWriteData(sheet, sheet.Name)))
+            .ToList();
+        XlsxFile.WriteWorkbook(stream, workbook);
+    }
+
+    private static SheetData CaptureSheetData(SpreadsheetViewModel sheet) => new()
+    {
+        Cells = sheet.ToCellData(),
+        ColumnWidths = sheet.Columns.Select(static column => column.Width).ToList(),
+        Merges = sheet.Merges,
+        Images = sheet.Images,
+        Charts = sheet.Charts,
+        Names = sheet.Names,
+        DataBars = sheet.DataBars,
+        TabColor = sheet.TabColor,
+    };
 
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
     // widths, merges, images, charts, data bars, and names.

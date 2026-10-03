@@ -21,10 +21,15 @@ using global::SpreadsheetEditor.Controls.Models;
 
 // .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
 // text/formulas plus whole-cell formatting (bold/italic/underline/strikethrough, colors, number format,
-// font). ReadWorkbook reads every worksheet; Write emits a single "Sheet1". Part of the control library.
+// font). ReadWorkbook and WriteWorkbook preserve every worksheet in tab order.
 internal sealed record XlsxSheetPreview(int Index, string Name, string PartPath, Color? TabColor);
 
 internal sealed record XlsxWorkbookPreview(IReadOnlyList<XlsxSheetPreview> Sheets, SheetData FirstSheet);
+
+internal sealed record XlsxSheetWriteData(
+    string Name,
+    SheetData Data,
+    IReadOnlyList<ChartWriteData> Charts);
 
 // Owns one ClosedXML workbook for the lifetime of a staged import. Selected worksheets are converted
 // serially so rapid tab switching cannot create several simultaneous full-workbook parsers.
@@ -1608,7 +1613,7 @@ public static class XlsxFile
         _ => XLThemeColor.Accent6,
     };
 
-    // Writes rows of CellData to a new single-sheet .xlsx workbook with styles.
+    // Compatibility helper for hosts that save one worksheet directly.
     public static void Write(
         Stream stream,
         IReadOnlyList<IReadOnlyList<CellData>> rows,
@@ -1620,82 +1625,144 @@ public static class XlsxFile
         IReadOnlyList<double>? columnWidths = null,
         Color? tabColor = null)
     {
-        using XLWorkbook workbook = new();
-        // Name the worksheet after the sheet so defined names qualified with that sheet (and the
-        // engine's single-sheet resolution) still line up on the next open.
-        IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(sheetName));
-        if (tabColor is { } tc)
+        SheetData data = new()
         {
-            sheet.TabColor = ToXl(tc);
+            Cells = rows,
+            Names = names ?? new Dictionary<string, string>(),
+            Merges = merges ?? Array.Empty<MergeRange>(),
+            DataBars = dataBars ?? Array.Empty<SheetDataBar>(),
+            ColumnWidths = columnWidths ?? Array.Empty<double>(),
+            TabColor = tabColor,
+        };
+        WriteWorkbook(
+            stream,
+            new[] { new XlsxSheetWriteData(sheetName ?? "Sheet1", data, charts ?? Array.Empty<ChartWriteData>()) });
+    }
+
+    // Writes the complete workbook in tab order. Each worksheet keeps its cells, styles, dimensions,
+    // merges, names, data bars, tab color, and chart definitions.
+    internal static void WriteWorkbook(Stream stream, IReadOnlyList<XlsxSheetWriteData> sheets)
+    {
+        using XLWorkbook workbook = new();
+        IReadOnlyList<XlsxSheetWriteData> source = sheets.Count > 0
+            ? sheets
+            : new[]
+            {
+                new XlsxSheetWriteData(
+                    "Sheet1",
+                    new SheetData { Cells = new[] { new[] { CellData.Plain(string.Empty) } } },
+                    Array.Empty<ChartWriteData>()),
+            };
+
+        List<(int SheetIndex, IReadOnlyList<ChartWriteData> Charts)> chartGroups = new();
+        for (int index = 0; index < source.Count; index++)
+        {
+            XlsxSheetWriteData input = source[index];
+            IXLWorksheet sheet = workbook.Worksheets.Add(UniqueSheetName(workbook, input.Name));
+            if (input.Data.TabColor is { } tabColor)
+            {
+                sheet.TabColor = ToXl(tabColor);
+            }
+
+            WriteSheet(workbook, sheet, input.Data);
+            if (input.Charts.Count > 0)
+            {
+                chartGroups.Add((index, input.Charts));
+            }
         }
+
+        if (chartGroups.Count == 0)
+        {
+            workbook.SaveAs(stream);
+            return;
+        }
+
+        using MemoryStream buffer = new();
+        workbook.SaveAs(buffer);
+        byte[] bytes = buffer.ToArray();
+        foreach ((int sheetIndex, IReadOnlyList<ChartWriteData> charts) in chartGroups)
+        {
+            bytes = XlsxChartWriter.Inject(bytes, charts, sheetIndex);
+        }
+
+        stream.Write(bytes, 0, bytes.Length);
+    }
+
+    private static void WriteSheet(XLWorkbook workbook, IXLWorksheet sheet, SheetData data)
+    {
+        IReadOnlyList<IReadOnlyList<CellData>> rows = data.Cells;
+        IReadOnlyList<double> columnWidths = data.ColumnWidths;
+        IReadOnlyList<MergeRange> merges = data.Merges;
+        IReadOnlyList<SheetDataBar> dataBars = data.DataBars;
+        IReadOnlyDictionary<string, string> names = data.Names;
 
         for (int r = 0; r < rows.Count; r++)
         {
             for (int c = 0; c < rows[r].Count; c++)
             {
-                CellData data = rows[r][c];
+                CellData cellData = rows[r][c];
                 IXLCell cell = sheet.Cell(r + 1, c + 1);
 
-                if (data.Text.StartsWith('=') && data.Text.Length > 1)
+                if (cellData.Text.StartsWith('=') && cellData.Text.Length > 1)
                 {
-                    cell.FormulaA1 = data.Text[1..];          // round-trip formulas
+                    cell.FormulaA1 = cellData.Text[1..];          // round-trip formulas
                 }
-                else if (double.TryParse(data.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out double num))
+                else if (double.TryParse(cellData.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out double num))
                 {
                     cell.Value = num;                          // numbers as numbers (so they stay computable)
                 }
-                else if (!string.IsNullOrEmpty(data.Text))
+                else if (!string.IsNullOrEmpty(cellData.Text))
                 {
-                    cell.Value = data.Text;
+                    cell.Value = cellData.Text;
                 }
 
-                if (data.NumberFormat is { } nf)
+                if (cellData.NumberFormat is { } nf)
                 {
                     cell.Style.NumberFormat.Format = nf;
                 }
 
-                if (data.FontFamily is { } fam)
+                if (cellData.FontFamily is { } fam)
                 {
                     cell.Style.Font.FontName = fam;
                 }
 
-                if (data.Bold)
+                if (cellData.Bold)
                 {
                     cell.Style.Font.Bold = true;
                 }
 
-                if (data.Italic)
+                if (cellData.Italic)
                 {
                     cell.Style.Font.Italic = true;
                 }
 
-                if (data.Underline)
+                if (cellData.Underline)
                 {
                     cell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 }
 
-                if (data.Strikethrough)
+                if (cellData.Strikethrough)
                 {
                     cell.Style.Font.Strikethrough = true;
                 }
 
-                if (data.Foreground is { } fg)
+                if (cellData.Foreground is { } fg)
                 {
                     cell.Style.Font.FontColor = ToXl(fg);
                 }
 
-                if (data.Background is { } bg)
+                if (cellData.Background is { } bg)
                 {
                     cell.Style.Fill.PatternType = XLFillPatternValues.Solid;
                     cell.Style.Fill.BackgroundColor = ToXl(bg);
                 }
 
-                if (data.FontSize > 0)
+                if (cellData.FontSize > 0)
                 {
-                    cell.Style.Font.FontSize = data.FontSize * 3.0 / 4.0; // px -> points
+                    cell.Style.Font.FontSize = cellData.FontSize * 3.0 / 4.0; // px -> points
                 }
 
-                cell.Style.Alignment.Horizontal = data.Alignment switch
+                cell.Style.Alignment.Horizontal = cellData.Alignment switch
                 {
                     TextAlignment.Center => XLAlignmentHorizontalValues.Center,
                     TextAlignment.Right => XLAlignmentHorizontalValues.Right,
@@ -1707,7 +1774,7 @@ public static class XlsxFile
         // Persist column widths (px) so the layout survives the round-trip — otherwise every column
         // falls back to Excel's default and the content truncates. Invert the reader's chars->px
         // conversion (px = chars * 7 + 5).
-        if (columnWidths is not null)
+        if (columnWidths.Count > 0)
         {
             for (int c = 0; c < columnWidths.Count; c++)
             {
@@ -1729,7 +1796,7 @@ public static class XlsxFile
         }
 
         // Persist merged regions so the layout survives the round-trip.
-        if (merges is not null)
+        if (merges.Count > 0)
         {
             foreach (MergeRange merge in merges)
             {
@@ -1750,7 +1817,7 @@ public static class XlsxFile
         }
 
         // Persist conditional-formatting data bars (the in-cell proportional bars).
-        if (dataBars is not null)
+        if (dataBars.Count > 0)
         {
             foreach (SheetDataBar bar in dataBars)
             {
@@ -1779,7 +1846,7 @@ public static class XlsxFile
         // Persist workbook defined names so formulas that reference a name (=NetIncome, etc.) still
         // resolve on the next open — otherwise they come back as #NAME?. A bare range ("$B$1") isn't a
         // valid defined-name target, so qualify it with the sheet; fall back to the raw value.
-        if (names is not null)
+        if (names.Count > 0)
         {
             foreach (KeyValuePair<string, string> name in names)
             {
@@ -1794,19 +1861,19 @@ public static class XlsxFile
             }
         }
 
-        // ClosedXML can't author charts, so save to memory and graft the chart parts in as raw OOXML
-        // (keeps the library pure-managed / cross-platform). No charts → write straight to the stream.
-        if (charts is { Count: > 0 })
+    }
+
+    private static string UniqueSheetName(XLWorkbook workbook, string? desired)
+    {
+        string baseName = SafeSheetName(desired);
+        string candidate = baseName;
+        for (int suffix = 2; workbook.Worksheets.Any(sheet => sheet.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)); suffix++)
         {
-            using MemoryStream buffer = new();
-            workbook.SaveAs(buffer);
-            byte[] withCharts = XlsxChartWriter.Inject(buffer.ToArray(), charts);
-            stream.Write(withCharts, 0, withCharts.Length);
+            string marker = $" ({suffix})";
+            candidate = baseName[..Math.Min(baseName.Length, 31 - marker.Length)] + marker;
         }
-        else
-        {
-            workbook.SaveAs(stream);
-        }
+
+        return candidate;
     }
 
     private static bool TryAddName(XLWorkbook workbook, string name, string refersTo)

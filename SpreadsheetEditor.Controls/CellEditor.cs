@@ -3,12 +3,15 @@ namespace SpreadsheetEditor.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Documents.TextModel;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
+
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.ViewModels;
 
@@ -138,11 +141,29 @@ public class CellEditor : Decorator
 
     public void FocusEditor(bool selectAll = false)
     {
-        (this.rich as Control ?? this.plain)?.Focus();
+        if (this.rich is not null)
+        {
+            // RichTextEditor is a non-focusable shell; keyboard input belongs to its realized
+            // InteractiveTextView descendant. Focusing the shell leaves focus on the grid, which
+            // makes only the character that opened edit mode appear.
+            Control? textView = this.rich.GetVisualDescendants()
+                .OfType<Control>()
+                .FirstOrDefault(static control => control.Focusable && control.IsVisible && control.IsEnabled);
+            textView?.Focus();
+        }
+        else
+        {
+            this.plain?.Focus();
+        }
+
         if (selectAll)
         {
             try { this.rich?.SelectAll(); } catch { }
             this.plain?.SelectAll();
+        }
+        else if (this.rich?.Document?.ContentEnd is { } end)
+        {
+            this.rich.Select(end, end);
         }
         else if (this.plain is not null)
         {

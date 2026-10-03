@@ -52,7 +52,7 @@ using System.IO;
 await using (FileStream fs = File.OpenRead("book.xlsx"))
     await editor.OpenXlsxAsync(fs); // keeps the UI responsive for large workbooks
 
-// Save the active sheet back to .xlsx:
+// Save the complete workbook (every tab) back to .xlsx:
 await using (FileStream fs = File.Create("out.xlsx"))
     editor.SaveXlsx(fs);
 ```
