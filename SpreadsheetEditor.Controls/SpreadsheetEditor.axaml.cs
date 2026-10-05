@@ -112,6 +112,7 @@ public partial class SpreadsheetEditor : UserControl
     private IReadOnlyList<XlsxSheetPreview>? stagedSheetMetadata;
     private XlsxWorkbookReader? stagedWorkbookReader;
     private int? pendingSheetActivationIndex;
+    private (string SheetName, CellAddress Address)? pendingWorksheetLink;
     private int workbookLoadGeneration;
     private bool recalculatingWorkbookDependencies;
 
@@ -141,6 +142,7 @@ public partial class SpreadsheetEditor : UserControl
 
         this.Grid.Sheet = this.vm;
         this.Grid.CellActivated += address => this.SetActiveCell(address);
+        this.Grid.WorksheetLinkRequested += this.NavigateWorksheetLink;
         this.Grid.EditCompleted += this.CompleteDeferredEditRecalculation;
 
         // Keep spreadsheet shortcuts inside the editor. In particular, Ctrl+F must not bubble to a
@@ -271,7 +273,8 @@ public partial class SpreadsheetEditor : UserControl
 
     public bool CanRedo => this.vm.CanRedo;
 
-    // Raised when cell content changes (after a recalculation) — analogous to RichTextEditor.ContentChanged.
+    // Raised when an edit is committed (or a non-editor mutation occurs). Hosts commonly save in
+    // response, so per-character notifications would serialize a workbook on every keystroke.
     public event EventHandler? ContentChanged;
 
     // Raised when the active cell / selected range changes — analogous to RichTextEditor.SelectionChanged.
@@ -442,7 +445,8 @@ public partial class SpreadsheetEditor : UserControl
     // Writes the complete workbook in tab order, including sheets created during this session.
     public void SaveXlsx(Stream stream)
     {
-        this.Grid.SuspendEditor();
+        // Saving is a snapshot operation. Ending the active edit here used to trigger a full grid
+        // rebuild on every host auto-save, visibly flashing the worksheet while the user typed.
         List<XlsxSheetWriteData> workbook = this.sheets
             .Select(sheet => new XlsxSheetWriteData(
                 sheet.Name,
@@ -461,6 +465,10 @@ public partial class SpreadsheetEditor : UserControl
         Charts = sheet.Charts,
         Names = sheet.Names,
         DataBars = sheet.DataBars,
+        CellValueRules = sheet.CellValueRules,
+        AutoFilterRange = sheet.AutoFilterRange,
+        HiddenRows = sheet.Rows.Select((row, index) => (row, index))
+            .Where(static item => item.row.IsHidden).Select(static item => item.index).ToArray(),
         TabColor = sheet.TabColor,
     };
 
@@ -782,6 +790,7 @@ public partial class SpreadsheetEditor : UserControl
                 Math.Clamp(activeCell.Column, 0, replacement.ColumnCount - 1)));
             this.HookSheet();
             this.ApplyReadOnly(raiseEvent: false);
+            this.CompletePendingWorksheetLink(completed);
         }
 
         this.RebuildTabs();
@@ -810,7 +819,8 @@ public partial class SpreadsheetEditor : UserControl
     private bool RequestUserEditRecalculation(SpreadsheetViewModel sheet)
     {
         this.CancelScheduledEditRecalculation(sheet);
-        if (this.IsActivelyEditing(sheet))
+        bool editing = this.IsActivelyEditing(sheet);
+        if (editing)
         {
             this.deferredEditRecalculations.Add(sheet);
         }
@@ -825,9 +835,12 @@ public partial class SpreadsheetEditor : UserControl
             this.QueuePendingUserRecalculation(sheet);
         }
 
-        // The edited text is already displayed. Notify the host immediately, while keeping formula
-        // work out of the per-character UI event.
-        this.ContentChanged?.Invoke(this, EventArgs.Empty);
+        // The edited text is already displayed; wait until the edit ends before notifying hosts
+        // that auto-save. Their serialization must not run on every individual key press.
+        if (!editing)
+        {
+            this.ContentChanged?.Invoke(this, EventArgs.Empty);
+        }
         return false;
     }
 
@@ -858,10 +871,15 @@ public partial class SpreadsheetEditor : UserControl
                 if (this.AreDependenciesReady(sheet))
                 {
                     this.RecalculateWorkbookFrom(sheet.Name, recalculateSource: true);
+                    if (!ReferenceEquals(this.hookedSheet, sheet))
+                    {
+                        this.ContentChanged?.Invoke(this, EventArgs.Empty);
+                    }
                 }
                 else
                 {
                     this.QueuePendingUserRecalculation(sheet);
+                    this.ContentChanged?.Invoke(this, EventArgs.Empty);
                 }
             },
             DispatcherPriority.Background);
@@ -1101,6 +1119,7 @@ public partial class SpreadsheetEditor : UserControl
         this.deferredEditRecalculations.Clear();
         this.formulaBarEditSheet = null;
         this.pendingSheetActivationIndex = null;
+        this.pendingWorksheetLink = null;
         this.CancelScheduledEditRecalculations();
     }
 
@@ -1341,6 +1360,9 @@ public partial class SpreadsheetEditor : UserControl
         vm.SetMerges(sheet.Merges);
         vm.SetImages(sheet.Images);
         vm.SetDataBars(sheet.DataBars);
+        vm.SetCellValueRules(sheet.CellValueRules);
+        vm.SetAutoFilterRange(sheet.AutoFilterRange);
+        vm.SetHiddenRows(sheet.HiddenRows);
         vm.SetCharts(sheet.Charts);
         vm.TabColor = sheet.TabColor;
     }
@@ -1838,13 +1860,17 @@ public partial class SpreadsheetEditor : UserControl
         {
             this.hookedSheet.UndoStateChanged -= this.RefreshUndoButtons;
             this.hookedSheet.DataChanged -= this.OnSheetContentChanged;
+            this.hookedSheet.ViewChanged -= this.OnSheetViewChanged;
         }
 
         this.hookedSheet = this.vm;
         this.hookedSheet.UndoStateChanged += this.RefreshUndoButtons;
         this.hookedSheet.DataChanged += this.OnSheetContentChanged;
+        this.hookedSheet.ViewChanged += this.OnSheetViewChanged;
         this.RefreshUndoButtons();
     }
+
+    private void OnSheetViewChanged() => this.ContentChanged?.Invoke(this, EventArgs.Empty);
 
     private void OnSheetContentChanged()
     {
@@ -2129,6 +2155,38 @@ public partial class SpreadsheetEditor : UserControl
         return Task.CompletedTask;
     }
 
+    private void NavigateWorksheetLink(string sheetName, CellAddress address)
+    {
+        SpreadsheetViewModel? target = this.sheets.FirstOrDefault(sheet =>
+            string.Equals(sheet.Name, sheetName, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return;
+        }
+
+        this.pendingWorksheetLink = (sheetName, address);
+        _ = this.SwitchToSheetAsync(target);
+        this.CompletePendingWorksheetLink(completed: false);
+    }
+
+    private void CompletePendingWorksheetLink(bool completed)
+    {
+        if (this.pendingWorksheetLink is not { } link ||
+            !string.Equals(this.vm.Name, link.SheetName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        if (this.vm.IsValid(link.Address))
+        {
+            this.Grid.SelectCell(link.Address);
+            this.pendingWorksheetLink = null;
+        }
+        else if (completed)
+        {
+            this.pendingWorksheetLink = null;
+        }
+    }
+
     private void RenameSheet(SpreadsheetViewModel sheet, string name)
     {
         name = name.Trim();
@@ -2323,7 +2381,8 @@ public partial class SpreadsheetEditor : UserControl
             return;
         }
 
-        if (this.activeCell is not null && this.vm.ActiveCell.Equals(address))
+        if (this.activeCell is not null && this.vm.ActiveCell.Equals(address) &&
+            ReferenceEquals(this.activeCell, this.vm.GetCell(address)))
         {
             return;
         }

@@ -254,6 +254,7 @@ public static class XlsxFile
             rowLimit,
             columnLimit,
             cancellationToken);
+        CellRange? autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken);
         List<XElement> cells = slice.Cells;
         HashSet<int> sharedStringIndexes = new();
         foreach (XElement cell in cells)
@@ -281,6 +282,10 @@ public static class XlsxFile
             int styleIndex = int.TryParse(cell.Attribute("s")?.Value, out int parsedStyle) ? parsedStyle : 0;
             PreviewCellStyle style = styleIndex >= 0 && styleIndex < styles.Count ? styles[styleIndex] : default;
             (string text, string? formulaResult) = PreviewCellText(cell, sharedStrings, style.NumberFormat);
+            double? formulaNumber = cell.Element(Ssml + "f") is not null &&
+                double.TryParse(cell.Element(Ssml + "v")?.Value, NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double cachedNumber)
+                    ? cachedNumber : null;
             values[(row, column)] = new CellData(
                 text,
                 style.Bold,
@@ -293,12 +298,13 @@ public static class XlsxFile
                 style.NumberFormat,
                 style.FontFamily,
                 style.Strikethrough,
-                formulaResult);
+                formulaResult,
+                FormulaNumericValue: formulaNumber);
         }
 
         lastRow = Math.Max(1, lastRow);
         lastColumn = Math.Max(1, lastColumn);
-        List<IReadOnlyList<CellData>> rows = new(lastRow);
+        List<List<CellData>> rows = new(lastRow);
         for (int row = 0; row < lastRow; row++)
         {
             List<CellData> rowData = new(lastColumn);
@@ -308,6 +314,14 @@ public static class XlsxFile
             }
             rows.Add(rowData);
         }
+
+        // A huge sheet keeps the first-screen preview fast; its full import applies scales later.
+        if ((archive.GetEntry(partPath)?.Length ?? 0) <= 2_000_000)
+        {
+            ApplyColorScales(rows, ReadColorScales(archive, partPath, ReadThemeColors(archive)), cancellationToken);
+        }
+        (List<SheetDataBar> previewBars, List<SheetCellValueRule> previewValueRules) =
+            ReadConditionalFormatting(archive, partPath, ReadThemeColors(archive), cancellationToken);
 
         List<double> widths = Enumerable.Repeat(0d, lastColumn).ToList();
         foreach ((int min, int max, double width) in slice.Columns)
@@ -325,6 +339,10 @@ public static class XlsxFile
             ColumnWidths = widths,
             Merges = slice.Merges,
             Charts = XlsxCharts.Read(bytes, sheet: null, sheetIndex),
+            DataBars = previewBars,
+            CellValueRules = previewValueRules,
+            AutoFilterRange = autoFilterRange,
+            HiddenRows = slice.HiddenRows,
             TabColor = tabColor ?? PreviewColor(slice.TabColor, ReadThemeColors(archive)),
         };
     }
@@ -342,6 +360,7 @@ public static class XlsxFile
         List<XElement> cells = new();
         List<(int Min, int Max, double Width)> columns = new();
         List<MergeRange> merges = new();
+        List<int> hiddenRows = new();
         XElement? tabColor = null;
         int dimensionRows = 0;
         int dimensionColumns = 0;
@@ -403,6 +422,11 @@ public static class XlsxFile
                     break;
                 }
 
+                if (reader.GetAttribute("hidden") is "1" or "true")
+                {
+                    hiddenRows.Add(oneBasedRow - 1);
+                }
+
                 XElement row = (XElement)XNode.ReadFrom(reader);
                 foreach (XElement cell in row.Descendants(Ssml + "c"))
                 {
@@ -432,7 +456,41 @@ public static class XlsxFile
 
         int rowCount = Math.Max(1, Math.Min(rowLimit, dimensionRows > 0 ? dimensionRows : lastLoadedRow));
         int columnCount = Math.Max(1, Math.Min(columnLimit, dimensionColumns > 0 ? dimensionColumns : lastLoadedColumn));
-        return new PreviewWorksheetSlice(cells, columns, merges, tabColor, rowCount, columnCount);
+        return new PreviewWorksheetSlice(cells, columns, merges, hiddenRows, tabColor, rowCount, columnCount);
+    }
+
+    // AutoFilter follows sheetData in OOXML, so a limited first-screen preview would otherwise
+    // miss it. Skip the large cell subtree without allocating it to find the header range.
+    private static CellRange? ReadAutoFilterRange(
+        ZipArchive archive, string partPath, CancellationToken cancellationToken)
+    {
+        if (archive.GetEntry(partPath) is not { } entry)
+        {
+            return null;
+        }
+
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+        });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sheetData")
+            {
+                reader.Skip();
+                continue;
+            }
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "autoFilter")
+            {
+                return CellRange.TryParse(reader.GetAttribute("ref"), out CellRange range) ? range : null;
+            }
+            reader.Read();
+        }
+        return null;
     }
 
     private static Dictionary<int, string> ReadSharedStrings(
@@ -727,6 +785,7 @@ public static class XlsxFile
         List<XElement> Cells,
         List<(int Min, int Max, double Width)> Columns,
         List<MergeRange> Merges,
+        List<int> HiddenRows,
         XElement? TabColor,
         int RowCount,
         int ColumnCount);
@@ -742,8 +801,19 @@ public static class XlsxFile
     {
         cancellationToken.ThrowIfCancellationRequested();
         List<List<CellData>> rows = new();
+        List<int> hiddenRows = new();
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
+        CellRange? autoFilterRange;
+        using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
+        {
+            autoFilterRange = ReadAutoFilterRange(archive, WorksheetPartPath(archive, sheetIndex), cancellationToken);
+        }
+        if (autoFilterRange is { } filterRange)
+        {
+            lastRow = Math.Max(lastRow, filterRange.Row + filterRange.RowSpan);
+            lastColumn = Math.Max(lastColumn, filterRange.Column + filterRange.ColumnSpan);
+        }
 
         // Empty cells inside an Excel Table are still part of the visible formatted table. ClosedXML's
         // LastRowUsed/LastColumnUsed only report cells with content, so include every table's declared
@@ -772,6 +842,10 @@ public static class XlsxFile
             }
 
             List<CellData> row = new(lastColumn);
+            if (sheet.Row(r).IsHidden)
+            {
+                hiddenRows.Add(r - 1);
+            }
             for (int c = 1; c <= lastColumn; c++)
             {
                 IXLCell cell = sheet!.Cell(r, c);
@@ -801,11 +875,14 @@ public static class XlsxFile
                 string text;
                 string? numberFormat = null;
                 string? formulaResult = null;
+                double? formulaNumber = null;
                 if (cell.HasFormula)
                 {
                     text = "=" + StructuredReferences.Translate(cell.FormulaA1, r, c, tables);
                     numberFormat = format;
                     formulaResult = CachedFormulaText(cell.CachedValue, format);
+                    formulaNumber = cell.CachedValue.Type == XLDataType.Number
+                        ? cell.CachedValue.GetNumber() : null;
                 }
                 else if (cell.DataType == XLDataType.Number)
                 {
@@ -837,7 +914,14 @@ public static class XlsxFile
                     numberFormat,
                     importedStyle.FontFamily,
                     importedStyle.Strikethrough,
-                    formulaResult));
+                    formulaResult,
+                    cell.HasComment ? cell.GetComment().Text : null,
+                    cell.HasHyperlink
+                        ? cell.GetHyperlink().ExternalAddress?.ToString() ??
+                          (string.IsNullOrEmpty(cell.GetHyperlink().InternalAddress) ? null : "#" + cell.GetHyperlink().InternalAddress)
+                        : null,
+                    cell.HasComment ? cell.GetComment().Author : null,
+                    formulaNumber));
             }
 
             rows.Add(row);
@@ -875,7 +959,19 @@ public static class XlsxFile
         cancellationToken.ThrowIfCancellationRequested();
         List<SheetChart> charts = XlsxCharts.Read(bytes, sheet, sheetIndex);
         Dictionary<string, string> names = ReadNames(workbook, sheet);
-        List<SheetDataBar> dataBars = ReadDataBars(workbook, sheet);
+        List<SheetDataBar> dataBars;
+        List<SheetCellValueRule> cellValueRules;
+
+        // Color-scale conditional formatting is not stored in each cell's base style. Paint its
+        // current result into the imported cell snapshot so it appears in the editor and survives
+        // a save even though the editor does not yet expose color-scale rule editing.
+        using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
+        {
+            string partPath = WorksheetPartPath(archive, sheetIndex);
+            IReadOnlyList<Color?> theme = ReadThemeColors(archive);
+            (dataBars, cellValueRules) = ReadConditionalFormatting(archive, partPath, theme, cancellationToken);
+            ApplyColorScales(rows, ReadColorScales(archive, partPath, theme), cancellationToken);
+        }
 
         return new SheetData
         {
@@ -886,56 +982,330 @@ public static class XlsxFile
             Charts = charts,
             Names = names,
             DataBars = dataBars,
+            CellValueRules = cellValueRules,
+            AutoFilterRange = autoFilterRange,
+            HiddenRows = hiddenRows,
             TabColor = sheet!.TabColor is { } tabColor && tabColor != XLColor.NoColor
                 ? ResolveColor(workbook, tabColor)
                 : null,
         };
     }
 
-    // Reads conditional-formatting data bars (range + min/max + color) from the sheet.
-    private static List<SheetDataBar> ReadDataBars(XLWorkbook workbook, IXLWorksheet? sheet)
+    // Read both layers of Excel's conditional formatting. In Hosts Inventory the data bar and the
+    // red >90% font rule share K3:K602; both must survive preview, full load, edits and save.
+    private static (List<SheetDataBar> Bars, List<SheetCellValueRule> ValueRules) ReadConditionalFormatting(
+        ZipArchive archive, string partPath, IReadOnlyList<Color?> theme, CancellationToken cancellationToken)
     {
         List<SheetDataBar> bars = new();
-        if (sheet is null)
+        List<SheetCellValueRule> valueRules = new();
+        ZipArchiveEntry? entry = archive.GetEntry(partPath);
+        if (entry is null)
         {
-            return bars;
+            return (bars, valueRules);
         }
 
-        foreach (IXLConditionalFormat cf in sheet.ConditionalFormats.Where(static c => c.ConditionalFormatType == XLConditionalFormatType.DataBar))
+        List<(Color? Foreground, bool? Bold)>? fonts = null;
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
         {
-            try
+            DtdProcessing = DtdProcessing.Prohibit,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+        });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType != XmlNodeType.Element)
             {
-                IXLRangeAddress? rangeAddr = cf.Ranges.FirstOrDefault()?.RangeAddress;
-                if (rangeAddr is null)
+                reader.Read();
+                continue;
+            }
+            if (reader.LocalName == "sheetData")
+            {
+                reader.Skip();
+                continue;
+            }
+            if (reader.LocalName != "conditionalFormatting")
+            {
+                reader.Read();
+                continue;
+            }
+
+            XElement block = (XElement)XNode.ReadFrom(reader);
+            List<CellRange> ranges = (block.Attribute("sqref")?.Value ?? string.Empty)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static reference => CellRange.TryParse(reference, out CellRange range) ? (CellRange?)range : null)
+                .Where(static range => range is not null).Select(static range => range!.Value).ToList();
+            foreach (XElement rule in block.Elements(Ssml + "cfRule"))
+            {
+                XElement? dataBar = rule.Element(Ssml + "dataBar");
+                if (dataBar is not null)
+                {
+                    XElement[] limits = dataBar.Elements(Ssml + "cfvo").ToArray();
+                    Color? color = PreviewColor(dataBar.Element(Ssml + "color"), theme);
+                    if (limits.Length < 2 || color is null)
+                    {
+                        continue;
+                    }
+                    double min = double.TryParse(limits[0].Attribute("val")?.Value, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double parsedMin) ? parsedMin : 0;
+                    double max = double.TryParse(limits[1].Attribute("val")?.Value, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double parsedMax) ? parsedMax : 1;
+                    foreach (CellRange range in ranges)
+                    {
+                        bars.Add(new SheetDataBar
+                        {
+                            Range = range,
+                            Min = min,
+                            Max = max,
+                            Color = color.Value,
+                            ShowValue = dataBar.Attribute("showValue")?.Value is not ("0" or "false"),
+                            Gradient = dataBar.Attribute("gradient")?.Value is not ("0" or "false"),
+                        });
+                    }
+                    continue;
+                }
+
+                if (rule.Attribute("type")?.Value != "cellIs" ||
+                    !TryComparison(rule.Attribute("operator")?.Value, out CellValueComparison comparison) ||
+                    !double.TryParse(rule.Element(Ssml + "formula")?.Value, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double threshold) ||
+                    !int.TryParse(rule.Attribute("dxfId")?.Value, out int dxfId) || dxfId < 0)
+                {
+                    continue;
+                }
+                fonts ??= ReadDifferentialFonts(archive, theme);
+                if (dxfId >= fonts.Count)
+                {
+                    continue;
+                }
+                (Color? foreground, bool? bold) = fonts[dxfId];
+                if (foreground is null && bold is null)
+                {
+                    continue;
+                }
+                int priority = int.TryParse(rule.Attribute("priority")?.Value, out int parsedPriority)
+                    ? parsedPriority : int.MaxValue;
+                foreach (CellRange range in ranges)
+                {
+                    valueRules.Add(new SheetCellValueRule
+                    {
+                        Range = range,
+                        Comparison = comparison,
+                        Threshold = threshold,
+                        Foreground = foreground,
+                        Bold = bold,
+                        Priority = priority,
+                    });
+                }
+            }
+        }
+        valueRules.Sort(static (left, right) => left.Priority.CompareTo(right.Priority));
+        return (bars, valueRules);
+    }
+
+    private static List<(Color? Foreground, bool? Bold)> ReadDifferentialFonts(
+        ZipArchive archive, IReadOnlyList<Color?> theme)
+    {
+        List<(Color?, bool?)> styles = new();
+        if (archive.GetEntry("xl/styles.xml") is not { } entry)
+        {
+            return styles;
+        }
+        using Stream stream = entry.Open();
+        XDocument document = XDocument.Load(stream);
+        foreach (XElement dxf in document.Descendants(Ssml + "dxfs").Elements(Ssml + "dxf"))
+        {
+            XElement? font = dxf.Element(Ssml + "font");
+            XElement? bold = font?.Element(Ssml + "b");
+            styles.Add((PreviewColor(font?.Element(Ssml + "color"), theme),
+                bold is null ? null : bold.Attribute("val")?.Value is not ("0" or "false")));
+        }
+        return styles;
+    }
+
+    private static bool TryComparison(string? value, out CellValueComparison comparison)
+    {
+        comparison = value switch
+        {
+            "greaterThan" => CellValueComparison.GreaterThan,
+            "greaterThanOrEqual" => CellValueComparison.GreaterThanOrEqual,
+            "lessThan" => CellValueComparison.LessThan,
+            "lessThanOrEqual" => CellValueComparison.LessThanOrEqual,
+            "equal" => CellValueComparison.Equal,
+            "notEqual" => CellValueComparison.NotEqual,
+            _ => default,
+        };
+        return value is "greaterThan" or "greaterThanOrEqual" or "lessThan" or
+            "lessThanOrEqual" or "equal" or "notEqual";
+    }
+
+    private readonly record struct ColorScaleStop(string Type, double Value, Color Color);
+    private readonly record struct ColorScaleRule(CellRange Range, IReadOnlyList<ColorScaleStop> Stops);
+
+    private static string WorksheetPartPath(ZipArchive archive, int sheetIndex)
+    {
+        XDocument workbook = ReadXmlPart(archive, "xl/workbook.xml");
+        XDocument relationships = ReadXmlPart(archive, "xl/_rels/workbook.xml.rels");
+        XNamespace officeRelationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        XNamespace packageRelationships = "http://schemas.openxmlformats.org/package/2006/relationships";
+        XElement sheet = workbook.Descendants(Ssml + "sheet").ElementAt(sheetIndex);
+        string id = sheet.Attribute(officeRelationships + "id")?.Value ?? string.Empty;
+        XElement relationship = relationships.Descendants(packageRelationships + "Relationship")
+            .First(r => r.Attribute("Id")?.Value == id);
+        return ResolvePartPath("xl/workbook.xml", relationship.Attribute("Target")!.Value);
+    }
+
+    // Unlike ordinary fills, Excel color scales live in conditionalFormatting after sheetData.
+    // Stream past the cells to avoid allocating a second full worksheet DOM.
+    private static List<ColorScaleRule> ReadColorScales(
+        ZipArchive archive, string partPath, IReadOnlyList<Color?> theme)
+    {
+        List<ColorScaleRule> rules = new();
+        ZipArchiveEntry? entry = archive.GetEntry(partPath);
+        if (entry is null)
+        {
+            return rules;
+        }
+
+        using Stream stream = entry.Open();
+        using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            IgnoreComments = true,
+            IgnoreWhitespace = true,
+        });
+        while (!reader.EOF)
+        {
+            if (reader.NodeType != XmlNodeType.Element)
+            {
+                reader.Read();
+                continue;
+            }
+
+            if (reader.LocalName == "sheetData")
+            {
+                reader.Skip();
+                continue;
+            }
+
+            if (reader.LocalName != "conditionalFormatting")
+            {
+                reader.Read();
+                continue;
+            }
+
+            XElement block = (XElement)XNode.ReadFrom(reader);
+            string[] references = (block.Attribute("sqref")?.Value ?? string.Empty)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (XElement scale in block.Elements(Ssml + "cfRule").Elements(Ssml + "colorScale"))
+            {
+                XElement[] thresholds = scale.Elements(Ssml + "cfvo").ToArray();
+                XElement[] colors = scale.Elements(Ssml + "color").ToArray();
+                if (thresholds.Length is < 2 or > 3 || colors.Length != thresholds.Length)
                 {
                     continue;
                 }
 
-                IXLAddress first = rangeAddr.FirstAddress;
-                IXLAddress last = rangeAddr.LastAddress;
-                CellRange range = new(
-                    first.RowNumber - 1, first.ColumnNumber - 1,
-                    last.RowNumber - first.RowNumber + 1, last.ColumnNumber - first.ColumnNumber + 1);
-
-                double min = cf.Values.TryGetValue(1, out XLFormula? lo) && double.TryParse(lo.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double mn) ? mn : 0;
-                double max = cf.Values.TryGetValue(2, out XLFormula? hi) && double.TryParse(hi.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double mx) ? mx : 1;
-                Color? color = cf.Colors.TryGetValue(1, out XLColor? col) ? ResolveColor(workbook, col) : null;
-
-                bars.Add(new SheetDataBar
+                List<ColorScaleStop> stops = new();
+                for (int i = 0; i < thresholds.Length; i++)
                 {
-                    Range = range,
-                    Min = min,
-                    Max = max,
-                    Color = color ?? Color.FromRgb(0x63, 0x8E, 0xC6),
-                });
-            }
-            catch
-            {
-                // skip a data bar we can't read
+                    Color? color = PreviewColor(colors[i], theme);
+                    if (color is null)
+                    {
+                        break;
+                    }
+                    double.TryParse(thresholds[i].Attribute("val")?.Value, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double value);
+                    stops.Add(new ColorScaleStop(thresholds[i].Attribute("type")?.Value ?? "num", value, color.Value));
+                }
+
+                if (stops.Count != thresholds.Length)
+                {
+                    continue;
+                }
+                foreach (string reference in references)
+                {
+                    if (CellRange.TryParse(reference, out CellRange range))
+                    {
+                        rules.Add(new ColorScaleRule(range, stops));
+                    }
+                }
             }
         }
+        return rules;
+    }
 
-        return bars;
+    private static void ApplyColorScales(
+        List<List<CellData>> rows, IReadOnlyList<ColorScaleRule> rules, CancellationToken cancellationToken)
+    {
+        foreach (ColorScaleRule rule in rules)
+        {
+            List<double> numbers = new();
+            int lastRow = Math.Min(rows.Count, rule.Range.Row + rule.Range.RowSpan);
+            for (int row = Math.Max(0, rule.Range.Row); row < lastRow; row++)
+            {
+                for (int column = Math.Max(0, rule.Range.Column);
+                     column < Math.Min(rows[row].Count, rule.Range.Column + rule.Range.ColumnSpan); column++)
+                {
+                    CellData cell = rows[row][column];
+                    if (double.TryParse(cell.FormulaResult ?? cell.Text, NumberStyles.Any,
+                        CultureInfo.InvariantCulture, out double number))
+                    {
+                        numbers.Add(number);
+                    }
+                }
+            }
+            if (numbers.Count == 0)
+            {
+                continue;
+            }
+
+            numbers.Sort();
+            double min = numbers[0], max = numbers[^1];
+            double Threshold(ColorScaleStop stop) => stop.Type.ToLowerInvariant() switch
+            {
+                "min" => min,
+                "max" => max,
+                "percent" => min + ((max - min) * stop.Value / 100),
+                "percentile" => Percentile(numbers, stop.Value),
+                _ => stop.Value,
+            };
+            double[] thresholds = rule.Stops.Select(Threshold).ToArray();
+            for (int row = Math.Max(0, rule.Range.Row); row < lastRow; row++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                for (int column = Math.Max(0, rule.Range.Column);
+                     column < Math.Min(rows[row].Count, rule.Range.Column + rule.Range.ColumnSpan); column++)
+                {
+                    CellData cell = rows[row][column];
+                    if (!double.TryParse(cell.FormulaResult ?? cell.Text, NumberStyles.Any,
+                        CultureInfo.InvariantCulture, out double number))
+                    {
+                        continue;
+                    }
+                    int upper = number <= thresholds[1] ? 1 : rule.Stops.Count - 1;
+                    double span = thresholds[upper] - thresholds[upper - 1];
+                    double fraction = span == 0 ? 1 : Math.Clamp((number - thresholds[upper - 1]) / span, 0, 1);
+                    rows[row][column] = cell with { Background = Interpolate(rule.Stops[upper - 1].Color, rule.Stops[upper].Color, fraction) };
+                }
+            }
+        }
+    }
+
+    private static double Percentile(IReadOnlyList<double> sorted, double percent)
+    {
+        double position = Math.Clamp(percent / 100, 0, 1) * (sorted.Count - 1);
+        int lower = (int)position;
+        int upper = Math.Min(sorted.Count - 1, lower + 1);
+        return sorted[lower] + ((sorted[upper] - sorted[lower]) * (position - lower));
+    }
+
+    private static Color Interpolate(Color first, Color second, double amount)
+    {
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + ((b - a) * amount));
+        return Color.FromArgb(Mix(first.A, second.A), Mix(first.R, second.R),
+            Mix(first.G, second.G), Mix(first.B, second.B));
     }
 
     // Reads the workbook's defined names, mapping name → its formula text (a range like
@@ -1694,6 +2064,9 @@ public static class XlsxFile
         IReadOnlyList<double> columnWidths = data.ColumnWidths;
         IReadOnlyList<MergeRange> merges = data.Merges;
         IReadOnlyList<SheetDataBar> dataBars = data.DataBars;
+        IReadOnlyList<SheetCellValueRule> valueRules = data.CellValueRules;
+        CellRange? autoFilterRange = data.AutoFilterRange;
+        IReadOnlyList<int> hiddenRows = data.HiddenRows;
         IReadOnlyDictionary<string, string> names = data.Names;
 
         for (int r = 0; r < rows.Count; r++)
@@ -1714,6 +2087,23 @@ public static class XlsxFile
                 else if (!string.IsNullOrEmpty(cellData.Text))
                 {
                     cell.Value = cellData.Text;
+                }
+
+                if (!string.IsNullOrWhiteSpace(cellData.Comment))
+                {
+                    IXLComment comment = cell.CreateComment();
+                    comment.AddText(cellData.Comment);
+                    comment.Author = string.IsNullOrWhiteSpace(cellData.CommentAuthor)
+                        ? "Spreadsheet Editor"
+                        : cellData.CommentAuthor;
+                }
+
+                if (!string.IsNullOrWhiteSpace(cellData.Hyperlink))
+                {
+                    string target = cellData.Hyperlink;
+                    cell.SetHyperlink(target.StartsWith('#')
+                        ? new XLHyperlink(target[1..])
+                        : new XLHyperlink(new Uri(target, UriKind.Absolute)));
                 }
 
                 if (cellData.NumberFormat is { } nf)
@@ -1768,6 +2158,27 @@ public static class XlsxFile
                     TextAlignment.Right => XLAlignmentHorizontalValues.Right,
                     _ => XLAlignmentHorizontalValues.Left,
                 };
+            }
+        }
+
+        foreach (int row in hiddenRows)
+        {
+            if (row >= 0 && row < rows.Count)
+            {
+                sheet.Row(row + 1).Hide();
+            }
+        }
+
+        if (autoFilterRange is { RowSpan: > 0, ColumnSpan: > 0 } filter)
+        {
+            try
+            {
+                sheet.Range(filter.Row + 1, filter.Column + 1,
+                    filter.Row + filter.RowSpan, filter.Column + filter.ColumnSpan).SetAutoFilter();
+            }
+            catch
+            {
+                // Keep the worksheet writable even if a source range is invalid after editing.
             }
         }
 
@@ -1840,6 +2251,36 @@ public static class XlsxFile
                 {
                     // Skip a data bar we can't recreate rather than failing the whole save.
                 }
+            }
+        }
+
+        foreach (SheetCellValueRule rule in valueRules.OrderBy(static rule => rule.Priority))
+        {
+            if (rule.Range.RowSpan <= 0 || rule.Range.ColumnSpan <= 0)
+            {
+                continue;
+            }
+            IXLRange range = sheet.Range(
+                rule.Range.Row + 1, rule.Range.Column + 1,
+                rule.Range.Row + rule.Range.RowSpan, rule.Range.Column + rule.Range.ColumnSpan);
+            IXLConditionalFormat conditional = range.AddConditionalFormat();
+            IXLStyle style = rule.Comparison switch
+            {
+                CellValueComparison.GreaterThan => conditional.WhenGreaterThan(rule.Threshold),
+                CellValueComparison.GreaterThanOrEqual => conditional.WhenEqualOrGreaterThan(rule.Threshold),
+                CellValueComparison.LessThan => conditional.WhenLessThan(rule.Threshold),
+                CellValueComparison.LessThanOrEqual => conditional.WhenEqualOrLessThan(rule.Threshold),
+                CellValueComparison.Equal => conditional.WhenEquals(rule.Threshold),
+                CellValueComparison.NotEqual => conditional.WhenNotEquals(rule.Threshold),
+                _ => throw new InvalidDataException("Unsupported conditional-format comparison."),
+            };
+            if (rule.Foreground is { } foreground)
+            {
+                style.Font.FontColor = ToXl(foreground);
+            }
+            if (rule.Bold is { } bold)
+            {
+                style.Font.Bold = bold;
             }
         }
 

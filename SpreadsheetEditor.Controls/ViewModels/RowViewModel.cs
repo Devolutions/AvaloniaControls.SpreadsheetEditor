@@ -15,6 +15,10 @@ public partial class RowViewModel : ObservableObject
     [ObservableProperty]
     private double? height;
 
+    // View-only filter state. Hidden rows retain their cells and original row numbers.
+    [ObservableProperty]
+    private bool isHidden;
+
     public AvaloniaList<CellViewModel> Cells { get; } = new();
 
     public RowViewModel(int number, int columnCount)

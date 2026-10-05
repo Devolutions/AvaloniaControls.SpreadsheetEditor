@@ -29,6 +29,15 @@ public sealed class SheetData
     // Conditional-formatting data bars (proportional in-cell bars).
     public IReadOnlyList<SheetDataBar> DataBars { get; init; } = new List<SheetDataBar>();
 
+    // Numeric conditional font rules, evaluated against current cell values when rendered.
+    public IReadOnlyList<SheetCellValueRule> CellValueRules { get; init; } = new List<SheetCellValueRule>();
+
+    // Worksheet AutoFilter range (including its header row), if present.
+    public CellRange? AutoFilterRange { get; init; }
+
+    // Zero-based row indices hidden by filtering (or hidden in the source workbook).
+    public IReadOnlyList<int> HiddenRows { get; init; } = new List<int>();
+
     // Optional worksheet tab color from the workbook theme/direct color.
     public Color? TabColor { get; init; }
 }

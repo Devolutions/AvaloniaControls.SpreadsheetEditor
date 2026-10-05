@@ -18,7 +18,11 @@ public readonly record struct CellData(
     string? NumberFormat = null,
     string? FontFamily = null,
     bool Strikethrough = false,
-    string? FormulaResult = null)
+    string? FormulaResult = null,
+    string? Comment = null,
+    string? Hyperlink = null,
+    string? CommentAuthor = null,
+    double? FormulaNumericValue = null)
 {
     public static CellData Plain(string text) => new(text, false, false, false, null, null);
 }

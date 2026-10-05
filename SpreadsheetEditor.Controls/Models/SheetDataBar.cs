@@ -15,5 +15,8 @@ public sealed class SheetDataBar
 
     public required Color Color { get; init; }
 
-    public bool ShowValue { get; init; }
+    public bool ShowValue { get; init; } = true;
+
+    // Standard Excel data bars use a left-to-right gradient unless a solid fill is requested.
+    public bool Gradient { get; init; } = true;
 }

@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 
 using Avalonia.Collections;
 using Avalonia.Media;
@@ -52,6 +54,50 @@ public partial class SpreadsheetViewModel : ObservableObject
     public IReadOnlyList<SheetDataBar> DataBars { get; private set; } = new List<SheetDataBar>();
 
     public void SetDataBars(IReadOnlyList<SheetDataBar> dataBars) => this.DataBars = dataBars;
+
+    public IReadOnlyList<SheetCellValueRule> CellValueRules { get; private set; } = new List<SheetCellValueRule>();
+
+    public void SetCellValueRules(IReadOnlyList<SheetCellValueRule> rules) => this.CellValueRules = rules;
+
+    public CellRange? AutoFilterRange { get; private set; }
+
+    public void SetAutoFilterRange(CellRange? range) => this.AutoFilterRange = range;
+
+    private readonly HashSet<RowViewModel> sourceHiddenRows = new();
+
+    public void SetHiddenRows(IReadOnlyList<int> hiddenRows)
+    {
+        this.sourceHiddenRows.Clear();
+        foreach (RowViewModel row in this.Rows)
+        {
+            row.IsHidden = false;
+        }
+        foreach (int row in hiddenRows)
+        {
+            if (row >= 0 && row < this.RowCount)
+            {
+                this.Rows[row].IsHidden = true;
+                this.sourceHiddenRows.Add(this.Rows[row]);
+            }
+        }
+    }
+
+    public void ShowAllRows()
+    {
+        this.columnFilters.Clear();
+        this.sourceHiddenRows.Clear();
+        foreach (RowViewModel row in this.Rows)
+        {
+            row.IsHidden = false;
+        }
+        this.ViewChanged?.Invoke();
+    }
+
+    public event Action? ViewChanged;
+
+    // Formatting, comments and links change the saved workbook without changing formula inputs.
+    // Notify the host (autosave/dirty tracking) without recalculating every formula.
+    public void NotifyMetadataChanged() => this.ViewChanged?.Invoke();
 
     // Charts embedded in the sheet. The grid renders these as live overlays.
     public AvaloniaList<SheetChart> Charts { get; } = new();
@@ -152,6 +198,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.engine.Recalculate(this.formulaCells, (addr, value) =>
         {
             CellViewModel cell = this.Rows[addr.Row].Cells[addr.Column];
+            cell.CachedNumericValue = value is { Kind: CellValueKind.Number } numeric ? numeric.Number : null;
             cell.ComputedValue = value is { } v ? FormatComputed(v, cell.NumberFormat) : null;
         });
 
@@ -469,7 +516,7 @@ public partial class SpreadsheetViewModel : ObservableObject
             : value.Display();
 
     // Subscribes a cell so editing its text triggers a recalculation (unless suspended for a bulk load).
-    private void HookCell(CellViewModel cell, CellAddress address)
+    private void HookCell(CellViewModel cell, RowViewModel row, int column)
     {
         cell.PropertyChanged += (_, e) =>
         {
@@ -477,6 +524,10 @@ public partial class SpreadsheetViewModel : ObservableObject
             {
                 return;
             }
+
+            // Row objects move during insert/delete. Resolve their current position instead of
+            // retaining the address they had when the cell was first created.
+            CellAddress address = new(row.Number - 1, column);
 
             if (FormulaEngine.IsFormula(cell.Text))
             {
@@ -507,6 +558,11 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Merges = new List<MergeRange>();
         this.Images = new List<SheetImage>();
         this.DataBars = new List<SheetDataBar>();
+        this.CellValueRules = new List<SheetCellValueRule>();
+        this.AutoFilterRange = null;
+        this.sourceHiddenRows.Clear();
+        this.columnFilters.Clear();
+        this.filterHeaderRow = 0;
 
         ColumnViewModel[] newColumns = new ColumnViewModel[columns];
         for (int c = 0; c < columns; c++)
@@ -522,7 +578,7 @@ public partial class SpreadsheetViewModel : ObservableObject
             RowViewModel row = new(r + 1, columns);
             for (int c = 0; c < row.Cells.Count; c++)
             {
-                this.HookCell(row.Cells[c], new CellAddress(r, c));
+                this.HookCell(row.Cells[c], row, c);
             }
 
             newRows[r] = row;
@@ -638,7 +694,7 @@ public partial class SpreadsheetViewModel : ObservableObject
             for (int rowIndex = 0; rowIndex < this.Rows.Count; rowIndex++)
             {
                 CellViewModel cell = new();
-                this.HookCell(cell, new CellAddress(rowIndex, index));
+                this.HookCell(cell, this.Rows[rowIndex], index);
                 this.Rows[rowIndex].Cells.Add(cell);
             }
         }
@@ -648,10 +704,545 @@ public partial class SpreadsheetViewModel : ObservableObject
             RowViewModel row = new(this.RowCount + 1, this.ColumnCount);
             for (int column = 0; column < row.Cells.Count; column++)
             {
-                this.HookCell(row.Cells[column], new CellAddress(this.RowCount, column));
+                this.HookCell(row.Cells[column], row, column);
             }
 
             this.Rows.Add(row);
+        }
+    }
+
+    // Structural row operations keep the row objects (and their cell formatting) intact. The
+    // HookCell callback uses RowViewModel.Number, so cells moved here continue to notify at their
+    // new address. A single DataChanged is raised after the entire operation.
+    public void InsertRows(int index, int count = 1)
+    {
+        index = Math.Clamp(index, 0, this.RowCount);
+        count = Math.Clamp(count, 1, 1000);
+        for (int i = 0; i < count; i++)
+        {
+            RowViewModel row = new(index + i + 1, this.ColumnCount);
+            for (int column = 0; column < row.Cells.Count; column++)
+            {
+                this.HookCell(row.Cells[column], row, column);
+            }
+            this.Rows.Insert(index + i, row);
+        }
+        this.RenumberRows(index);
+        this.RemapFormulaCells(row => row >= index ? row + count : row);
+        this.ShiftFormulaReferences(index, count, deleting: false);
+        this.Merges = this.Merges.Select(merge => merge.Row >= index
+            ? merge with { Row = merge.Row + count }
+            : merge.Row + merge.RowSpan > index
+                ? merge with { RowSpan = merge.RowSpan + count }
+                : merge).ToList();
+        this.ShiftRowAnchoredContent(index, count, deleting: false);
+        if (this.columnFilters.Count > 0)
+        {
+            this.ApplyColumnFilters();
+        }
+        this.DataChanged?.Invoke();
+    }
+
+    public void DeleteRows(int index, int count = 1)
+    {
+        if (this.RowCount == 0)
+        {
+            return;
+        }
+        index = Math.Clamp(index, 0, this.RowCount - 1);
+        count = Math.Clamp(count, 1, this.RowCount - index);
+        for (int i = 0; i < count; i++)
+        {
+            this.sourceHiddenRows.Remove(this.Rows[index]);
+            this.Rows.RemoveAt(index);
+        }
+        if (this.Rows.Count == 0)
+        {
+            this.EnsureSize(1, Math.Max(1, this.ColumnCount));
+        }
+        this.RenumberRows(index);
+        this.RemapFormulaCells(row => row < index ? row : row >= index + count ? row - count : -1);
+        this.ShiftFormulaReferences(index, count, deleting: true);
+        this.Merges = this.Merges.Select(merge =>
+        {
+            int first = merge.Row < index ? merge.Row : Math.Max(index, merge.Row - count);
+            int last = merge.Row + merge.RowSpan - 1;
+            int newLast = last < index ? last : last >= index + count ? last - count : index - 1;
+            return new MergeRange(first, merge.Column, Math.Max(0, newLast - first + 1), merge.ColumnSpan);
+        }).Where(static merge => merge.RowSpan > 0).ToList();
+        this.ShiftRowAnchoredContent(index, count, deleting: true);
+        if (this.columnFilters.Count > 0)
+        {
+            this.ApplyColumnFilters();
+        }
+        this.DataChanged?.Invoke();
+    }
+
+    public int LikelyHeaderRow()
+    {
+        if (this.AutoFilterRange is { } filter)
+        {
+            return Math.Clamp(filter.Row, 0, Math.Max(0, this.RowCount - 1));
+        }
+        int limit = Math.Min(this.RowCount, 50);
+        for (int row = 0; row < limit; row++)
+        {
+            if (this.Rows[row].Cells.Count(static cell => !string.IsNullOrWhiteSpace(cell.Text)) >= 2)
+            {
+                return row;
+            }
+        }
+        return 0;
+    }
+
+    private int DataEndRow(int headerRow)
+    {
+        if (this.AutoFilterRange is { } filter && headerRow == filter.Row)
+        {
+            return Math.Min(this.RowCount - 1, filter.Row + filter.RowSpan - 1);
+        }
+        int last = headerRow;
+        for (int row = headerRow + 1; row < this.RowCount; row++)
+        {
+            if (this.Rows[row].Cells.All(static cell => string.IsNullOrWhiteSpace(cell.Text)))
+            {
+                break;
+            }
+            last = row;
+        }
+        return last;
+    }
+
+    public IReadOnlyList<string> ColumnValues(int column, int headerRow, int limit = 100)
+    {
+        if (column < 0 || column >= this.ColumnCount)
+        {
+            return Array.Empty<string>();
+        }
+        int last = this.DataEndRow(headerRow);
+        return this.Rows.Skip(headerRow + 1).Take(Math.Max(0, last - headerRow))
+            .Select(row => row.Cells[column].DisplayText)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(static value => value, StringComparer.CurrentCultureIgnoreCase)
+            .Take(limit).ToArray();
+    }
+
+    private readonly Dictionary<int, string> columnFilters = new();
+    private int filterHeaderRow;
+
+    public bool HasColumnFilter(int column) => this.columnFilters.ContainsKey(column);
+
+    public void FilterColumn(int column, string? value, int headerRow)
+    {
+        this.filterHeaderRow = headerRow;
+        if (value is null)
+        {
+            this.columnFilters.Remove(column);
+        }
+        else
+        {
+            this.columnFilters[column] = value;
+        }
+        this.ApplyColumnFilters();
+        this.ViewChanged?.Invoke();
+    }
+
+    private void ApplyColumnFilters()
+    {
+        int last = this.DataEndRow(this.filterHeaderRow);
+        for (int row = 0; row < this.RowCount; row++)
+        {
+            this.Rows[row].IsHidden = this.sourceHiddenRows.Contains(this.Rows[row]) ||
+                row > this.filterHeaderRow && row <= last && this.columnFilters.Any(filter =>
+                filter.Key < this.Rows[row].Cells.Count &&
+                !string.Equals(this.Rows[row].Cells[filter.Key].DisplayText, filter.Value, StringComparison.CurrentCultureIgnoreCase));
+        }
+    }
+
+    public void SortRows(int column, int headerRow, bool descending)
+    {
+        if (column < 0 || column >= this.ColumnCount || headerRow + 1 >= this.RowCount)
+        {
+            return;
+        }
+        if (this.AutoFilterRange is { } filter &&
+            (column < filter.Column || column >= filter.Column + filter.ColumnSpan))
+        {
+            return;
+        }
+        int start = headerRow + 1;
+        int last = this.DataEndRow(headerRow);
+        if (last <= start)
+        {
+            return;
+        }
+
+        // Capture sort keys once. Reading/formating a formula cell during every comparison made
+        // large worksheet sorts needlessly expensive, and comparing percent display strings was wrong.
+        var ordered = this.Rows.Skip(start).Take(last - start + 1)
+            .Select((row, original) => (Row: row, Original: original,
+                Display: row.Cells[column].DisplayText, Number: row.Cells[column].NumericValue))
+            .OrderBy(pair => pair, Comparer<(RowViewModel Row, int Original, string Display, double? Number)>.Create((left, right) =>
+            {
+                int result = left.Number is { } a && right.Number is { } b
+                    ? a.CompareTo(b)
+                    : StringComparer.CurrentCultureIgnoreCase.Compare(left.Display, right.Display);
+                return result == 0 ? left.Original.CompareTo(right.Original) : descending ? -result : result;
+            })).ToArray();
+        CellAddress[] formulaAddresses = this.formulaCells.ToArray();
+        int[] newIndexByOriginal = new int[ordered.Length];
+        for (int i = 0; i < ordered.Length; i++)
+        {
+            newIndexByOriginal[ordered[i].Original] = start + i;
+        }
+        this.suspendRecalc = true;
+        try
+        {
+            this.Rows.RemoveRange(start, ordered.Length);
+            this.Rows.InsertRange(start, ordered.Select(static item => item.Row));
+            this.RenumberRows(start);
+            foreach (CellAddress address in formulaAddresses)
+            {
+                if (address.Row < start || address.Row > last)
+                {
+                    continue;
+                }
+                int newRow = newIndexByOriginal[address.Row - start];
+                int delta = newRow - address.Row;
+                if (delta != 0)
+                {
+                    CellViewModel cell = this.Rows[newRow].Cells[address.Column];
+                    cell.RelocateFormula(ShiftFormulaForMovedRow(cell.Text, delta));
+                }
+            }
+        }
+        finally
+        {
+            this.suspendRecalc = false;
+        }
+        this.formulaCells.Clear();
+        foreach (CellAddress address in formulaAddresses)
+        {
+            int row = address.Row >= start && address.Row <= last
+                ? newIndexByOriginal[address.Row - start]
+                : address.Row;
+            this.formulaCells.Add(new CellAddress(row, address.Column));
+        }
+        if (this.columnFilters.Count > 0)
+        {
+            this.ApplyColumnFilters();
+        }
+        this.DataChanged?.Invoke();
+    }
+
+    // A sorted record keeps its row-relative formulas (for example =J3/I3 becomes =J5/I5
+    // when that record moves from row 3 to row 5). Absolute rows and quoted text stay put.
+    private static string ShiftFormulaForMovedRow(string formula, int delta)
+    {
+        static bool IdentifierChar(char value) => char.IsAsciiLetterOrDigit(value) || value is '_' or '.';
+
+        bool inText = false;
+        bool inSheetName = false;
+        StringBuilder? rewritten = null;
+        int copiedThrough = 0;
+        for (int index = 0; index < formula.Length;)
+        {
+            char current = formula[index];
+            if (current == '"' && !inSheetName)
+            {
+                if (inText && index + 1 < formula.Length && formula[index + 1] == '"')
+                {
+                    index += 2;
+                    continue;
+                }
+                inText = !inText;
+                index++;
+                continue;
+            }
+            if (current == '\'' && !inText)
+            {
+                if (inSheetName && index + 1 < formula.Length && formula[index + 1] == '\'')
+                {
+                    index += 2;
+                    continue;
+                }
+                inSheetName = !inSheetName;
+                index++;
+                continue;
+            }
+            if (inText || inSheetName || current is not ('$' or >= 'A' and <= 'Z' or >= 'a' and <= 'z') ||
+                index > 0 && IdentifierChar(formula[index - 1]))
+            {
+                index++;
+                continue;
+            }
+
+            int start = index;
+            int next = current == '$' ? index + 1 : index;
+            int letterStart = next;
+            while (next < formula.Length && char.IsAsciiLetter(formula[next]))
+            {
+                next++;
+            }
+            int letters = next - letterStart;
+            if (letters is < 1 or > 3)
+            {
+                index = start + 1;
+                continue;
+            }
+            bool absoluteRow = next < formula.Length && formula[next] == '$';
+            if (absoluteRow)
+            {
+                next++;
+            }
+            int rowStart = next;
+            if (next >= formula.Length || formula[next] is < '1' or > '9')
+            {
+                index = start + 1;
+                continue;
+            }
+            do
+            {
+                next++;
+            }
+            while (next < formula.Length && char.IsAsciiDigit(formula[next]));
+            if (next < formula.Length && (IdentifierChar(formula[next]) || formula[next] == '(') ||
+                absoluteRow ||
+                !int.TryParse(formula.AsSpan(rowStart, next - rowStart), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int row))
+            {
+                index = next;
+                continue;
+            }
+
+            rewritten ??= new StringBuilder(formula.Length + 8);
+            rewritten.Append(formula, copiedThrough, rowStart - copiedThrough);
+            rewritten.Append(Math.Max(1, row + delta).ToString(CultureInfo.InvariantCulture));
+            copiedThrough = next;
+            index = next;
+        }
+        if (rewritten is null)
+        {
+            return formula;
+        }
+        rewritten.Append(formula, copiedThrough, formula.Length - copiedThrough);
+        return rewritten.ToString();
+    }
+
+    private void RenumberRows(int start)
+    {
+        for (int row = Math.Max(0, start); row < this.RowCount; row++)
+        {
+            this.Rows[row].Number = row + 1;
+        }
+        this.ActiveCell = new CellAddress(Math.Clamp(this.ActiveCell.Row, 0, this.RowCount - 1),
+            Math.Clamp(this.ActiveCell.Column, 0, this.ColumnCount - 1));
+    }
+
+    private void RemapFormulaCells(Func<int, int> mapRow)
+    {
+        CellAddress[] addresses = this.formulaCells.ToArray();
+        this.formulaCells.Clear();
+        foreach (CellAddress address in addresses)
+        {
+            int row = mapRow(address.Row);
+            if (row >= 0)
+            {
+                this.formulaCells.Add(new CellAddress(row, address.Column));
+            }
+        }
+    }
+
+    private void ShiftRowAnchoredContent(int index, int count, bool deleting)
+    {
+        int Shift(int row) => row < index ? row : deleting
+            ? Math.Max(index, row - count)
+            : row + count;
+
+        CellRange? ShiftRange(CellRange range)
+        {
+            int first = range.Row;
+            int end = range.Row + range.RowSpan;
+            if (deleting)
+            {
+                first = first < index ? first : Math.Max(index, first - count);
+                end = end <= index ? end : Math.Max(index, end - count);
+            }
+            else if (first >= index)
+            {
+                first += count;
+                end += count;
+            }
+            else if (end > index)
+            {
+                end += count;
+            }
+            return end > first ? range with { Row = first, RowSpan = end - first } : null;
+        }
+
+        if (this.AutoFilterRange is { } autoFilter)
+        {
+            this.AutoFilterRange = ShiftRange(autoFilter);
+        }
+
+        this.DataBars = this.DataBars.Select(bar => (Bar: bar, Range: ShiftRange(bar.Range)))
+            .Where(static item => item.Range is not null)
+            .Select(static item => new SheetDataBar
+            {
+                Range = item.Range!.Value,
+                Min = item.Bar.Min,
+                Max = item.Bar.Max,
+                Color = item.Bar.Color,
+                ShowValue = item.Bar.ShowValue,
+                Gradient = item.Bar.Gradient,
+            }).ToList();
+        this.CellValueRules = this.CellValueRules.Select(rule => (Rule: rule, Range: ShiftRange(rule.Range)))
+            .Where(static item => item.Range is not null)
+            .Select(static item => new SheetCellValueRule
+            {
+                Range = item.Range!.Value,
+                Comparison = item.Rule.Comparison,
+                Threshold = item.Rule.Threshold,
+                Foreground = item.Rule.Foreground,
+                Bold = item.Rule.Bold,
+                Priority = item.Rule.Priority,
+            }).ToList();
+        this.Images = this.Images.Select(image => new SheetImage
+        {
+            Row = Shift(image.Row),
+            Column = image.Column,
+            OffsetX = image.OffsetX,
+            OffsetY = image.OffsetY,
+            Width = image.Width,
+            Height = image.Height,
+            Data = image.Data,
+        }).ToList();
+        foreach (SheetChart chart in this.Charts)
+        {
+            chart.AnchorRow = Shift(chart.AnchorRow);
+            if (chart.ToRow is { } toRow)
+            {
+                chart.ToRow = Shift(toRow);
+            }
+        }
+        if (this.columnFilters.Count > 0)
+        {
+            this.filterHeaderRow = Shift(this.filterHeaderRow);
+        }
+    }
+
+    private static readonly Regex A1Reference = new(
+        @"(?<![A-Za-z0-9_.])(?<column>\$?[A-Za-z]{1,3})(?<row>\$?[1-9][0-9]*)(?![A-Za-z0-9_.])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private void ShiftFormulaReferences(int index, int count, bool deleting)
+    {
+        this.suspendRecalc = true;
+        try
+        {
+            foreach (CellAddress address in this.formulaCells.ToArray())
+            {
+                CellViewModel? cell = this.GetCell(address);
+                if (cell is not null && FormulaEngine.IsFormula(cell.Text))
+                {
+                    cell.Text = this.RewriteRowReferences(cell.Text, index, count, deleting);
+                }
+            }
+            this.names = this.names.ToDictionary(
+                static pair => pair.Key,
+                pair => this.RewriteRowReferences(pair.Value, index, count, deleting),
+                StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            this.suspendRecalc = false;
+        }
+    }
+
+    private string RewriteRowReferences(string formula, int index, int count, bool deleting) =>
+        A1Reference.Replace(formula, match =>
+        {
+            // Quoted string literals (including doubled Excel quotes) are not references.
+            bool inString = false;
+            for (int i = 0; i < match.Index; i++)
+            {
+                if (formula[i] != '"')
+                {
+                    continue;
+                }
+                if (inString && i + 1 < match.Index && formula[i + 1] == '"')
+                {
+                    i++;
+                }
+                else
+                {
+                    inString = !inString;
+                }
+            }
+            if (inString)
+            {
+                return match.Value;
+            }
+
+            // Do not rewrite a reference explicitly qualified with another sheet name.
+            if (match.Index > 0 && formula[match.Index - 1] == '!')
+            {
+                int end = match.Index - 1;
+                int start = end - 1;
+                if (start >= 0 && formula[start] == '\'')
+                {
+                    start = formula.LastIndexOf('\'', start - 1);
+                    if (start < 0)
+                    {
+                        return match.Value;
+                    }
+                    start++;
+                }
+                else
+                {
+                    while (start >= 0 && (char.IsLetterOrDigit(formula[start]) || formula[start] == '_'))
+                    {
+                        start--;
+                    }
+                    start++;
+                }
+                string referencedSheet = formula[start..end].Trim('\'');
+                if (!referencedSheet.Equals(this.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return match.Value;
+                }
+            }
+
+            string rowToken = match.Groups["row"].Value;
+            if (!int.TryParse(rowToken.TrimStart('$'), out int oneBasedRow))
+            {
+                return match.Value;
+            }
+            int row = oneBasedRow - 1;
+            if (row < index)
+            {
+                return match.Value;
+            }
+            if (deleting && row < index + count)
+            {
+                return "#REF!";
+            }
+            int changed = deleting ? row - count : row + count;
+            return match.Groups["column"].Value + (rowToken.StartsWith('$') ? "$" : string.Empty) + (changed + 1);
+        });
+
+    private void ReindexFormulaCells()
+    {
+        this.formulaCells.Clear();
+        for (int row = 0; row < this.RowCount; row++)
+        {
+            for (int column = 0; column < this.ColumnCount; column++)
+            {
+                if (FormulaEngine.IsFormula(this.Rows[row].Cells[column].Text))
+                {
+                    this.formulaCells.Add(new CellAddress(row, column));
+                }
+            }
         }
     }
 

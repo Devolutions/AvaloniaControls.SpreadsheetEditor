@@ -3,15 +3,19 @@ namespace SpreadsheetEditor.Controls;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -54,6 +58,7 @@ public class SpreadsheetGrid : UserControl
     // Cell text is set explicitly because the sheet stays light: the inherited dark-theme foreground
     // would be near-white and invisible against the white cells. Per-run colors still override it.
     private static readonly IBrush CellText = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
+    private static readonly IBrush LinkText = new SolidColorBrush(Color.FromRgb(0x05, 0x63, 0xC1));
 
     // Chrome brushes, re-resolved from the active ThemeVariant in ApplyTheme() (on attach + on theme
     // change) so the headers darken while the sheet panel stays light.
@@ -140,6 +145,8 @@ public class SpreadsheetGrid : UserControl
     // a cell whose text just grew past its width needs to overflow into empty neighbours (Excel-style),
     // which the spill overlay only picks up on a rebuild. Done on commit, not per keystroke.
     private bool editingSession;
+    private CellAddress? editingAddress;
+    private bool applyingCellFormat;
 
     private bool editorSuspended
     {
@@ -149,19 +156,31 @@ public class SpreadsheetGrid : UserControl
             if (!value)
             {
                 this.editorSuspendedField = false;
-                this.editingSession = true; // editing started
+                if (!this.editingSession)
+                {
+                    this.editingAddress = this.sheet?.ActiveCell;
+                    this.editingSession = true; // editing started
+                }
                 return;
             }
 
             this.editorSuspendedField = true;
             if (this.editingSession)
             {
-                this.editingSession = false; // editing ended → refresh spill for the edited cell
+                this.editingSession = false;
+                CellAddress? address = this.editingAddress;
+                this.editingAddress = null;
                 if (this.sheet is { } editedSheet)
                 {
+                    // Text changes were intentionally skipped while the opaque editor covered the
+                    // display cell. Refresh only that cell now; its subscriber requests a rebuild
+                    // only if text overflow actually requires a different layout.
+                    if (address is { } editedAddress)
+                    {
+                        editedSheet.GetCell(editedAddress)?.RefreshDisplay();
+                    }
                     this.EditCompleted?.Invoke(editedSheet);
                 }
-                Dispatcher.UIThread.Post(this.Rebuild, DispatcherPriority.Background);
             }
         }
     }
@@ -196,8 +215,12 @@ public class SpreadsheetGrid : UserControl
     private bool[,]? covered;
     private (int RowSpan, int ColumnSpan)[,]? spans;
     private readonly List<(CellViewModel Cell, PropertyChangedEventHandler Handler)> cellSubscriptions = new();
+    private readonly Dictionary<Color, IBrush> gradientBarBrushes = new();
 
     public event Action<CellAddress>? CellActivated;
+
+    // The host owns worksheet tabs; it resolves links that target a different sheet.
+    public event Action<string, CellAddress>? WorksheetLinkRequested;
 
     // Raised once when an in-cell editing session is committed by Enter/Tab, selecting another cell,
     // moving focus to the formula bar, or otherwise returning to selection mode.
@@ -728,16 +751,16 @@ public class SpreadsheetGrid : UserControl
     // Rebuilds the entire grid from the current sheet (call after structural changes / load).
     public void Rebuild()
     {
-        this.ClearCellSubscriptions();
         this.renderedViewport = null;
-
-        this.columnHeaders.Children.Clear();
-        this.rowHeaders.Children.Clear();
-        this.cells.Children.Clear();
-        this.imageOverlay.Children.Clear();
 
         if (this.sheet is null || this.sheet.RowCount == 0 || this.sheet.ColumnCount == 0)
         {
+            this.ClearCellSubscriptions();
+            this.columnHeaders.Children.Clear();
+            this.rowHeaders.Children.Clear();
+            this.cells.Children.Clear();
+            this.imageOverlay.Children.Clear();
+            this.chartOverlay.Children.Clear();
             this.columnHeaders.Width = 0;
             this.rowHeaders.Height = 0;
             this.cells.Width = 0;
@@ -763,7 +786,11 @@ public class SpreadsheetGrid : UserControl
         this.rowOffsets = new double[rows + 1];
         for (int r = 0; r < rows; r++)
         {
-            if (this.sheet.Rows[r].Height is { } explicitHeight)
+            if (this.sheet.Rows[r].IsHidden)
+            {
+                this.rowHeights[r] = 0;
+            }
+            else if (this.sheet.Rows[r].Height is { } explicitHeight)
             {
                 this.rowHeights[r] = explicitHeight * this.zoom;
             }
@@ -784,6 +811,7 @@ public class SpreadsheetGrid : UserControl
         this.cornerBox.Width = RowHeaderWidth * this.zoom;
         this.cornerBox.Height = ColumnHeaderHeight * this.zoom;
 
+        this.imageOverlay.Children.Clear();
         this.BuildImages(rows, cols);
         this.RefreshCharts();
         this.RenderViewport(force: true);
@@ -903,6 +931,15 @@ public class SpreadsheetGrid : UserControl
         for (int column = viewport.FirstColumn; column <= viewport.LastColumn; column++)
         {
             Border header = this.HeaderCell(CellAddress.ColumnToLetters(column));
+            int selectedColumn = column;
+            header.ContextFlyout = this.BuildColumnMenu(selectedColumn);
+            header.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(header).Properties.IsRightButtonPressed)
+                {
+                    this.SelectColumn(selectedColumn);
+                }
+            };
             this.PlaceColumnHeader(header, column);
             this.columnHeaders.Children.Add(header);
             this.columnHeaders.Children.Add(this.ColumnResizeHandle(column));
@@ -921,6 +958,36 @@ public class SpreadsheetGrid : UserControl
         this.UpdateSelection();
 
         HashSet<(int Row, int Column)> renderedCells = new();
+        bool renderedCrossingMerges = false;
+        void RenderCrossingMerges()
+        {
+            if (this.sheet is null || this.spans is null)
+            {
+                return;
+            }
+
+            // A merge can extend into the visible area even when its anchor is above or left of
+            // the materialized window. Draw it before yielding to the off-screen buffer batches.
+            foreach (MergeRange merge in this.sheet.Merges)
+            {
+                int mergeLastRow = merge.Row + merge.RowSpan - 1;
+                int mergeLastColumn = merge.Column + merge.ColumnSpan - 1;
+                bool intersects = merge.Row <= viewport.LastRow && mergeLastRow >= viewport.FirstRow &&
+                                  merge.Column <= viewport.LastColumn && mergeLastColumn >= viewport.FirstColumn;
+                if (!intersects || renderedCells.Contains((merge.Row, merge.Column)) ||
+                    merge.Row < 0 || merge.Column < 0 || merge.Row >= this.sheet.RowCount ||
+                    merge.Column >= this.sheet.Rows[merge.Row].Cells.Count ||
+                    this.sheet.Rows[merge.Row].IsHidden)
+                {
+                    continue;
+                }
+
+                (int rowSpan, int columnSpan) = this.spans[merge.Row, merge.Column];
+                this.cells.Children.Add(this.BuildCell(
+                    this.sheet.Rows[merge.Row].Cells[merge.Column], merge.Row, merge.Column, rowSpan, columnSpan));
+                renderedCells.Add((merge.Row, merge.Column));
+            }
+        }
         int nextRow = viewport.FirstRow;
         Action? renderBatch = null;
         renderBatch = () =>
@@ -931,12 +998,31 @@ public class SpreadsheetGrid : UserControl
                 return;
             }
 
-            // Four rows keep each UI-thread slice short while the viewport fills progressively.
-            int batchLastRow = Math.Min(viewport.LastRow, nextRow + 3);
-            for (; nextRow <= batchLastRow; nextRow++)
+            // Paint every *visible* row in this dispatcher turn. Only the off-screen buffer is
+            // incremental; yielding while the visible area is still empty causes a noticeable
+            // top-to-bottom refill on opening a sheet or rebuilding after an edit.
+            bool paintingVisible = nextRow <= visible.LastRow;
+            int batchLastRow = paintingVisible ? visible.LastRow : viewport.LastRow;
+            int rowBudget = paintingVisible ? int.MaxValue : 4;
+            int visibleRows = 0;
+            for (; nextRow <= batchLastRow && visibleRows < rowBudget; nextRow++)
             {
                 int row = nextRow;
+                if (this.sheet.Rows[row].IsHidden)
+                {
+                    continue;
+                }
+                visibleRows++;
                 Border header = this.HeaderCell((row + 1).ToString());
+                int selectedRow = row;
+                header.ContextFlyout = this.BuildRowMenu(selectedRow);
+                header.PointerPressed += (_, e) =>
+                {
+                    if (e.GetCurrentPoint(header).Properties.IsRightButtonPressed)
+                    {
+                        this.SelectRow(selectedRow);
+                    }
+                };
                 this.PlaceRowHeader(header, row);
                 this.rowHeaders.Children.Add(header);
                 this.rowHeaders.Children.Add(this.RowResizeHandle(row));
@@ -966,7 +1052,7 @@ public class SpreadsheetGrid : UserControl
 
                 for (int column = viewport.FirstColumn; column <= lastCellColumn; column++)
                 {
-                    if (this.covered[row, column])
+                    if (this.covered[row, column] || renderedCells.Contains((row, column)))
                     {
                         continue;
                     }
@@ -989,6 +1075,12 @@ public class SpreadsheetGrid : UserControl
                 }
             }
 
+            if (!renderedCrossingMerges && nextRow > visible.LastRow)
+            {
+                renderedCrossingMerges = true;
+                RenderCrossingMerges();
+            }
+
             if (nextRow <= viewport.LastRow)
             {
                 // A short timer guarantees the dispatcher can process input and paint between slices;
@@ -997,24 +1089,6 @@ public class SpreadsheetGrid : UserControl
                 return;
             }
 
-            // A merged region can intersect the viewport while its top-left cell is outside it.
-            foreach (MergeRange merge in this.sheet.Merges)
-            {
-                int mergeLastRow = merge.Row + merge.RowSpan - 1;
-                int mergeLastColumn = merge.Column + merge.ColumnSpan - 1;
-                bool intersects = merge.Row <= viewport.LastRow && mergeLastRow >= viewport.FirstRow &&
-                                  merge.Column <= viewport.LastColumn && mergeLastColumn >= viewport.FirstColumn;
-                if (!intersects || renderedCells.Contains((merge.Row, merge.Column)) ||
-                    merge.Row < 0 || merge.Column < 0 || merge.Row >= this.sheet.RowCount ||
-                    merge.Column >= this.sheet.Rows[merge.Row].Cells.Count)
-                {
-                    continue;
-                }
-
-                (int rowSpan, int columnSpan) = this.spans[merge.Row, merge.Column];
-                this.cells.Children.Add(this.BuildCell(
-                    this.sheet.Rows[merge.Row].Cells[merge.Column], merge.Row, merge.Column, rowSpan, columnSpan));
-            }
         };
 
         renderBatch();
@@ -1789,11 +1863,20 @@ public class SpreadsheetGrid : UserControl
             Width = 6,
             Height = ColumnHeaderHeight * this.zoom,
             Cursor = new Cursor(StandardCursorType.SizeWestEast),
+            ContextFlyout = this.BuildColumnMenu(column),
         };
         Canvas.SetLeft(handle, this.OffsetToColumn(column + 1) - 3);
         Canvas.SetTop(handle, 0);
         handle.PointerPressed += (_, e) =>
         {
+            if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+            {
+                if (e.GetCurrentPoint(handle).Properties.IsRightButtonPressed)
+                {
+                    this.SelectColumn(column);
+                }
+                return;
+            }
             this.dragStart = e.GetPosition(this).X;
             this.dragStartSize = this.columnWidths[column];
             this.resizing = true;
@@ -1831,11 +1914,20 @@ public class SpreadsheetGrid : UserControl
             Width = RowHeaderWidth * this.zoom,
             Height = 6,
             Cursor = new Cursor(StandardCursorType.SizeNorthSouth),
+            ContextFlyout = this.BuildRowMenu(row),
         };
         Canvas.SetLeft(handle, 0);
         Canvas.SetTop(handle, this.OffsetToRow(row + 1) - 3);
         handle.PointerPressed += (_, e) =>
         {
+            if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+            {
+                if (e.GetCurrentPoint(handle).Properties.IsRightButtonPressed)
+                {
+                    this.SelectRow(row);
+                }
+                return;
+            }
             this.dragStart = e.GetPosition(this).Y;
             this.dragStartSize = this.rowHeights[row];
             this.resizing = true;
@@ -2045,7 +2137,7 @@ public class SpreadsheetGrid : UserControl
         {
             text.FontFamily = new FontFamily(cell.FontFamily);
         }
-        RenderInlines(text, cell);
+        RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell));
         this.PlaceSheetControl(text, row, startColumn, 1, span);
         return text;
     }
@@ -2073,7 +2165,7 @@ public class SpreadsheetGrid : UserControl
         // two don't render on top of each other.
         if (!spilling)
         {
-            RenderInlines(text, cell);
+            RenderInlines(text, cell, this.FindCellValueRule(row, column, cell));
         }
 
         // Conditional-formatting data bar: a proportional bar behind (or instead of) the value.
@@ -2082,7 +2174,7 @@ public class SpreadsheetGrid : UserControl
         if (dataBar is { } db)
         {
             barGrid = new Grid();
-            Border fill = new() { Background = new SolidColorBrush(db.Color), Margin = new Thickness(1) };
+            Border fill = new() { Background = this.DataBarBrush(db), Margin = new Thickness(1) };
             Grid.SetColumn(fill, 0);
             barGrid.Children.Add(fill);
             SetBarFraction(barGrid, db, cell);
@@ -2092,6 +2184,55 @@ public class SpreadsheetGrid : UserControl
             }
         }
 
+        Control cellContent = barGrid is null ? text : Layered(barGrid, text);
+        Border? filterButton = null;
+        if (this.sheet?.AutoFilterRange is { } filterRange &&
+            row == filterRange.Row && column >= filterRange.Column &&
+            column < filterRange.Column + filterRange.ColumnSpan)
+        {
+            text.Margin = new Thickness(4, 2, 23 * this.zoom, 2);
+            filterButton = new Border
+            {
+                Width = 17 * this.zoom,
+                Height = Math.Min(19 * this.zoom, this.rowHeights[row] - 2),
+                Margin = new Thickness(0, 0, 2 * this.zoom, 0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brushes.White,
+                BorderBrush = SheetGridLine,
+                BorderThickness = new Thickness(1),
+                Focusable = true,
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Child = new TextBlock
+                {
+                    Text = "▼",
+                    Foreground = CellText,
+                    FontSize = 9 * this.zoom,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsHitTestVisible = false,
+                },
+            };
+            Border button = filterButton;
+            button.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(button).Properties.IsLeftButtonPressed)
+                {
+                    this.BuildColumnMenu(column).ShowAt(button);
+                    e.Handled = true;
+                }
+            };
+            button.KeyDown += (_, e) =>
+            {
+                if (e.Key is Key.Enter or Key.Space or Key.Down)
+                {
+                    this.BuildColumnMenu(column).ShowAt(button);
+                    e.Handled = true;
+                }
+            };
+            ToolTip.SetTip(button, $"Sort or filter {cell.DisplayText}");
+            cellContent = Layered(cellContent, button);
+        }
         Border border = new()
         {
             BorderBrush = SheetGridLine,
@@ -2099,13 +2240,64 @@ public class SpreadsheetGrid : UserControl
             // so the overlaid text reads as continuous. The cell keeps its own hit-testable box.
             BorderThickness = new Thickness(0, 0, omitRightBorder ? 0 : 1, 1),
             Background = cell.Background ?? Brushes.Transparent,
-            Child = barGrid is null ? text : Layered(barGrid, text),
+            Child = cellContent,
         };
+        if (filterButton is not null)
+        {
+            border.ContextFlyout = this.BuildColumnMenu(column);
+        }
+        Grid? annotatedContent = null;
+        bool hasAnnotationTip = false;
+        void UpdateAnnotation()
+        {
+            if (!string.IsNullOrWhiteSpace(cell.Comment) && annotatedContent is null)
+            {
+                border.Child = null;
+                annotatedContent = new Grid();
+                annotatedContent.Children.Add(cellContent);
+                annotatedContent.Children.Add(new Polygon
+                {
+                    Points = new Points { new Point(0, 0), new Point(9, 0), new Point(9, 9) },
+                    Fill = Brushes.Gold,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    IsHitTestVisible = false,
+                });
+                border.Child = annotatedContent;
+            }
+            else if (string.IsNullOrWhiteSpace(cell.Comment) && annotatedContent is not null)
+            {
+                border.Child = null;
+                annotatedContent.Children.Remove(cellContent);
+                annotatedContent = null;
+                border.Child = cellContent;
+            }
+
+            string? tip = string.IsNullOrWhiteSpace(cell.CommentAuthor) || string.IsNullOrWhiteSpace(cell.Comment)
+                ? cell.Comment
+                : $"{cell.CommentAuthor}: {cell.Comment}";
+            if (!string.IsNullOrWhiteSpace(cell.Hyperlink))
+            {
+                tip = string.IsNullOrWhiteSpace(tip)
+                    ? $"Ctrl+click to open: {cell.Hyperlink}"
+                    : $"{tip}\n\nCtrl+click to open: {cell.Hyperlink}";
+            }
+            if (tip is not null || hasAnnotationTip)
+            {
+                ToolTip.SetTip(border, tip);
+                hasAnnotationTip = tip is not null;
+            }
+        }
+        UpdateAnnotation();
         this.PlaceSheetControl(border, row, column, rowSpan, columnSpan);
 
         CellAddress address = new(row, column);
         border.PointerPressed += (_, e) =>
         {
+            if (filterButton is not null && IsWithin(e.Source as Visual, filterButton))
+            {
+                return;
+            }
             // Right-click: select the cell first (unless it's already inside the selection), then let
             // the context flyout open over the right range.
             if (e.GetCurrentPoint(border).Properties.IsRightButtonPressed)
@@ -2114,6 +2306,11 @@ public class SpreadsheetGrid : UserControl
                 {
                     this.SelectOnly(address);
                 }
+                return;
+            }
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && !string.IsNullOrWhiteSpace(cell.Hyperlink))
+            {
+                this.OpenHyperlink(cell.Hyperlink);
                 return;
             }
             if (e.ClickCount >= 2)
@@ -2157,6 +2354,10 @@ public class SpreadsheetGrid : UserControl
             switch (e.PropertyName)
             {
                 case nameof(CellViewModel.EffectiveRuns) or nameof(CellViewModel.Text):
+                    if (this.applyingCellFormat)
+                    {
+                        break;
+                    }
                     // The editor already paints the live text. Defer the comparatively expensive
                     // spill calculation/rebuild until the editing session is committed.
                     if (this.editingSession)
@@ -2180,7 +2381,7 @@ public class SpreadsheetGrid : UserControl
                     }
                     else
                     {
-                        RenderInlines(text, cell);
+                        RenderInlines(text, cell, this.FindCellValueRule(row, column, cell));
                     }
                     if (barGrid is not null && dataBar is { } bar)
                     {
@@ -2196,8 +2397,22 @@ public class SpreadsheetGrid : UserControl
                 case nameof(CellViewModel.Background):
                     border.Background = cell.Background ?? Brushes.Transparent;
                     break;
+                case nameof(CellViewModel.Comment) or nameof(CellViewModel.CommentAuthor) or nameof(CellViewModel.Hyperlink):
+                    UpdateAnnotation();
+                    if (e.PropertyName == nameof(CellViewModel.Hyperlink) && spilling)
+                    {
+                        this.Rebuild(); // the visible text lives in a separate spill overlay
+                    }
+                    else if (e.PropertyName == nameof(CellViewModel.Hyperlink))
+                    {
+                        RenderInlines(text, cell, this.FindCellValueRule(row, column, cell));
+                    }
+                    break;
                 case nameof(CellViewModel.FontSize):
-                    this.Rebuild();
+                    if (!this.applyingCellFormat)
+                    {
+                        this.Rebuild();
+                    }
                     break;
             }
         };
@@ -2216,6 +2431,54 @@ public class SpreadsheetGrid : UserControl
         Canvas.SetTop(control, top);
         control.Width = Math.Max(0, this.OffsetToColumn(lastColumn) - left);
         control.Height = Math.Max(0, this.OffsetToRow(lastRow) - top);
+    }
+
+    private SheetCellValueRule? FindCellValueRule(int row, int column, CellViewModel cell)
+    {
+        double? value = cell.NumericValue ?? ParseNumber(cell.DisplayText);
+        if (value is null || this.sheet is null)
+        {
+            return null;
+        }
+        foreach (SheetCellValueRule rule in this.sheet.CellValueRules)
+        {
+            CellRange range = rule.Range;
+            if (row >= range.Row && row < range.Row + range.RowSpan &&
+                column >= range.Column && column < range.Column + range.ColumnSpan &&
+                rule.Matches(value.Value))
+            {
+                return rule;
+            }
+        }
+        return null;
+    }
+
+    private IBrush DataBarBrush(SheetDataBar bar)
+    {
+        if (!bar.Gradient)
+        {
+            return new SolidColorBrush(bar.Color);
+        }
+        if (this.gradientBarBrushes.TryGetValue(bar.Color, out IBrush? cached))
+        {
+            return cached;
+        }
+        Color pale = Color.FromRgb(
+            (byte)(bar.Color.R + ((255 - bar.Color.R) * 0.82)),
+            (byte)(bar.Color.G + ((255 - bar.Color.G) * 0.82)),
+            (byte)(bar.Color.B + ((255 - bar.Color.B) * 0.82)));
+        LinearGradientBrush brush = new()
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            GradientStops = new GradientStops
+            {
+                new GradientStop(bar.Color, 0),
+                new GradientStop(pale, 1),
+            },
+        };
+        this.gradientBarBrushes[bar.Color] = brush;
+        return brush;
     }
 
     private SheetDataBar? FindDataBar(int row, int column)
@@ -2238,7 +2501,7 @@ public class SpreadsheetGrid : UserControl
     // Sizes a data bar's fill (column 0) proportional to the cell value between min and max.
     private static void SetBarFraction(Grid barGrid, SheetDataBar bar, CellViewModel cell)
     {
-        double value = ParseNumber(cell.DisplayText) ?? bar.Min;
+        double value = cell.NumericValue ?? ParseNumber(cell.DisplayText) ?? bar.Min;
         double fraction = bar.Max > bar.Min ? Math.Clamp((value - bar.Min) / (bar.Max - bar.Min), 0, 1) : 0;
         string f = fraction.ToString("0.####", CultureInfo.InvariantCulture);
         string rest = (1 - fraction).ToString("0.####", CultureInfo.InvariantCulture);
@@ -2254,7 +2517,7 @@ public class SpreadsheetGrid : UserControl
         return grid;
     }
 
-    private static void RenderInlines(TextBlock target, CellViewModel cell)
+    private static void RenderInlines(TextBlock target, CellViewModel cell, SheetCellValueRule? valueRule = null)
     {
         target.Inlines ??= new InlineCollection();
         target.Inlines.Clear();
@@ -2266,13 +2529,13 @@ public class SpreadsheetGrid : UserControl
             }
             Run run = new(r.Text)
             {
-                FontWeight = r.Bold ? FontWeight.Bold : FontWeight.Normal,
+                FontWeight = (valueRule?.Bold ?? r.Bold) ? FontWeight.Bold : FontWeight.Normal,
                 FontStyle = r.Italic ? FontStyle.Italic : FontStyle.Normal,
             };
-            if (r.Underline || r.Strikethrough)
+            if (r.Underline || r.Strikethrough || !string.IsNullOrWhiteSpace(cell.Hyperlink))
             {
                 TextDecorationCollection decorations = new();
-                if (r.Underline)
+                if (r.Underline || !string.IsNullOrWhiteSpace(cell.Hyperlink))
                 {
                     decorations.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
                 }
@@ -2285,9 +2548,17 @@ public class SpreadsheetGrid : UserControl
                 run.TextDecorations = decorations;
             }
 
-            if (r.Foreground is { } fg)
+            if (valueRule?.Foreground is { } conditionalColor)
+            {
+                run.Foreground = new SolidColorBrush(conditionalColor);
+            }
+            else if (r.Foreground is { } fg)
             {
                 run.Foreground = new SolidColorBrush(fg);
+            }
+            else if (!string.IsNullOrWhiteSpace(cell.Hyperlink))
+            {
+                run.Foreground = LinkText;
             }
             target.Inlines.Add(run);
         }
@@ -2534,6 +2805,421 @@ public class SpreadsheetGrid : UserControl
 
     // ----- Clipboard / range operations -----
 
+    private void SelectRow(int row)
+    {
+        if (this.sheet is null)
+        {
+            return;
+        }
+        this.editorSuspended = true;
+        this.CellActivated?.Invoke(new CellAddress(row, 0));
+        this.rangeAnchor = new CellAddress(row, 0);
+        this.rangeFocus = new CellAddress(row, this.sheet.ColumnCount - 1);
+        this.UpdateSelection();
+    }
+
+    private void SelectColumn(int column)
+    {
+        if (this.sheet is null)
+        {
+            return;
+        }
+        this.editorSuspended = true;
+        this.CellActivated?.Invoke(new CellAddress(0, column));
+        this.rangeAnchor = new CellAddress(0, column);
+        this.rangeFocus = new CellAddress(this.sheet.RowCount - 1, column);
+        this.UpdateSelection();
+    }
+
+    private void InsertSelectedRows(int row, int count = 1)
+    {
+        if (this.ReadOnly || this.sheet is null)
+        {
+            return;
+        }
+        this.sheet.InsertRows(row, count);
+        this.Rebuild();
+        this.SelectCell(new CellAddress(row, 0));
+    }
+
+    private void DeleteSelectedRows(int row, int count = 1)
+    {
+        if (this.ReadOnly || this.sheet is null)
+        {
+            return;
+        }
+        this.sheet.DeleteRows(row, count);
+        this.Rebuild();
+        this.SelectCell(new CellAddress(Math.Min(row, this.sheet.RowCount - 1), 0));
+    }
+
+    private MenuFlyout BuildRowMenu(int row)
+    {
+        MenuFlyout menu = new();
+        MenuItem insert = new() { Header = "Insert row above" };
+        insert.Click += (_, _) => this.InsertSelectedRows(row);
+        MenuItem delete = new() { Header = "Delete row" };
+        delete.Click += (_, _) => this.DeleteSelectedRows(row);
+        menu.Items.Add(insert);
+        menu.Items.Add(delete);
+        return menu;
+    }
+
+    private MenuFlyout BuildColumnMenu(int column)
+    {
+        MenuFlyout menu = new();
+        if (this.sheet is null)
+        {
+            return menu;
+        }
+        int headerRow = this.sheet.LikelyHeaderRow();
+        MenuItem ascending = new() { Header = "Sort A to Z / smallest to largest" };
+        ascending.Click += (_, _) => this.SortColumn(column, headerRow, descending: false);
+        MenuItem descending = new() { Header = "Sort Z to A / largest to smallest" };
+        descending.Click += (_, _) => this.SortColumn(column, headerRow, descending: true);
+        menu.Items.Add(ascending);
+        menu.Items.Add(descending);
+        menu.Items.Add(new Separator());
+
+        MenuItem filter = new() { Header = "Filter by value" };
+        filter.Items.Add(new MenuItem { Header = "Choose a value…" });
+        filter.SubmenuOpened += (_, _) =>
+        {
+            filter.Items.Clear();
+            if (this.sheet is null)
+            {
+                return;
+            }
+            foreach (string value in this.sheet.ColumnValues(column, headerRow))
+            {
+                string selectedValue = value;
+                MenuItem option = new() { Header = value.Length == 0 ? "(Blanks)" : value };
+                option.Click += (_, _) => this.FilterColumn(column, selectedValue, headerRow);
+                filter.Items.Add(option);
+            }
+            filter.Items.Add(new Separator());
+            MenuItem custom = new() { Header = "Enter a value…" };
+            custom.Click += async (_, _) =>
+            {
+                string? value = await this.PromptCellTextAsync(
+                    "Filter by value", "Show rows where this column equals:", string.Empty);
+                if (value is not null)
+                {
+                    this.FilterColumn(column, value, headerRow);
+                }
+            };
+            filter.Items.Add(custom);
+        };
+        menu.Items.Add(filter);
+        if (this.sheet.HasColumnFilter(column))
+        {
+            MenuItem clear = new() { Header = "Clear column filter" };
+            clear.Click += (_, _) => this.FilterColumn(column, null, headerRow);
+            menu.Items.Add(clear);
+        }
+        MenuItem showAll = new() { Header = "Show all rows" };
+        showAll.Click += (_, _) =>
+        {
+            if (this.ReadOnly || this.sheet is null)
+            {
+                return;
+            }
+            this.sheet.ShowAllRows();
+            this.Rebuild();
+        };
+        menu.Items.Add(showAll);
+        return menu;
+    }
+
+    private void SortColumn(int column, int headerRow, bool descending)
+    {
+        if (this.ReadOnly || this.sheet is null)
+        {
+            return;
+        }
+        this.sheet.SortRows(column, headerRow, descending);
+        this.Rebuild();
+        this.SelectCell(this.sheet.ActiveCell);
+    }
+
+    private void FilterColumn(int column, string? value, int headerRow)
+    {
+        if (this.ReadOnly || this.sheet is null)
+        {
+            return;
+        }
+        this.sheet.FilterColumn(column, value, headerRow);
+        this.Rebuild();
+    }
+
+    private async Task<string?> PromptCellTextAsync(string title, string caption, string current,
+        bool multiline = false, Func<string, bool>? valid = null, string? validationMessage = null)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return null;
+        }
+
+        TextBox input = new()
+        {
+            Text = current,
+            AcceptsReturn = multiline,
+            TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            MinHeight = multiline ? 100 : 0,
+        };
+        TextBlock error = new() { Foreground = Brushes.Firebrick, IsVisible = false, Text = validationMessage };
+        Button save = new() { Content = "Save", IsDefault = true, MinWidth = 80 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 80 };
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(save);
+        StackPanel panel = new() { Margin = new Thickness(16), Spacing = 10 };
+        panel.Children.Add(new TextBlock { Text = caption, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(input);
+        panel.Children.Add(error);
+        panel.Children.Add(buttons);
+        Window dialog = new()
+        {
+            Title = title,
+            Width = 450,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = panel,
+        };
+        save.Click += (_, _) =>
+        {
+            string value = input.Text?.Trim() ?? string.Empty;
+            if (valid is not null && value.Length > 0 && !valid(value))
+            {
+                error.IsVisible = true;
+                return;
+            }
+            dialog.Close(value);
+        };
+        cancel.Click += (_, _) => dialog.Close(null);
+        dialog.Opened += (_, _) => { input.Focus(); input.SelectAll(); };
+        return await dialog.ShowDialog<string?>(owner);
+    }
+
+    private async Task EditCommentAsync()
+    {
+        if (this.ReadOnly || this.sheet is not { } sheet || this.ActiveCell() is not { } cell)
+        {
+            return;
+        }
+        this.editorSuspended = true;
+        string? comment = await this.PromptCellTextAsync(
+            string.IsNullOrWhiteSpace(cell.Comment) ? "Insert Comment" : "Edit Comment",
+            "Comment (clear the text to remove it):", cell.Comment ?? string.Empty, multiline: true);
+        if (comment is null || comment == cell.Comment)
+        {
+            return;
+        }
+        sheet.Checkpoint();
+        cell.Comment = comment.Length == 0 ? null : comment;
+        cell.CommentAuthor = comment.Length == 0 ? null : cell.CommentAuthor ?? "Spreadsheet Editor";
+        sheet.NotifyMetadataChanged();
+    }
+
+    private static bool IsValidLinkTarget(string target) =>
+        target.StartsWith('#') && target.Length > 1 ||
+        Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) &&
+        uri.Scheme is "http" or "https" or "mailto";
+
+    private async Task EditHyperlinkAsync()
+    {
+        if (this.ReadOnly || this.sheet is not { } sheet || this.ActiveCell() is not { } cell)
+        {
+            return;
+        }
+        this.editorSuspended = true;
+        string? target = await this.PromptCellTextAsync(
+            "Hyperlink", "Enter an https://, http://, mailto:, or #A1 target. Clear the text to remove the link.",
+            cell.Hyperlink ?? string.Empty, valid: IsValidLinkTarget,
+            validationMessage: "Enter a valid web, email, or worksheet target.");
+        if (target is null || target == cell.Hyperlink)
+        {
+            return;
+        }
+        sheet.Checkpoint();
+        if (target.Length > 0 && string.IsNullOrEmpty(cell.Text))
+        {
+            cell.Text = target;
+        }
+        cell.Hyperlink = target.Length == 0 ? null : target;
+        sheet.NotifyMetadataChanged();
+    }
+
+    private async Task FormatCellsAsync()
+    {
+        if (this.ReadOnly || this.sheet is not { } sheet || this.ActiveCell() is not { } active ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+        this.editorSuspended = true;
+
+        static TextBox Field(string? value) => new() { Text = value ?? string.Empty };
+        static string Hex(Color? color) => color is { } c ? $"#{c.R:X2}{c.G:X2}{c.B:X2}" : string.Empty;
+        StackPanel fields = new() { Spacing = 7 };
+        void AddField(string label, Control control)
+        {
+            fields.Children.Add(new TextBlock { Text = label });
+            fields.Children.Add(control);
+        }
+
+        TextBox numberFormat = Field(active.NumberFormat);
+        AddField("Number format (blank = General; examples: #,##0.00, $#,##0.00, 0.00%)", numberFormat);
+        ComboBox alignment = new()
+        {
+            ItemsSource = new[] { "Left", "Center", "Right" },
+            SelectedIndex = active.TextAlignment switch
+            {
+                TextAlignment.Center => 1,
+                TextAlignment.Right => 2,
+                _ => 0,
+            }
+        };
+        AddField("Alignment", alignment);
+        TextBox fontName = Field(active.FontFamily);
+        AddField("Font family (blank = default)", fontName);
+        TextBox fontSize = Field((active.FontSize * 3.0 / 4.0).ToString("0.##", CultureInfo.InvariantCulture));
+        AddField("Font size (pt)", fontSize);
+        CheckBox bold = new() { Content = "Bold", IsChecked = active.IsAllBold };
+        CheckBox italic = new() { Content = "Italic", IsChecked = active.IsAllItalic };
+        CheckBox underline = new() { Content = "Underline", IsChecked = active.IsAllUnderline };
+        CheckBox strike = new() { Content = "Strikethrough", IsChecked = active.IsAllStrikethrough };
+        StackPanel flags = new() { Orientation = Orientation.Horizontal, Spacing = 12 };
+        flags.Children.Add(bold);
+        flags.Children.Add(italic);
+        flags.Children.Add(underline);
+        flags.Children.Add(strike);
+        fields.Children.Add(flags);
+        TextBox foreground = Field(Hex(active.ForegroundColor));
+        AddField("Text color (#RRGGBB, blank = automatic)", foreground);
+        TextBox background = Field(Hex(active.BackgroundColor));
+        AddField("Fill color (#RRGGBB, blank = none)", background);
+        TextBlock error = new() { Foreground = Brushes.Firebrick, IsVisible = false };
+        fields.Children.Add(error);
+        Button save = new() { Content = "Apply", IsDefault = true, MinWidth = 80 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 80 };
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(save);
+        fields.Children.Add(buttons);
+        ScrollViewer scroller = new() { Content = fields, Margin = new Thickness(16) };
+        Window dialog = new()
+        {
+            Title = "Format Cells",
+            Width = 500,
+            Height = 570,
+            CanResize = true,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = scroller,
+        };
+        cancel.Click += (_, _) => dialog.Close();
+        save.Click += (_, _) =>
+        {
+            if (!double.TryParse(fontSize.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double points) ||
+                !double.IsFinite(points) || points < 1 || points > 200)
+            {
+                error.Text = "Font size must be between 1 and 200 points.";
+                error.IsVisible = true;
+                return;
+            }
+            Color? textColor;
+            Color? fillColor;
+            try
+            {
+                textColor = string.IsNullOrWhiteSpace(foreground.Text) ? null : Color.Parse(foreground.Text.Trim());
+                fillColor = string.IsNullOrWhiteSpace(background.Text) ? null : Color.Parse(background.Text.Trim());
+            }
+            catch (FormatException)
+            {
+                error.Text = "Use a color such as #336699, or leave the field blank.";
+                error.IsVisible = true;
+                return;
+            }
+
+            sheet.Checkpoint();
+            this.applyingCellFormat = true;
+            try
+            {
+                foreach (CellViewModel cell in this.SelectionCells())
+                {
+                    cell.NumberFormat = string.IsNullOrWhiteSpace(numberFormat.Text) ? null : numberFormat.Text;
+                    cell.TextAlignment = alignment.SelectedIndex switch
+                    {
+                        1 => TextAlignment.Center,
+                        2 => TextAlignment.Right,
+                        _ => TextAlignment.Left,
+                    };
+                    cell.FontFamily = string.IsNullOrWhiteSpace(fontName.Text) ? null : fontName.Text.Trim();
+                    cell.FontSize = points * 4.0 / 3.0;
+                    cell.SetWholeBold(bold.IsChecked == true);
+                    cell.SetWholeItalic(italic.IsChecked == true);
+                    cell.SetWholeUnderline(underline.IsChecked == true);
+                    cell.SetWholeStrikethrough(strike.IsChecked == true);
+                    cell.SetWholeForeground(textColor);
+                    cell.BackgroundColor = fillColor;
+                }
+            }
+            finally
+            {
+                this.applyingCellFormat = false;
+            }
+            this.Rebuild();
+            sheet.NotifyMetadataChanged();
+            dialog.Close();
+        };
+        await dialog.ShowDialog(owner);
+    }
+
+    private void OpenHyperlink(string target)
+    {
+        if (target.StartsWith('#'))
+        {
+            string address = target[1..];
+            int separator = address.LastIndexOf('!');
+            if (separator >= 0)
+            {
+                string name = address[..separator].Trim('\'');
+                address = address[(separator + 1)..];
+                Match crossSheetCell = Regex.Match(address, @"^\$?([A-Za-z]+)\$?(\d+)$");
+                if (crossSheetCell.Success && int.TryParse(crossSheetCell.Groups[2].Value, out int crossSheetRow) &&
+                    !string.Equals(name, this.sheet?.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    this.WorksheetLinkRequested?.Invoke(name, new CellAddress(
+                        crossSheetRow - 1, CellAddress.LettersToColumn(crossSheetCell.Groups[1].Value)));
+                    return;
+                }
+            }
+            Match match = Regex.Match(address, @"^\$?([A-Za-z]+)\$?(\d+)$");
+            if (match.Success && int.TryParse(match.Groups[2].Value, out int row))
+            {
+                CellAddress cell = new(row - 1, CellAddress.LettersToColumn(match.Groups[1].Value));
+                if (this.sheet?.IsValid(cell) == true)
+                {
+                    this.SelectCell(cell);
+                }
+            }
+            return;
+        }
+        if (!IsValidLinkTarget(target))
+        {
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch
+        {
+            // The OS may have no browser/mail handler; the link remains available to copy/edit.
+        }
+    }
+
     private MenuFlyout BuildCellMenu()
     {
         MenuFlyout menu = new();
@@ -2547,7 +3233,23 @@ public class SpreadsheetGrid : UserControl
         Add("Copy", this.CopySelection);
         Add("Paste", this.PasteSelection);
         menu.Items.Add(new Separator());
-        Add("Delete contents", this.ClearSelection);
+        Add("Clear Contents", this.ClearSelection);
+        menu.Items.Add(new Separator());
+        Add("Insert Comment", () => _ = this.EditCommentAsync());
+        Add("Format Cells...", () => _ = this.FormatCellsAsync());
+        Add("Hyperlink...", () => _ = this.EditHyperlinkAsync());
+        menu.Items.Add(new Separator());
+        Add("Insert row above", () => this.InsertSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
+        Add("Delete row", () => this.DeleteSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
+        menu.Items.Add(new Separator());
+        Add("Filter this column to this value", () =>
+        {
+            if (this.sheet is { } sheet)
+            {
+                CellAddress address = sheet.ActiveCell;
+                this.FilterColumn(address.Column, sheet.GetCell(address)?.DisplayText ?? string.Empty, sheet.LikelyHeaderRow());
+            }
+        });
         return menu;
     }
 

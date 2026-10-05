@@ -244,7 +244,8 @@ public static class SpreadsheetPdfExporter
                     textRect = new SKRect(spanLeft, rect.Top, spanRight, rect.Bottom);
                 }
 
-                DrawCell(canvas, cell, rect, textRect, (float)layout.Scale, typefaces, FindDataBar(sheet, r, c),
+                DrawCell(canvas, cell, rect, textRect, (float)layout.Scale, typefaces,
+                    FindDataBar(sheet, r, c), FindCellValueRule(sheet, r, c, cell),
                     layout.NoLeftBorder.Contains((r, c)), layout.NoRightBorder.Contains((r, c)));
             }
 
@@ -288,7 +289,9 @@ public static class SpreadsheetPdfExporter
         canvas.DrawImage(image, dest, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
     }
 
-    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, SKRect textRect, float scale, Dictionary<TypefaceKey, SKTypeface> typefaces, SheetDataBar? dataBar, bool omitLeftBorder, bool omitRightBorder)
+    private static void DrawCell(SKCanvas canvas, CellViewModel? cell, SKRect rect, SKRect textRect, float scale,
+        Dictionary<TypefaceKey, SKTypeface> typefaces, SheetDataBar? dataBar, SheetCellValueRule? valueRule,
+        bool omitLeftBorder, bool omitRightBorder)
     {
         // Background fill.
         if (cell?.BackgroundColor is { } bg)
@@ -301,13 +304,29 @@ public static class SpreadsheetPdfExporter
         // Min and Max (drawn behind the text, as on screen).
         if (dataBar is { } bar)
         {
-            double value = ParseNumber(cell?.DisplayText) ?? bar.Min;
+            double value = cell?.NumericValue ?? ParseNumber(cell?.DisplayText) ?? bar.Min;
             double fraction = bar.Max > bar.Min ? Math.Clamp((value - bar.Min) / (bar.Max - bar.Min), 0, 1) : 0;
             float margin = scale;
             float barRight = rect.Left + margin + (float)((rect.Width - (2 * margin)) * fraction);
             if (barRight > rect.Left + margin)
             {
-                using SKPaint barPaint = new() { Color = ToSkColor(bar.Color), Style = SKPaintStyle.Fill, IsAntialias = true };
+                SKColor start = ToSkColor(bar.Color);
+                SKColor pale = new(
+                    (byte)(bar.Color.R + ((255 - bar.Color.R) * 0.82)),
+                    (byte)(bar.Color.G + ((255 - bar.Color.G) * 0.82)),
+                    (byte)(bar.Color.B + ((255 - bar.Color.B) * 0.82)));
+                using SKShader? gradient = bar.Gradient
+                    ? SKShader.CreateLinearGradient(
+                        new SKPoint(rect.Left + margin, rect.Top), new SKPoint(barRight, rect.Top),
+                        new[] { start, pale }, null, SKShaderTileMode.Clamp)
+                    : null;
+                using SKPaint barPaint = new()
+                {
+                    Color = start,
+                    Shader = gradient,
+                    Style = SKPaintStyle.Fill,
+                    IsAntialias = true,
+                };
                 canvas.DrawRect(new SKRect(rect.Left + margin, rect.Top + margin, barRight, rect.Bottom - margin), barPaint);
             }
         }
@@ -359,7 +378,7 @@ public static class SpreadsheetPdfExporter
                 continue;
             }
 
-            SKFont font = new(GetTypeface(typefaces, cell.FontFamily, run.Bold, run.Italic), fontSize);
+            SKFont font = new(GetTypeface(typefaces, cell.FontFamily, valueRule?.Bold ?? run.Bold, run.Italic), fontSize);
             float width = font.MeasureText(run.Text);
             laid.Add((run, font, width));
             totalWidth += width;
@@ -395,7 +414,8 @@ public static class SpreadsheetPdfExporter
                     canvas.DrawRect(new SKRect(x, rect.Top, x + width, rect.Bottom), runFill);
                 }
 
-                paint.Color = run.Foreground is { } fg ? ToSkColor(fg) : TextColor;
+                paint.Color = valueRule?.Foreground is { } conditionalColor ? ToSkColor(conditionalColor)
+                    : run.Foreground is { } fg ? ToSkColor(fg) : TextColor;
                 canvas.DrawText(run.Text, x, baseline, font, paint);
 
                 if (run.Underline)
@@ -444,6 +464,27 @@ public static class SpreadsheetPdfExporter
     }
 
     private static SKColor ToSkColor(Color color) => new(color.R, color.G, color.B, color.A);
+
+    private static SheetCellValueRule? FindCellValueRule(
+        SpreadsheetViewModel sheet, int row, int column, CellViewModel? cell)
+    {
+        double? value = cell?.NumericValue ?? ParseNumber(cell?.DisplayText);
+        if (value is null)
+        {
+            return null;
+        }
+        foreach (SheetCellValueRule rule in sheet.CellValueRules)
+        {
+            CellRange range = rule.Range;
+            if (row >= range.Row && row < range.Row + range.RowSpan &&
+                column >= range.Column && column < range.Column + range.ColumnSpan &&
+                rule.Matches(value.Value))
+            {
+                return rule;
+            }
+        }
+        return null;
+    }
 
     private static SheetDataBar? FindDataBar(SpreadsheetViewModel sheet, int row, int column)
     {

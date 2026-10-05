@@ -74,7 +74,32 @@ public partial class CellViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(DisplayText))]
     private string? numberFormat;
 
+    [ObservableProperty]
+    private string? comment;
+
+    [ObservableProperty]
+    private string? commentAuthor;
+
+    [ObservableProperty]
+    private string? hyperlink;
+
     private List<CellRun>? runs;
+
+    // The unrounded cached number behind a formula's display text. Conditional formatting and
+    // data bars compare this value, not a percentage rounded for display (e.g. 90.04% → 90.0%).
+    public double? CachedNumericValue { get; set; }
+
+    public double? NumericValue => this.IsFormula
+        ? this.CachedNumericValue
+        : double.TryParse(this.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out double value)
+            ? value : null;
+
+    // Bulk row sorting relocates formulas and their already-correct cached values together. The
+    // grid refreshes once after the reorder, so per-formula Text notifications would only trigger
+    // thousands of redundant UI updates and recalculations.
+#pragma warning disable MVVMTK0034 // Intentional bulk update without ObservableProperty notifications.
+    internal void RelocateFormula(string formula) => this.text = formula;
+#pragma warning restore MVVMTK0034
 
     private bool applyingRuns;
 
@@ -112,6 +137,10 @@ public partial class CellViewModel : ObservableObject
         this.IsFormula || this.runs is null
             ? new List<CellRun> { new(this.DisplayText, this.Bold, this.Italic, this.Underline, this.ForegroundColor, this.BackgroundColor, this.Strikethrough) }
             : this.runs;
+
+    // A completed in-cell edit refreshes its display without asking the whole grid to rebuild.
+    // The grid's existing subscriber can still rebuild when the text now spills across cells.
+    public void RefreshDisplay() => this.OnPropertyChanged(nameof(this.EffectiveRuns));
 
     // Runs to load into the in-cell editor: the RAW text/formula (so you edit the underlying
     // value, not its formatted display), or the explicit mixed runs for rich text.
@@ -204,7 +233,7 @@ public partial class CellViewModel : ObservableObject
 
     public void SetWholeStrikethrough(bool on) => this.ApplyToWholeCell(r => r with { Strikethrough = on }, () => this.Strikethrough = on);
 
-    public void SetWholeForeground(Color color) =>
+    public void SetWholeForeground(Color? color) =>
         this.ApplyToWholeCell(r => r with { Foreground = color }, () => this.ForegroundColor = color);
 
     public void ToggleWholeBold() => this.SetWholeBold(!this.IsAllBold);
@@ -232,6 +261,7 @@ public partial class CellViewModel : ObservableObject
     // In-cell plain typing flattens any mixed-run formatting; whole-cell flag changes re-render.
     partial void OnTextChanged(string value)
     {
+        this.CachedNumericValue = null;
         if (!this.applyingRuns)
         {
             this.runs = null;
@@ -275,7 +305,11 @@ public partial class CellViewModel : ObservableObject
             this.NumberFormat,
             this.FontFamily,
             this.Strikethrough,
-            this.IsFormula ? this.ComputedValue : null);
+            this.IsFormula ? this.ComputedValue : null,
+            this.Comment,
+            this.Hyperlink,
+            this.CommentAuthor,
+            this.IsFormula ? this.CachedNumericValue : null);
 
     public void ApplyData(CellData data)
     {
@@ -290,7 +324,11 @@ public partial class CellViewModel : ObservableObject
         this.FontSize = data.FontSize > 0 ? data.FontSize : DefaultFontSize;
         this.TextAlignment = data.Alignment;
         this.NumberFormat = data.NumberFormat;
+        this.Comment = data.Comment;
+        this.CommentAuthor = data.CommentAuthor;
+        this.Hyperlink = data.Hyperlink;
         this.FontFamily = data.FontFamily;
+        this.CachedNumericValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaNumericValue : null;
         this.ComputedValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaResult : null;
         this.OnPropertyChanged(nameof(this.EffectiveRuns));
     }
