@@ -108,6 +108,7 @@ public partial class SpreadsheetEditor : UserControl
     private readonly Dictionary<SpreadsheetViewModel, HashSet<string>> sheetDependencies = new();
     private readonly HashSet<SpreadsheetViewModel> pendingUserRecalculations = new();
     private readonly HashSet<SpreadsheetViewModel> deferredEditRecalculations = new();
+    private readonly HashSet<SpreadsheetViewModel> editDirtyNotifications = new();
     private readonly Dictionary<SpreadsheetViewModel, CancellationTokenSource> editRecalculationDelays = new();
 
     private CancellationTokenSource? workbookLoadCancellation;
@@ -445,30 +446,95 @@ public partial class SpreadsheetEditor : UserControl
         }
     }
 
-    // Writes the complete workbook in tab order, including sheets created during this session.
-    public void SaveXlsx(Stream stream)
+    private sealed record WorkbookSaveSnapshot(
+        List<XlsxSheetWriteData?> Sheets,
+        List<(int OutputIndex, int SourceIndex, string Name)> PendingSheets,
+        byte[]? SourceBytes);
+
+    // Writes every worksheet, including lazily loaded sheets that are still placeholders. Never
+    // serialize a preview/placeholder as the real worksheet: it would permanently discard data.
+    public void SaveXlsx(Stream stream) => WriteWorkbookSnapshot(stream, this.CaptureWorkbookForSave(), CancellationToken.None);
+
+    // Hosts that save large workbooks should use this overload: only the UI-owned snapshot is taken
+    // on the UI thread; source-sheet materialization and XLSX serialization run in the background.
+    public async Task SaveXlsxAsync(Stream stream, CancellationToken cancellationToken = default)
+    {
+        WorkbookSaveSnapshot snapshot = Dispatcher.UIThread.CheckAccess()
+            ? this.CaptureWorkbookForSave()
+            : await Dispatcher.UIThread.InvokeAsync(this.CaptureWorkbookForSave, DispatcherPriority.Normal);
+        await Task.Run(() => WriteWorkbookSnapshot(stream, snapshot, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private WorkbookSaveSnapshot CaptureWorkbookForSave()
     {
         // Saving is a snapshot operation. Ending the active edit here used to trigger a full grid
         // rebuild on every host auto-save, visibly flashing the worksheet while the user typed.
-        List<XlsxSheetWriteData> workbook = this.sheets
-            .Select(sheet => new XlsxSheetWriteData(
+        // A save consumes the current dirty notification. If the caret stays in the editor and
+        // more text arrives afterward, that next change must notify the host again.
+        this.editDirtyNotifications.Clear();
+        List<XlsxSheetWriteData?> workbook = new(this.sheets.Count);
+        List<(int OutputIndex, int SourceIndex, string Name)> pending = new();
+        foreach (SpreadsheetViewModel sheet in this.sheets)
+        {
+            if (this.loadingSheets.Contains(sheet))
+            {
+                if (!this.stagedSheetIndexes.TryGetValue(sheet, out int sourceIndex))
+                {
+                    throw new InvalidOperationException("A pending worksheet has no source workbook index.");
+                }
+                pending.Add((workbook.Count, sourceIndex, sheet.Name));
+                workbook.Add(null);
+                continue;
+            }
+
+            workbook.Add(new XlsxSheetWriteData(
                 sheet.Name,
                 CaptureSheetData(sheet),
-                SpreadsheetGrid.BuildChartWriteData(sheet, sheet.Name)))
-            .ToList();
-        XlsxFile.WriteWorkbook(stream, workbook);
+                SpreadsheetGrid.BuildChartWriteData(sheet, sheet.Name)));
+        }
+
+        if (pending.Count > 0 && this.stagedWorkbookBytes is null)
+        {
+            throw new InvalidOperationException("Pending worksheets cannot be saved without the original workbook.");
+        }
+        return new WorkbookSaveSnapshot(workbook, pending, this.stagedWorkbookBytes);
+    }
+
+    private static void WriteWorkbookSnapshot(
+        Stream stream,
+        WorkbookSaveSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (snapshot.PendingSheets.Count > 0)
+        {
+            Dictionary<int, SheetData> sourceSheets = XlsxFile.ReadSelectedWorksheets(
+                snapshot.SourceBytes!,
+                snapshot.PendingSheets.Select(static item => item.SourceIndex),
+                cancellationToken);
+            foreach ((int outputIndex, int sourceIndex, string name) in snapshot.PendingSheets)
+            {
+                SheetData data = sourceSheets[sourceIndex];
+                SpreadsheetViewModel sheet = PrepareSheet(name, data);
+                snapshot.Sheets[outputIndex] = new XlsxSheetWriteData(
+                    name, data, SpreadsheetGrid.BuildChartWriteData(sheet, name));
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        XlsxFile.WriteWorkbook(stream, snapshot.Sheets.Select(static sheet => sheet!).ToList());
     }
 
     private static SheetData CaptureSheetData(SpreadsheetViewModel sheet) => new()
     {
         Cells = sheet.ToCellData(),
         ColumnWidths = sheet.Columns.Select(static column => column.Width).ToList(),
-        Merges = sheet.Merges,
-        Images = sheet.Images,
-        Charts = sheet.Charts,
-        Names = sheet.Names,
-        DataBars = sheet.DataBars,
-        CellValueRules = sheet.CellValueRules,
+        Merges = sheet.Merges.ToArray(),
+        Images = sheet.Images.ToArray(),
+        Charts = sheet.Charts.ToArray(),
+        Names = new Dictionary<string, string>(sheet.Names),
+        DataBars = sheet.DataBars.ToArray(),
+        CellValueRules = sheet.CellValueRules.ToArray(),
         AutoFilterRange = sheet.AutoFilterRange,
         HiddenRows = sheet.Rows.Select((row, index) => (row, index))
             .Where(static item => item.row.IsHidden).Select(static item => item.index).ToArray(),
@@ -826,6 +892,12 @@ public partial class SpreadsheetEditor : UserControl
         if (editing)
         {
             this.deferredEditRecalculations.Add(sheet);
+            // Dirty tracking must not wait for focus to leave the cell: hosts may save or close
+            // while the editor still has the caret. Notify once per edit, not on every keystroke.
+            if (this.editDirtyNotifications.Add(sheet))
+            {
+                this.ContentChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
         else if (this.AreDependenciesReady(sheet))
         {
@@ -838,8 +910,8 @@ public partial class SpreadsheetEditor : UserControl
             this.QueuePendingUserRecalculation(sheet);
         }
 
-        // The edited text is already displayed; wait until the edit ends before notifying hosts
-        // that auto-save. Their serialization must not run on every individual key press.
+        // Edits outside an active cell session notify immediately. Active sessions notify once
+        // above and again after completion, so hosts never need to save on every keystroke.
         if (!editing)
         {
             this.ContentChanged?.Invoke(this, EventArgs.Empty);
@@ -854,6 +926,7 @@ public partial class SpreadsheetEditor : UserControl
 
     private void CompleteDeferredEditRecalculation(SpreadsheetViewModel sheet)
     {
+        this.editDirtyNotifications.Remove(sheet);
         if (!this.deferredEditRecalculations.Contains(sheet))
         {
             return;
@@ -1120,6 +1193,7 @@ public partial class SpreadsheetEditor : UserControl
         this.sheetDependencies.Clear();
         this.pendingUserRecalculations.Clear();
         this.deferredEditRecalculations.Clear();
+        this.editDirtyNotifications.Clear();
         this.formulaBarEditSheet = null;
         this.pendingSheetActivationIndex = null;
         this.pendingWorksheetLink = null;
@@ -1333,12 +1407,13 @@ public partial class SpreadsheetEditor : UserControl
     // Adds a new blank sheet at the end and switches to it.
     public void AddSheet()
     {
-        SpreadsheetViewModel sheetVm = new() { Name = this.UniqueName(Get(S.Sheet)) };
+        SpreadsheetViewModel sheetVm = new() { Name = this.NextSheetName() };
         sheetVm.Initialize(this.InitialRowCount, this.InitialColumnCount);
         this.ConfigureWorkbookFormulaResolution(sheetVm);
         this.sheets.Add(sheetVm);
         this.ActivateSheet(this.sheets.Count - 1);
         this.RebuildTabs();
+        this.ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // Loads a SheetData snapshot into a view model (names set before cells so =Name resolves).
@@ -2197,6 +2272,7 @@ public partial class SpreadsheetEditor : UserControl
 
         sheet.Name = this.UniqueName(name, except: sheet);
         this.RebuildTabs();
+        this.ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void DeleteSheet(SpreadsheetViewModel sheet)
@@ -2213,6 +2289,7 @@ public partial class SpreadsheetEditor : UserControl
         this.sheetDependencies.Remove(sheet);
         this.pendingUserRecalculations.Remove(sheet);
         this.deferredEditRecalculations.Remove(sheet);
+        this.editDirtyNotifications.Remove(sheet);
         if (ReferenceEquals(this.formulaBarEditSheet, sheet))
         {
             this.formulaBarEditSheet = null;
@@ -2233,6 +2310,23 @@ public partial class SpreadsheetEditor : UserControl
         }
 
         this.RebuildTabs();
+        this.ContentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private string NextSheetName()
+    {
+        string prefix = Get(S.Sheet);
+        long next = 1;
+        foreach (SpreadsheetViewModel sheet in this.sheets)
+        {
+            if (sheet.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                long.TryParse(sheet.Name.AsSpan(prefix.Length), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out long number) && number >= next)
+            {
+                next = number + 1;
+            }
+        }
+        return $"{prefix}{next}";
     }
 
     // Returns desired, suffixed (e.g. "Sheet2") to stay unique among sheets.

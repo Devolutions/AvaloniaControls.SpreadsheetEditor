@@ -52,12 +52,14 @@ using System.IO;
 await using (FileStream fs = File.OpenRead("book.xlsx"))
     await editor.OpenXlsxAsync(fs); // keeps the UI responsive for large workbooks
 
-// Save the complete workbook (every tab) back to .xlsx:
+// Save the complete workbook (every tab) back to .xlsx with serialization off the UI thread:
 await using (FileStream fs = File.Create("out.xlsx"))
-    editor.SaveXlsx(fs);
+    await editor.SaveXlsxAsync(fs);
 ```
 
 `OpenXlsx(Stream)` remains available for synchronous callers.
+`SaveXlsx(Stream)` also remains available for synchronous callers. Both save methods preserve
+unopened worksheets from the source workbook rather than writing their preview placeholders.
 
 `OpenXlsxAsync` reads workbook tab names and colors immediately, then reads roughly one visible
 viewport of the first worksheet, including its cached Excel formula results and charts. Other

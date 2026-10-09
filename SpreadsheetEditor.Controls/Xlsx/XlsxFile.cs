@@ -157,6 +157,37 @@ public static class XlsxFile
         return data;
     }
 
+    // Saving a lazily opened workbook must restore the original data for every worksheet that is
+    // still a placeholder. Parse the source package once, and read only those selected sheets.
+    internal static Dictionary<int, SheetData> ReadSelectedWorksheets(
+        byte[] bytes,
+        IEnumerable<int> sheetIndexes,
+        CancellationToken cancellationToken)
+    {
+        int[] indexes = sheetIndexes.Distinct().OrderBy(static index => index).ToArray();
+        Dictionary<int, SheetData> result = new(indexes.Length);
+        if (indexes.Length == 0)
+        {
+            return result;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        using XLWorkbook workbook = new(new MemoryStream(bytes, writable: false));
+        foreach (int index in indexes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            IXLWorksheet? sheet = workbook.Worksheets.Skip(index).FirstOrDefault();
+            if (sheet is null)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sheetIndexes));
+            }
+
+            result.Add(index, ReadSheet(workbook, sheet, bytes, index, cancellationToken));
+        }
+
+        return result;
+    }
+
     // Produces a fast, read-only first-sheet preview directly from the OOXML package. This avoids
     // ClosedXML's eager whole-workbook construction, which dominates open time for large files.
     // The normal reader subsequently replaces this preview with the full-fidelity worksheet.

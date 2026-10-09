@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <IsTestProject>true</IsTestProject>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Avalonia.Headless.XUnit" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="ClosedXML" Version="$(ClosedXmlVersion)" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageReference Include="xunit.v3" Version="3.2.2" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(AVALONIA_LICENSE_KEY)' != ''">
+        <AvaloniaUILicenseKey Include="$(AVALONIA_LICENSE_KEY)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\SpreadsheetEditor.Controls\SpreadsheetEditor.Controls.csproj" />
+    </ItemGroup>
+</Project>

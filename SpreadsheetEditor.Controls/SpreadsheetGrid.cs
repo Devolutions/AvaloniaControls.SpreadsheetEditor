@@ -304,6 +304,22 @@ public class SpreadsheetGrid : UserControl
             this.rowHeaderScroller.Offset = this.rowHeaderScroller.Offset.WithY(offset.Y);
         }));
 
+        // Leaving the grid (for example, clicking a host's Save button) ends the edit session so
+        // deferred recalculation and the final change notification cannot remain pending forever.
+        this.GetObservable(IsKeyboardFocusWithinProperty).Subscribe(new AnonymousObserver<bool>(within =>
+        {
+            if (!within && this.IsEditing)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (!this.IsKeyboardFocusWithin && this.IsEditing)
+                    {
+                        this.SuspendEditor();
+                    }
+                }, DispatcherPriority.Background);
+            }
+        }));
+
         // Dynamic "infinite" rows: grow near the bottom, trim trailing empty rows when scrolled up.
         this.cellScroller.ScrollChanged += (_, _) =>
         {

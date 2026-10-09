@@ -184,7 +184,7 @@ public partial class MainWindow : Window
         if (IsXlsx(file.Name))
         {
             using MemoryStream buffer = new();
-            this.Editor.SaveXlsx(buffer);
+            await this.Editor.SaveXlsxAsync(buffer);
             bytes = buffer.ToArray();
         }
         else
