@@ -17,6 +17,7 @@ using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
 
 using global::SpreadsheetEditor.Controls.Formulas;
+using global::SpreadsheetEditor.Controls.Localization;
 using global::SpreadsheetEditor.Controls.Models;
 
 // .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
@@ -191,7 +192,7 @@ public static class XlsxFile
             string relationshipId = sheet.Attribute(relationshipNamespace + "id")?.Value ?? string.Empty;
             if (targets.TryGetValue(relationshipId, out string? part))
             {
-                string resolvedName = string.IsNullOrWhiteSpace(name) ? $"Sheet{sheets.Count + 1}" : name;
+                string resolvedName = string.IsNullOrWhiteSpace(name) ? $"{EditorText.Get(EditorString.Sheet)}{sheets.Count + 1}" : name;
                 Color? tabColor = ReadPreviewTabColor(archive, part, theme, cancellationToken);
                 sheets.Add(new XlsxSheetPreview(sheets.Count, resolvedName, part, tabColor));
             }
@@ -200,7 +201,7 @@ public static class XlsxFile
         if (sheets.Count == 0)
         {
             return new XlsxWorkbookPreview(
-                new[] { new XlsxSheetPreview(0, "Sheet1", string.Empty, null) },
+                new[] { new XlsxSheetPreview(0, EditorText.Get(EditorString.Sheet) + "1", string.Empty, null) },
                 new SheetData { Cells = new List<IReadOnlyList<CellData>> { new List<CellData> { CellData.Plain(string.Empty) } } });
         }
 
@@ -356,7 +357,7 @@ public static class XlsxFile
     {
         rowLimit = Math.Clamp(rowLimit, 1, 2048);
         columnLimit = Math.Clamp(columnLimit, 1, 256);
-        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException($"Missing workbook part '{partPath}'.");
+        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException(EditorText.Format(EditorString.MissingWorkbookPart, partPath));
         List<XElement> cells = new();
         List<(int Min, int Max, double Width)> columns = new();
         List<MergeRange> merges = new();
@@ -657,7 +658,7 @@ public static class XlsxFile
         IReadOnlyList<Color?> theme,
         CancellationToken cancellationToken)
     {
-        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException($"Missing workbook part '{partPath}'.");
+        ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException(EditorText.Format(EditorString.MissingWorkbookPart, partPath));
         using Stream stream = entry.Open();
         using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
         {
@@ -732,7 +733,7 @@ public static class XlsxFile
 
     private static XDocument ReadXmlPart(ZipArchive archive, string path)
     {
-        ZipArchiveEntry entry = archive.GetEntry(path) ?? throw new InvalidDataException($"Missing workbook part '{path}'.");
+        ZipArchiveEntry entry = archive.GetEntry(path) ?? throw new InvalidDataException(EditorText.Format(EditorString.MissingWorkbookPart, path));
         using Stream stream = entry.Open();
         return XDocument.Load(stream);
     }
@@ -2006,7 +2007,7 @@ public static class XlsxFile
         };
         WriteWorkbook(
             stream,
-            new[] { new XlsxSheetWriteData(sheetName ?? "Sheet1", data, charts ?? Array.Empty<ChartWriteData>()) });
+            new[] { new XlsxSheetWriteData(sheetName ?? EditorText.Get(EditorString.Sheet) + "1", data, charts ?? Array.Empty<ChartWriteData>()) });
     }
 
     // Writes the complete workbook in tab order. Each worksheet keeps its cells, styles, dimensions,
@@ -2019,7 +2020,7 @@ public static class XlsxFile
             : new[]
             {
                 new XlsxSheetWriteData(
-                    "Sheet1",
+                    EditorText.Get(EditorString.Sheet) + "1",
                     new SheetData { Cells = new[] { new[] { CellData.Plain(string.Empty) } } },
                     Array.Empty<ChartWriteData>()),
             };
@@ -2272,7 +2273,7 @@ public static class XlsxFile
                 CellValueComparison.LessThanOrEqual => conditional.WhenEqualOrLessThan(rule.Threshold),
                 CellValueComparison.Equal => conditional.WhenEquals(rule.Threshold),
                 CellValueComparison.NotEqual => conditional.WhenNotEquals(rule.Threshold),
-                _ => throw new InvalidDataException("Unsupported conditional-format comparison."),
+                _ => throw new InvalidDataException(EditorText.Get(EditorString.UnsupportedConditionalComparison)),
             };
             if (rule.Foreground is { } foreground)
             {
@@ -2335,7 +2336,7 @@ public static class XlsxFile
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            return "Sheet1";
+            return EditorText.Get(EditorString.Sheet) + "1";
         }
 
         string result = name.Trim();
@@ -2347,7 +2348,7 @@ public static class XlsxFile
         result = result.Trim();
         if (result.Length == 0)
         {
-            return "Sheet1";
+            return EditorText.Get(EditorString.Sheet) + "1";
         }
 
         return result.Length > 31 ? result[..31] : result;

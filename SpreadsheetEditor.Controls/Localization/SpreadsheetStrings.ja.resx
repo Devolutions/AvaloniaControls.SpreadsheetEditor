@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>取り消し</value></data>
+  <data name="Redo" xml:space="preserve"><value>やり直し</value></data>
+  <data name="Cut" xml:space="preserve"><value>切り取り</value></data>
+  <data name="Copy" xml:space="preserve"><value>コピー</value></data>
+  <data name="Paste" xml:space="preserve"><value>貼り付け</value></data>
+  <data name="Print" xml:space="preserve"><value>印刷</value></data>
+  <data name="Font" xml:space="preserve"><value>フォント</value></data>
+  <data name="FontSize" xml:space="preserve"><value>フォントサイズ</value></data>
+  <data name="TextColor" xml:space="preserve"><value>テキストの色</value></data>
+  <data name="FillColor" xml:space="preserve"><value>ハイライト/塗りつぶしの色</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>U</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>太字</value></data>
+  <data name="Italic" xml:space="preserve"><value>イタリック</value></data>
+  <data name="Underline" xml:space="preserve"><value>アンダーライン</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>取り消し線</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>左</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>中央揃え</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>右</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>記号の挿入 (通貨と数学)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>詳細 (数式、グラフ、行/列)</value></data>
+  <data name="Find" xml:space="preserve"><value>検索</value></data>
+  <data name="Previous" xml:space="preserve"><value>前</value></data>
+  <data name="Next" xml:space="preserve"><value>次に</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>置換</value></data>
+  <data name="Replace" xml:space="preserve"><value>置換</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>すべて置換</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>検索と置換を閉じる</value></data>
+  <data name="Loading" xml:space="preserve"><value>ロード中</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>ズームアウト (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>ズームを 100% にリセット (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>拡大 (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>シートを追加</value></data>
+  <data name="Sheet" xml:space="preserve"><value>シート</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>このタブを選択してワークシートをロードします</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>ワークシートのロードがキャンセルされました</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>ワークシートをロードできませんでした</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>ステージングされたワークブックは使用できません。</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>ステージングされたワークブックのメタデータは使用できません。</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>ステージングされたワークブック リーダーは使用できません。</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>ワークブックのパーツ &apos;{0}&apos; がありません。</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>サポートされていない条件付き形式の比較です。</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>列の文字を空にすることはできません。</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>列文字 &apos;{0}&apos; が無効です。</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>検索するテキストを入力してください</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>一致しません</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>読み取り専用</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>{0:N0} と交換されました</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>検索して置換… (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>グラフを挿入…</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>印刷</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>オートサム (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>ファンクション</value></data>
+  <data name="AddRow" xml:space="preserve"><value>行を追加</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>列の追加</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>印刷に失敗しました</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>印刷には CUPS の &apos;lpr&apos; コマンドが必要ですが、インストールされていないようです。
+
+インストールしてから再試行してください。Debian/Ubuntu の場合:
+    sudo apt install cups-client
+
+または「PDF にエクスポート」でシートを保存し、PDF ビューアーから印刷してください。</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>印刷コマンド &apos;lpr&apos; はコード {0} で終了しました。プリンターが設定されていることを確認してください。</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>ワークシートのロードに失敗しました。クリックして再試行してください</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>選択したワークシートをバックグラウンドでロードしています</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>このタブを選択してワークシートをロードします</value></data>
+  <data name="Rename" xml:space="preserve"><value>名前の変更</value></data>
+  <data name="Delete" xml:space="preserve"><value>削除</value></data>
+  <data name="Currency" xml:space="preserve"><value>通貨</value></data>
+  <data name="Math" xml:space="preserve"><value>数学</value></data>
+  <data name="Series" xml:space="preserve"><value>シリーズ</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>シリーズ {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>数学と三角関数</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>統計的</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>論理的</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>テキスト</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>日付と時刻</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(範囲)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(数字)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(数字)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(数,べき乗)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(数値,約数)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(数字)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(数字,数字)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(数字,数字)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(数字,数字)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(範囲)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(範囲)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(範囲)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(範囲)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(範囲)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(条件,if_true,if_false)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(値,エラーの場合の値)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(a,b,…)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(a,b,…)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(値)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(テキスト,…)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(テキスト,…)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(テキスト)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(テキスト,カウント)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(テキスト,カウント)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(テキスト,開始,カウント)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(テキスト)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(テキスト)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(テキスト)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(日付)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(日付)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(日付)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(年,月,日)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>チャートの編集</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>チャートの削除</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>ドラッグしてサイズを変更します</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>並べ替えまたはフィルター {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+click で開く: {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>上に行を挿入</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>行の削除</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>A から Z へ / 小さいものから大きいものへ並べ替え</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Z から A へ / 最大から最小への並べ替え</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>値によるフィルター</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>値を選択してください…</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(空白)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>値を入力してください…</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>この列が次と等しい行を表示します:</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>カラムフィルターをクリア</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>すべての行を表示</value></data>
+  <data name="Save" xml:space="preserve"><value>保存</value></data>
+  <data name="Cancel" xml:space="preserve"><value>キャンセル</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>コメントの挿入</value></data>
+  <data name="EditComment" xml:space="preserve"><value>コメントの編集</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>コメント (削除するにはテキストをクリアします):</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Excel エディタ</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>ハイパーリンク</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>https://、http://、mailto:、または #A1 の目標を入力します。リンクを削除するにはテキストをクリアします。</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>有効な Web、電子メール、またはワークシートのターゲットを入力します。</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>数値形式 (空白 = 一般; 例: #,##0.00、$#,##0.00、0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>左</value></data>
+  <data name="Center" xml:space="preserve"><value>中央</value></data>
+  <data name="Right" xml:space="preserve"><value>右</value></data>
+  <data name="Alignment" xml:space="preserve"><value>アラインメント</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>フォントファミリー (空白 = デフォルト)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>フォントサイズ(pt)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>文字の色 (#RRGGBB、空白 = 自動)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>塗りつぶしの色 (#RRGGBB、空白 = なし)</value></data>
+  <data name="Apply" xml:space="preserve"><value>適用</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>セルの書式設定</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>フォント サイズは 1 ～ 200 ポイントにする必要があります。</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>#336699 などの色を使用するか、フィールドを空白のままにします。</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>クリアコンテンツ</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>セルの書式設定...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>ハイパーリンク...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>この列をこの値にフィルタリングします</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>例: B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>グラフのタイトル (オプション)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>最初の行はシリーズのヘッダーです</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>最初の列はカテゴリラベルです</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>凡例を表示</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>データラベルを表示する</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>最小 (自動)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>最大（自動）</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>ステップ（自動）</value></data>
+  <data name="Create" xml:space="preserve"><value>作成</value></data>
+  <data name="ChartType" xml:space="preserve"><value>グラフの種類</value></data>
+  <data name="DataRange" xml:space="preserve"><value>データ範囲</value></data>
+  <data name="DataSource" xml:space="preserve"><value>データソース</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>値</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>例: G9:G10 または C7、C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>範囲 (E9:E10) または名前 (収入、支出)</value></data>
+  <data name="Categories" xml:space="preserve"><value>カテゴリ</value></data>
+  <data name="Title" xml:space="preserve"><value>タイトル</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>値軸の形式</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>値軸スケール</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>グラフの挿入</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>B6:G10 のような有効な範囲を入力します。</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>G9:G10 または C7、C10 などの有効な値のセル/範囲を入力します。</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>線</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>スプライン</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>ステップライン</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>エリア</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>スタック領域</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>バー</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>積み上げバー</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>散布</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>パイ</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>ドーナツ</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>レーダー</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>番号</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>通貨</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>パーセント</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Excel エディタ</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_ファイル</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_新規作成</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_開く…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_保存</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_名前を付けて保存…</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_PDF としてエクスポート…</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_印刷…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_閉じる</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Excel ワークブック (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>テキスト (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>PDF ドキュメント (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>シート.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>シート.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>PDF としてエクスポート</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>スプレッドシートを開く</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>オープンに失敗しました</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>スプレッドシートの保存</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>保存に失敗しました</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>スプレッドシート</value></data>
+</root>

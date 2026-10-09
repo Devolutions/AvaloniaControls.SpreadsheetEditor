@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>Ångra</value></data>
+  <data name="Redo" xml:space="preserve"><value>Gör om</value></data>
+  <data name="Cut" xml:space="preserve"><value>Klipp ut</value></data>
+  <data name="Copy" xml:space="preserve"><value>Kopiera</value></data>
+  <data name="Paste" xml:space="preserve"><value>Klistra in</value></data>
+  <data name="Print" xml:space="preserve"><value>Skriv ut</value></data>
+  <data name="Font" xml:space="preserve"><value>Typsnitt</value></data>
+  <data name="FontSize" xml:space="preserve"><value>Teckenstorlek</value></data>
+  <data name="TextColor" xml:space="preserve"><value>Textfärg</value></data>
+  <data name="FillColor" xml:space="preserve"><value>Markera/fyllningsfärg</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>U</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>Fetstil</value></data>
+  <data name="Italic" xml:space="preserve"><value>Kursiv</value></data>
+  <data name="Underline" xml:space="preserve"><value>Understrykning</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Genomstruken</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>Vänsterjustera</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>Centrera</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>Högerjustera</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>Infoga symbol (valuta och matematik)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>Mer (formler, diagram, rader/kolumner)</value></data>
+  <data name="Find" xml:space="preserve"><value>Hitta...</value></data>
+  <data name="Previous" xml:space="preserve"><value>Föregående</value></data>
+  <data name="Next" xml:space="preserve"><value>Nästa</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>Ersätt med</value></data>
+  <data name="Replace" xml:space="preserve"><value>Ersätt</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Ersätt alla</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>Stäng hitta och ersätt</value></data>
+  <data name="Loading" xml:space="preserve"><value>Läser in</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>Zooma ut (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>Återställ zoomen till 100 % (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>Zooma in (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>Lägg till ark</value></data>
+  <data name="Sheet" xml:space="preserve"><value>Ark</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>Välj den här fliken för att ladda kalkylbladet</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>Kalkylbladsladdning avbröts</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>Det gick inte att ladda arbetsbladet</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>Den stegvisa arbetsboken är inte tillgänglig.</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>Den stegvisa arbetsbokens metadata är inte tillgänglig.</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>Den stegvisa arbetsboksläsaren är inte tillgänglig.</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>Saknad arbetsboksdel &apos;{0}&apos;.</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>Jämförelse med villkorligt format stöds inte.</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>Kolumnbokstäver får inte vara tomma.</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>Ogiltig kolumnbokstav &apos;{0}&apos;.</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>Skriv in text för att hitta</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>Inga matchningar</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>Skrivskyddad</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>Ersatt {0:N0}</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>Hitta och ersätt... (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>Infoga diagram...</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>Skriv ut</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>Autosumma (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>Funktioner</value></data>
+  <data name="AddRow" xml:space="preserve"><value>Lägg till rad</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>Lägg till kolumn</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>Utskriften misslyckades</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>Utskrift kräver kommandot &apos;lpr&apos; (en del av CUPS), som inte verkar vara installerat.
+
+Installera det och försök igen — till exempel på Debian/Ubuntu:
+    sudo apt install cups-client
+
+Alternativt kan du använda &quot;Exportera som PDF&quot; för att spara arket och skriva ut det från en PDF-läsare.</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>Utskriftskommandot &apos;lpr&apos; avslutades med koden {0}. Kontrollera att en skrivare är konfigurerad.</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>Det gick inte att ladda arbetsblad; klicka för att försöka igen</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>Laddar valt kalkylblad i bakgrunden</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>Välj den här fliken för att ladda kalkylbladet</value></data>
+  <data name="Rename" xml:space="preserve"><value>Byt namn</value></data>
+  <data name="Delete" xml:space="preserve"><value>Ta bort</value></data>
+  <data name="Currency" xml:space="preserve"><value>Valuta</value></data>
+  <data name="Math" xml:space="preserve"><value>Matematik</value></data>
+  <data name="Series" xml:space="preserve"><value>Serie</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>Serie {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>Matematik och trigonometri</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>Statistisk</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>Logisk</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>Text</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>Datum och tid</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(intervall)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(nummer)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(nummer)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(tal, effekt)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(tal, divisor)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(nummer)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(nummer, siffror)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(nummer, siffror)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(nummer, siffror)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(intervall)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(intervall)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(intervall)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(intervall)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(intervall)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(villkor, om_sant, om_falskt)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(värde, värde_om_fel)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(a, b, …)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(a, b, …)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(värde)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(text, …)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(text, …)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(text)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(text, antal)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(text, antal)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(text, start, räkna)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(text)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(text)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(text)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(datum)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(datum)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(datum)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(år, månad, dag)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>Redigera diagram</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>Ta bort diagram</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>Dra för att ändra storlek</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>Sortera eller filtrera {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+click för att öppna: {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>Sätt in raden ovanför</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>Ta bort rad</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>Sortera A till Ö / minsta till största</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Sortera Z till A / största till minsta</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>Filtrera efter värde</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>Välj ett värde...</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(Tomrum)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>Ange ett värde...</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>Visa rader där denna kolumn är lika med:</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>Rensa kolumnfiltret</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>Visa alla rader</value></data>
+  <data name="Save" xml:space="preserve"><value>Spara...</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Avbryt</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>Infoga kommentar</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Redigera kommentar</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>Kommentar (rensa texten för att ta bort den):</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Kalkylbladsredigerare</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>Hyperlänk</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>Ange ett https://, http://, mailto: eller #A1 mål. Rensa texten för att ta bort länken.</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>Ange ett giltigt webb-, e-post- eller kalkylbladsmål.</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>Talformat (tomt = Allmänt; exempel: #,##0.00, $#,##0.00, 0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>Vänster</value></data>
+  <data name="Center" xml:space="preserve"><value>Centrera</value></data>
+  <data name="Right" xml:space="preserve"><value>Höger</value></data>
+  <data name="Alignment" xml:space="preserve"><value>Justering</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>Teckensnittsfamilj (tom = standard)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>Teckenstorlek (pt)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>Textfärg (#RRGGBB, blank = automatisk)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>Fyllningsfärg (#RRGGBB, blank = ingen)</value></data>
+  <data name="Apply" xml:space="preserve"><value>Använd</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>Formatera celler</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>Teckenstorleken måste vara mellan 1 och 200 punkter.</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>Använd en färg som #336699 eller lämna fältet tomt.</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>Rensa innehåll</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>Formatera celler...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>Hyperlänk...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>Filtrera kolumnen till detta värde</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>t.ex. B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>Diagramtitel (valfritt)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>Första raden är serierubriker</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>Den första kolumnen är kategorietiketter</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>Visa legend</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>Visa dataetiketter</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>Min (auto)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>Max (auto)</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>Steg (auto)</value></data>
+  <data name="Create" xml:space="preserve"><value>Skapa</value></data>
+  <data name="ChartType" xml:space="preserve"><value>Diagramtyp</value></data>
+  <data name="DataRange" xml:space="preserve"><value>Dataintervall</value></data>
+  <data name="DataSource" xml:space="preserve"><value>Datakälla</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>VÄrden</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>t.ex. G9:G10 eller C7, C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>Intervall (E9:E10) eller namn (intäkter, utgifter)</value></data>
+  <data name="Categories" xml:space="preserve"><value>Kategorier</value></data>
+  <data name="Title" xml:space="preserve"><value>Titel</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>Format för värdeaxel</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>Värdeaxelskala</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>Infoga diagram</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>Ange ett giltigt intervall som B6:G10.</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>Ange giltiga värdeceller/intervall som G9:G10 eller C7, C10.</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>Linje</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>Spline</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>Steglinje</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>Område</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>Staplad yta</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>Stapel</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>Staplad bar</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>Sprida ut</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>Paj</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>Donut</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>Radar</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>Nummer</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>Valuta</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>procent</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Kalkylbladsredigerare</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_Arkiv</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_Ny</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_Öppna…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_Spara...</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_Spara som...</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_Exportera som PDF...</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_Skriv ut…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_Avsluta</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Excel-arbetsbok (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>Text (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>PDF dokument (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>ark.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>ark.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>Exportera som PDF</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>Öppna kalkylark</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>Öppna misslyckades</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Spara kalkylblad</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Det gick inte att spara</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>Kalkylblad</value></data>
+</root>

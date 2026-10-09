@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>Annuler</value></data>
+  <data name="Redo" xml:space="preserve"><value>Répéter</value></data>
+  <data name="Cut" xml:space="preserve"><value>Couper</value></data>
+  <data name="Copy" xml:space="preserve"><value>Copier</value></data>
+  <data name="Paste" xml:space="preserve"><value>Coller</value></data>
+  <data name="Print" xml:space="preserve"><value>Imprimer</value></data>
+  <data name="Font" xml:space="preserve"><value>Police</value></data>
+  <data name="FontSize" xml:space="preserve"><value>Taille de la police</value></data>
+  <data name="TextColor" xml:space="preserve"><value>Couleur du texte</value></data>
+  <data name="FillColor" xml:space="preserve"><value>Couleur de surbrillance/de remplissage</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>G</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>Gras</value></data>
+  <data name="Italic" xml:space="preserve"><value>Italique</value></data>
+  <data name="Underline" xml:space="preserve"><value>Soulignement</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Barré</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>Aligner à gauche</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>Aligner au centre</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>Aligner à droite</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>Insérer un symbole (devise et mathématiques)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>Plus (formules, graphiques, lignes/colonnes)</value></data>
+  <data name="Find" xml:space="preserve"><value>Rechercher</value></data>
+  <data name="Previous" xml:space="preserve"><value>Précédent</value></data>
+  <data name="Next" xml:space="preserve"><value>Suivant</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>Remplacer par</value></data>
+  <data name="Replace" xml:space="preserve"><value>Remplacer</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Remplacer tout</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>Fermer Rechercher et remplacer</value></data>
+  <data name="Loading" xml:space="preserve"><value>Chargement</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>Zoom arrière (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>Réinitialiser le zoom à 100 % (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>Zoom avant (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>Ajouter une feuille</value></data>
+  <data name="Sheet" xml:space="preserve"><value>Feuille</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>Sélectionnez cet onglet pour charger la feuille de calcul</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>Chargement de la feuille de calcul annulé</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>La feuille de calcul n&apos;a pas pu être chargée</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>Le classeur intermédiaire n’est pas disponible.</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>Les métadonnées du classeur intermédiaire ne sont pas disponibles.</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>Le lecteur de classeur intermédiaire n’est pas disponible.</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>Partie manquante du classeur &apos;{0}&apos;.</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>Comparaison de format conditionnel non prise en charge.</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>Les lettres des colonnes ne doivent pas être vides.</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>Lettre de colonne « {0} » non valide.</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>Entrez du texte pour trouver</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>Aucune correspondance</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>Lecture seule</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>Remplacé {0:N0}</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>Rechercher et remplacer… (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>Insérer un graphique…</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>Imprimer</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>Somme automatique (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>Fonctions</value></data>
+  <data name="AddRow" xml:space="preserve"><value>Ajouter une ligne</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>Nouvelle colonne</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>Échec de l&apos;impression</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>L&apos;impression nécessite la commande &apos;lpr&apos; (partie de CUPS), qui ne semble pas être installée.
+
+Installez-le et réessayez — par exemple, sur Debian/Ubuntu :
+    sudo apt install cups-client
+
+Vous pouvez également utiliser « Exporter sous PDF » pour enregistrer la feuille et l&apos;imprimer à partir d&apos;une visionneuse PDF.</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>La commande d&apos;impression &apos;lpr&apos; s&apos;est terminée avec le code {0}. Vérifiez qu&apos;une imprimante est configurée.</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>Échec du chargement de la feuille de calcul ; cliquez pour réessayer</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>Chargement de la feuille de calcul sélectionnée en arrière-plan</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>Sélectionnez cet onglet pour charger la feuille de calcul</value></data>
+  <data name="Rename" xml:space="preserve"><value>Renommer</value></data>
+  <data name="Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Currency" xml:space="preserve"><value>Devise</value></data>
+  <data name="Math" xml:space="preserve"><value>Mathématiques</value></data>
+  <data name="Series" xml:space="preserve"><value>Série</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>Série {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>Mathématiques et trigonométriques</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>Statistique</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>Logique</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>Texte</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>Date et heure</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(plage)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(nombre)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(nombre)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(nombre, puissance)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(nombre, diviseur)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(nombre)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(nombre, chiffres)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(nombre, chiffres)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(nombre, chiffres)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(plage)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(plage)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(plage)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(plage)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(plage)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(condition, if_true, if_false)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(valeur, valeur_si_erreur)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(a, b, …)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(a, b, …)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(valeur)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(texte, …)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(texte, …)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(texte)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(texte, nombre)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(texte, nombre)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(texte, début, nombre)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(texte)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(texte)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(texte)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(date)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(date)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(date)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(année, mois, jour)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>Modifier le graphique</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>Supprimer le graphique</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>Faites glisser pour redimensionner</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>Trier ou filtrer {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+clic pour ouvrir : {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>Insérer la ligne ci-dessus</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>Supprimer la ligne</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>Trier de A à Z / du plus petit au plus grand</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Trier de Z à A / du plus grand au plus petit</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>Filtrer par valeur</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>Choisissez une valeur…</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(Blancs)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>Entrez une valeur…</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>Afficher les lignes où cette colonne est égale à :</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>Effacer le filtre de colonne</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>Afficher toutes les lignes</value></data>
+  <data name="Save" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>Insérer un commentaire</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Modifier le commentaire</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>Commentaire (effacez le texte pour le supprimer) :</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Éditeur de tableur</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>Lien hypertexte</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>Entrez une cible https://, http://, mailto: ou #A1. Effacez le texte pour supprimer le lien.</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>Saisissez une cible Web, e-mail ou feuille de calcul valide.</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>Format numérique (vide = Général ; exemples : #,##0.00, $#,##0.00, 0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>Gauche</value></data>
+  <data name="Center" xml:space="preserve"><value>Centre</value></data>
+  <data name="Right" xml:space="preserve"><value>Droite</value></data>
+  <data name="Alignment" xml:space="preserve"><value>Alignement</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>Famille de polices (vide = par défaut)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>Taille de la police (pt)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>Couleur du texte (#RRGGBB, vide = automatique)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>Couleur de remplissage (#RRGGBB, vide = aucun)</value></data>
+  <data name="Apply" xml:space="preserve"><value>Appliquer</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>Format de cellule</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>La taille de la police doit être comprise entre 1 et 200 points.</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>Utilisez une couleur telle que #336699 ou laissez le champ vide.</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>Effacer le contenu</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>Formater les cellules...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>Lien hypertexte...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>Filtrer cette colonne sur cette valeur</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>par ex. B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>Titre du graphique (facultatif)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>La première ligne correspond aux en-têtes de série</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>La première colonne contient les étiquettes des catégories</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>Afficher la légende</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>Afficher les étiquettes de données</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>Min (auto)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>Max (auto)</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>Étape (auto)</value></data>
+  <data name="Create" xml:space="preserve"><value>Créer</value></data>
+  <data name="ChartType" xml:space="preserve"><value>Type de graphique</value></data>
+  <data name="DataRange" xml:space="preserve"><value>Plage de données</value></data>
+  <data name="DataSource" xml:space="preserve"><value>Source de données</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>Valeurs</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>par ex. G9:G10 ou C7, C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>Plage (E9:E10) ou noms (Revenus, Dépenses)</value></data>
+  <data name="Categories" xml:space="preserve"><value>Catégories</value></data>
+  <data name="Title" xml:space="preserve"><value>Titre</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>Format de l&apos;axe des valeurs</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>Échelle de l&apos;axe des valeurs</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>Insérer un graphique</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>Entrez une plage valide telle que B6:G10.</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>Entrez des cellules/plages de valeurs valides telles que G9:G10 ou C7, C10.</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>Ligne</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>Spline</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>Ligne de marche</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>Zone</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>Zone empilée</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>Barre</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>Barre empilée</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>Dispersion</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>Tarte</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>Beignet</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>Radars</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>Numéro</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>Devise</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>pourcentage</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Éditeur de tableur</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_Fichier</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_Nouveau</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_Ouvrir…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_Enregistrer</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_Enregistrer sous…</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_Exporter sous PDF…</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_Imprimer…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_Fermer</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Classeur Excel (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>Texte (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>Document PDF (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>feuille.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>feuille.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>Exporter sous PDF</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>Ouvrir une feuille de calcul</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>Échec de l&apos;ouverture</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Enregistrer la feuille de calcul</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Échec de l&apos;enregistrement</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>Tableur</value></data>
+</root>

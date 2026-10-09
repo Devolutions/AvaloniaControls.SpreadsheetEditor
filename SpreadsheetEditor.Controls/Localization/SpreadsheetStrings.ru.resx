@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>Отменить</value></data>
+  <data name="Redo" xml:space="preserve"><value>Вернуть</value></data>
+  <data name="Cut" xml:space="preserve"><value>Вырезать</value></data>
+  <data name="Copy" xml:space="preserve"><value>Копировать</value></data>
+  <data name="Paste" xml:space="preserve"><value>Вставить</value></data>
+  <data name="Print" xml:space="preserve"><value>Печать</value></data>
+  <data name="Font" xml:space="preserve"><value>Шрифт</value></data>
+  <data name="FontSize" xml:space="preserve"><value>Размер шрифта</value></data>
+  <data name="TextColor" xml:space="preserve"><value>Цвет текста</value></data>
+  <data name="FillColor" xml:space="preserve"><value>Цвет выделения/заливки</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>U</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>Полужирный</value></data>
+  <data name="Italic" xml:space="preserve"><value>Курсив</value></data>
+  <data name="Underline" xml:space="preserve"><value>Подчеркивание</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Зачеркнутый</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>По левому краю</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>По центру</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>По правому краю</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>Вставить символ (валюта и математика)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>Дополнительно (формулы, диаграмма, строки/столбцы)</value></data>
+  <data name="Find" xml:space="preserve"><value>Поиск</value></data>
+  <data name="Previous" xml:space="preserve"><value>Назад</value></data>
+  <data name="Next" xml:space="preserve"><value>Далее</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>Заменить на</value></data>
+  <data name="Replace" xml:space="preserve"><value>Заменить</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Заменить все</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>Закрыть поиск и замену</value></data>
+  <data name="Loading" xml:space="preserve"><value>Загрузка</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>Уменьшить масштаб (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>Сбросить масштаб до 100% (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>Увеличьте масштаб (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>Добавить лист</value></data>
+  <data name="Sheet" xml:space="preserve"><value>Лист</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>Выберите эту вкладку, чтобы загрузить лист</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>Загрузка листа отменена</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>Не удалось загрузить рабочий лист</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>Промежуточная книга недоступна.</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>Метаданные промежуточной книги недоступны.</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>Средство чтения поэтапной книги недоступно.</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>Отсутствует часть книги «{0}».</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>Неподдерживаемое сравнение условного формата.</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>Буквы столбца не должны быть пустыми.</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>Недопустимая буква столбца «{0}».</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>Введите текст, чтобы найти</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>Нет совпадений</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>Только чтение</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>Заменено {0:N0}</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>Найти и заменить… (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>Вставить диаграмму…</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>Печать</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>Автосумма (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>Функции</value></data>
+  <data name="AddRow" xml:space="preserve"><value>Добавить строку</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>Добавить столбец</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>Печать не удалась</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>Для печати требуется команда «lpr» (часть CUPS), которая, похоже, не установлена.
+
+Установите его и повторите попытку — например, на Debian/Ubuntu:
+    sudo apt install cups-client
+
+Альтернативно, используйте «Экспортировать как PDF», чтобы сохранить лист и распечатать его из программы просмотра PDF.</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>Команда печати «lpr» завершилась с кодом {0}. Проверьте, настроен ли принтер.</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>Загрузка листа не удалась; нажмите, чтобы повторить попытку</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>Загрузка выбранного листа в фоновом режиме</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>Выберите эту вкладку, чтобы загрузить лист</value></data>
+  <data name="Rename" xml:space="preserve"><value>Переименовать</value></data>
+  <data name="Delete" xml:space="preserve"><value>Удалить</value></data>
+  <data name="Currency" xml:space="preserve"><value>Валюта</value></data>
+  <data name="Math" xml:space="preserve"><value>Математика</value></data>
+  <data name="Series" xml:space="preserve"><value>Ряд</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>Серия {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>Математика и триггеры</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>Статистический</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>Логический</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>Текст</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>Дата и время</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(диапазон)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(число)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(число)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(число, степень)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(число, делитель)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(число)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(число, цифры)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(число, цифры)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(число, цифры)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(диапазон)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(диапазон)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(диапазон)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(диапазон)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(диапазон)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(условие, если_истина, если_ложь)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(значение, значение_если_ошибка)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(а, б, …)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(а, б, …)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(значение)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(текст, …)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(текст, …)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(текст)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(текст, количество)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(текст, количество)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(текст, начало, количество)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(текст)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(текст)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(текст)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(дата)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(дата)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(дата)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(год, месяц, день)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>Редактировать диаграмму</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>Удалить диаграмму</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>Перетащите, чтобы изменить размер</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>Сортировать или фильтровать {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+click, чтобы открыть: {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>Вставить строку выше</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>Удалить строку</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>Сортировка от А до Я / от меньшего к большему</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Сортировка от Я до А / от большего к меньшему</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>Фильтровать по значению</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>Выберите значение…</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(Пробелы)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>Введите значение…</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>Показать строки, где этот столбец равен:</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>Очистить фильтр столбца</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>Показать все строки</value></data>
+  <data name="Save" xml:space="preserve"><value>Сохранить</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>Вставить комментарий</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Редактировать комментарий</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>Комментарий (очистите текст, чтобы удалить его):</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Редактор таблиц</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>Гиперссылка</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>Введите цель https://, http://, mailto: или #A1. Очистите текст, чтобы удалить ссылку.</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>Введите действительный целевой веб-сайт, адрес электронной почты или лист.</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>Числовой формат (пробел = общий; примеры: #,##0.00, $#,##0.00, 0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>Слева</value></data>
+  <data name="Center" xml:space="preserve"><value>Центр</value></data>
+  <data name="Right" xml:space="preserve"><value>Справа</value></data>
+  <data name="Alignment" xml:space="preserve"><value>Выравнивание</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>Семейство шрифтов (пусто = по умолчанию)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>Размер шрифта (пт)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>Цвет текста (#RRGGBB, пусто = автоматически)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>Цвет заливки (#RRGGBB, пусто = нет)</value></data>
+  <data name="Apply" xml:space="preserve"><value>Применить</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>Форматирование ячеек</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>Размер шрифта должен быть от 1 до 200 пунктов.</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>Используйте цвет, например #336699, или оставьте поле пустым.</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>Очистить содержимое</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>Форматировать ячейки...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>Гиперссылка...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>Отфильтровать этот столбец по этому значению</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>например B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>Название диаграммы (необязательно)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>Первая строка — заголовки серий.</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>Первый столбец – метки категорий.</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>Показать легенду</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>Показать метки данных</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>Мин (авто)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>Макс (авто)</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>Шаг (авто)</value></data>
+  <data name="Create" xml:space="preserve"><value>Создать</value></data>
+  <data name="ChartType" xml:space="preserve"><value>Тип диаграммы</value></data>
+  <data name="DataRange" xml:space="preserve"><value>Диапазон данных</value></data>
+  <data name="DataSource" xml:space="preserve"><value>Источник данных</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>Значения</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>например G9:G10 или C7, C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>Диапазон (E9:E10) или имена (Доходы, Расходы)</value></data>
+  <data name="Categories" xml:space="preserve"><value>Категории</value></data>
+  <data name="Title" xml:space="preserve"><value>Название</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>Формат оси значений</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>Шкала оси значений</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>Вставить диаграмму</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>Введите допустимый диапазон, например B6:G10.</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>Введите допустимые ячейки/диапазоны значений, например G9:G10 или C7, C10.</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>Линия</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>Сплайн</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>Линия шага</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>Площадь</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>Сложенная область</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>Полоса</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>Штабелированный бар</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>Разброс</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>Пирог</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>Пончик</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>Радар</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>Номер</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>Валюта</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>процент</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Редактор таблиц</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_Файл</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_Создать</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_открыть…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_Сохранить</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_Сохранить как…</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_Экспортировать как PDF…</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_Печать…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_Закрыть</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Книга Excel (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>Текст (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>PDF документ (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>лист.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>лист.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>Экспортировать как PDF</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>Открыть таблицу</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>Открыть не удалось</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Сохранить таблицу</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Сохранить не удалось</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>Таблица</value></data>
+</root>

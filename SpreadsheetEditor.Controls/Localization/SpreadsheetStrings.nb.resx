@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>Angre</value></data>
+  <data name="Redo" xml:space="preserve"><value>Gjør om</value></data>
+  <data name="Cut" xml:space="preserve"><value>Klipp ut</value></data>
+  <data name="Copy" xml:space="preserve"><value>Kopier</value></data>
+  <data name="Paste" xml:space="preserve"><value>Lim inn</value></data>
+  <data name="Print" xml:space="preserve"><value>Skriv ut</value></data>
+  <data name="Font" xml:space="preserve"><value>Skrift</value></data>
+  <data name="FontSize" xml:space="preserve"><value>Font størrelse</value></data>
+  <data name="TextColor" xml:space="preserve"><value>Tekstfarge</value></data>
+  <data name="FillColor" xml:space="preserve"><value>Utheving / fyllfarge</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>U</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>Fet</value></data>
+  <data name="Italic" xml:space="preserve"><value>Kursiv</value></data>
+  <data name="Underline" xml:space="preserve"><value>Understrek</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Gjennomstreking</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>Venstre</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>Sentrer</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>Høyre</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>Sett inn symbol (valuta og matematikk)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>Mer (formler, diagram, rader/kolonner)</value></data>
+  <data name="Find" xml:space="preserve"><value>Finn</value></data>
+  <data name="Previous" xml:space="preserve"><value>Forrige</value></data>
+  <data name="Next" xml:space="preserve"><value>Neste</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>Erstatt med</value></data>
+  <data name="Replace" xml:space="preserve"><value>Erstatt</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Erstatt alle</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>Lukk finn og erstatt</value></data>
+  <data name="Loading" xml:space="preserve"><value>Laster</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>Zoom ut (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>Tilbakestill zoom til 100 % (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>Zoom inn (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>Legg til ark</value></data>
+  <data name="Sheet" xml:space="preserve"><value>Ark</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>Velg denne kategorien for å laste regnearket</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>Lasting av regneark avbrutt</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>Regnearket kunne ikke lastes</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>Den trinnvise arbeidsboken er utilgjengelig.</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>De trinnvise arbeidsbokens metadata er utilgjengelige.</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>Den trinnvise arbeidsbokleseren er utilgjengelig.</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>Manglende arbeidsbokdel &apos;{0}&apos;.</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>Ikke-støttet sammenligning av betinget format.</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>Kolonnebokstaver må ikke være tomme.</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>Ugyldig kolonnebokstav &apos;{0}&apos;.</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>Skriv inn tekst for å finne</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>Ingen treff</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>Skrivebeskyttet</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>Erstattet {0:N0}</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>Finn og erstatt... (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>Sett inn diagram...</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>Skriv ut</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>Autosum (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>Funksjoner</value></data>
+  <data name="AddRow" xml:space="preserve"><value>Legg til rad</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>Legg til kolonne</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>Utskrift mislyktes</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>Utskrift krever &apos;lpr&apos;-kommandoen (del av CUPS), som ikke ser ut til å være installert.
+
+Installer den og prøv igjen - for eksempel på Debian/Ubuntu:
+    sudo apt install cups-client
+
+Alternativt kan du bruke &quot;Eksporter som PDF&quot; for å lagre arket og skrive det ut fra en PDF-leser.</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>Utskriftskommandoen &apos;lpr&apos; avsluttet med koden {0}. Sjekk at en skriver er konfigurert.</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>Lasting av regneark mislyktes; klikk for å prøve på nytt</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>Laster valgt regneark i bakgrunnen</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>Velg denne kategorien for å laste regnearket</value></data>
+  <data name="Rename" xml:space="preserve"><value>Omdøp</value></data>
+  <data name="Delete" xml:space="preserve"><value>Slett</value></data>
+  <data name="Currency" xml:space="preserve"><value>Valuta</value></data>
+  <data name="Math" xml:space="preserve"><value>Matematikk</value></data>
+  <data name="Series" xml:space="preserve"><value>Serie</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>Serie {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>Matematikk og trig</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>Statistisk</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>Logisk</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>Tekst</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>Dato og tid</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(område)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(tall)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(tall)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(tall, potens)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(tall, divisor)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(tall)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(tall, sifre)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(tall, sifre)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(tall, sifre)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(område)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(område)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(område)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(område)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(område)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(tilstand, hvis_true, if_false)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(verdi, verdi_hvis_feil)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(a, b, …)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(a, b, …)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(verdi)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(tekst, …)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(tekst, …)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(tekst)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(tekst, telling)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(tekst, telling)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(tekst, start, telling)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(tekst)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(tekst)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(tekst)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(dato)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(dato)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(dato)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(år, måned, dag)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>Rediger diagram</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>Slett diagram</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>Dra for å endre størrelse</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>Sorter eller filtrer {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+click for å åpne: {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>Sett inn rad over</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>Slett rad</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>Sorter A til Å / minste til største</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Sorter Z til A / størst til minste</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>Filtrer etter verdi</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>Velg en verdi...</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(Blanker)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>Skriv inn en verdi...</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>Vis rader der denne kolonnen tilsvarer:</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>Tøm kolonnefilteret</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>Vis alle rader</value></data>
+  <data name="Save" xml:space="preserve"><value>Lagre</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Avbryt</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>Sett inn kommentar</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Rediger kommentar</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>Kommentar (tøm teksten for å fjerne den):</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Regneark editor</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>Hyperkobling</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>Skriv inn et https://, http://, mailto: eller #A1 mål. Fjern teksten for å fjerne koblingen.</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>Angi et gyldig web-, e-post- eller regnearkmål.</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>Tallformat (tomt = Generelt; eksempler: #,##0.00, $#,##0.00, 0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>Venstre</value></data>
+  <data name="Center" xml:space="preserve"><value>Sentrert</value></data>
+  <data name="Right" xml:space="preserve"><value>Høyre</value></data>
+  <data name="Alignment" xml:space="preserve"><value>Justering</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>Skriftfamilie (tom = standard)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>Skriftstørrelse (pt)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>Tekstfarge (#RRGGBB, blank = automatisk)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>Fyllfarge (#RRGGBB, blank = ingen)</value></data>
+  <data name="Apply" xml:space="preserve"><value>Bruk</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>Formater celler</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>Skriftstørrelsen må være mellom 1 og 200 poeng.</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>Bruk en farge som #336699, eller la feltet stå tomt.</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>Fjern innhold</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>Formater celler...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>Hyperkobling...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>Filtrer denne kolonnen til denne verdien</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>f.eks. B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>Diagramtittel (valgfritt)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>Første rad er serieoverskrifter</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>Første kolonne er kategorietiketter</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>Vis legende</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>Vis dataetiketter</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>Min (auto)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>Maks (auto)</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>Trinn (auto)</value></data>
+  <data name="Create" xml:space="preserve"><value>Opprette</value></data>
+  <data name="ChartType" xml:space="preserve"><value>Diagramtype</value></data>
+  <data name="DataRange" xml:space="preserve"><value>Dataområde</value></data>
+  <data name="DataSource" xml:space="preserve"><value>Datakilde</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>Verdier</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>f.eks. G9:G10 eller C7, C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>Område (E9:E10) eller navn (inntekter, utgifter)</value></data>
+  <data name="Categories" xml:space="preserve"><value>Kategorier</value></data>
+  <data name="Title" xml:space="preserve"><value>Tittel</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>Verdiakseformat</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>Verdiakseskala</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>Sett inn diagram</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>Skriv inn et gyldig område som B6:G10.</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>Skriv inn gyldige verdiceller/områder som G9:G10 eller C7, C10.</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>Linje</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>Spline</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>Trinnlinje</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>Område</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>Stablet område</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>Strek</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>Stablet bar</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>Spre</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>Pai</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>Smultring</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>Radar</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>Nummer</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>Valuta</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>prosent</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Regneark editor</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_Fil</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_Ny</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_Åpne…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_Lagre</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_Lagre som…</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_Eksporter som PDF...</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_Skriv ut…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_Lukk</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Excel-arbeidsbok (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>Tekst (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>PDF dokument (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>ark.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>ark.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>Eksporter som PDF</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>Åpne regnearket</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>Åpning mislyktes</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Lagre regnearket</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Lagring mislyktes</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>Regneark</value></data>
+</root>

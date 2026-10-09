@@ -2,6 +2,7 @@ namespace SpreadsheetEditor.Controls.Models;
 
 using System;
 using System.Text;
+using global::SpreadsheetEditor.Controls.Localization;
 
 // A zero-based (row, column) cell coordinate with A1-style conversion (e.g. (0,0) == "A1").
 public readonly record struct CellAddress(int Row, int Column)
@@ -31,7 +32,7 @@ public readonly record struct CellAddress(int Row, int Column)
     {
         if (string.IsNullOrEmpty(letters))
         {
-            throw new ArgumentException("Column letters must not be empty.", nameof(letters));
+            throw new ArgumentException(EditorText.Get(EditorString.ColumnLettersMissing), nameof(letters));
         }
 
         int column = 0;
@@ -40,7 +41,7 @@ public readonly record struct CellAddress(int Row, int Column)
             char upper = char.ToUpperInvariant(c);
             if (upper is < 'A' or > 'Z')
             {
-                throw new FormatException($"Invalid column letter '{c}'.");
+                throw new FormatException(EditorText.Format(EditorString.InvalidColumnLetter, c));
             }
 
             column = column * 26 + (upper - 'A' + 1);

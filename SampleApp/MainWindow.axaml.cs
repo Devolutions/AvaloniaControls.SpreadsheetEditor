@@ -10,22 +10,23 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using SpreadsheetEditor.Controls.Localization;
 
 public partial class MainWindow : Window
 {
-    private static readonly FilePickerFileType ExcelFiles = new("Excel workbook (*.xlsx)")
+    private static readonly FilePickerFileType ExcelFiles = new(EditorText.Get(EditorString.ExcelFileFilter))
     {
         Patterns = new[] { "*.xlsx" },
         MimeTypes = new[] { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
         AppleUniformTypeIdentifiers = new[] { "org.openxmlformats.spreadsheetml.sheet" },
     };
 
-    private static readonly FilePickerFileType TextFiles = new("Text (TSV/CSV)")
+    private static readonly FilePickerFileType TextFiles = new(EditorText.Get(EditorString.TextFileFilter))
     {
         Patterns = new[] { "*.tsv", "*.csv", "*.txt" },
     };
 
-    private static readonly FilePickerFileType PdfFiles = new("PDF document (*.pdf)")
+    private static readonly FilePickerFileType PdfFiles = new(EditorText.Get(EditorString.PdfFileFilter))
     {
         Patterns = new[] { "*.pdf" },
         MimeTypes = new[] { "application/pdf" },
@@ -68,9 +69,9 @@ public partial class MainWindow : Window
     {
         IStorageFile? file = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Export as PDF",
+            Title = EditorText.Get(EditorString.ExportPdfTitle),
             DefaultExtension = "pdf",
-            SuggestedFileName = "sheet.pdf",
+            SuggestedFileName = EditorText.Get(EditorString.SampleSheetPdfName),
             FileTypeChoices = new[] { PdfFiles },
         });
 
@@ -103,7 +104,7 @@ public partial class MainWindow : Window
         {
             IReadOnlyList<IStorageFile> files = await this.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "Open spreadsheet",
+                Title = EditorText.Get(EditorString.OpenSpreadsheetTitle),
                 AllowMultiple = false,
                 FileTypeFilter = new[] { ExcelFiles, TextFiles },
             });
@@ -132,7 +133,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await this.ShowError("Open failed", ex.Message);
+            await this.ShowError(EditorText.Get(EditorString.OpenFailed), ex.Message);
         }
     }
 
@@ -155,9 +156,9 @@ public partial class MainWindow : Window
         {
             IStorageFile? file = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = "Save spreadsheet",
+                Title = EditorText.Get(EditorString.SaveSpreadsheetTitle),
                 DefaultExtension = "xlsx",
-                SuggestedFileName = "sheet.xlsx",
+                SuggestedFileName = EditorText.Get(EditorString.SampleSheetXlsxName),
                 FileTypeChoices = new[] { ExcelFiles, TextFiles },
             });
 
@@ -172,7 +173,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await this.ShowError("Save failed", ex.Message);
+            await this.ShowError(EditorText.Get(EditorString.SaveFailed), ex.Message);
         }
     }
 
@@ -211,8 +212,8 @@ public partial class MainWindow : Window
 
     private void UpdateTitle() =>
         this.Title = this.currentFile is null
-            ? "Spreadsheet Editor"
-            : $"Spreadsheet Editor — {this.currentFile.Name}";
+            ? EditorText.Get(EditorString.SampleTitle)
+            : $"{EditorText.Get(EditorString.SampleTitle)} — {this.currentFile.Name}";
 
     private async Task ShowError(string title, string message)
     {

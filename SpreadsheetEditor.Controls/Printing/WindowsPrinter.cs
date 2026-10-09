@@ -1,5 +1,7 @@
 namespace SpreadsheetEditor.Controls.Printing;
 
+using global::SpreadsheetEditor.Controls.Localization;
+
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -47,7 +49,7 @@ internal static class WindowsPrinter
             DOCINFO info = new()
             {
                 cbSize = Marshal.SizeOf<DOCINFO>(),
-                lpszDocName = string.IsNullOrWhiteSpace(documentTitle) ? "Spreadsheet" : documentTitle,
+                lpszDocName = string.IsNullOrWhiteSpace(documentTitle) ? EditorText.Get(EditorString.SpreadsheetDocument) : documentTitle,
             };
 
             if (StartDoc(pd.hDC, ref info) <= 0)

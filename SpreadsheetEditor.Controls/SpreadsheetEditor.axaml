@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:SpreadsheetEditor.Controls"
+             xmlns:loc="clr-namespace:SpreadsheetEditor.Controls.Localization"
              x:Class="SpreadsheetEditor.Controls.SpreadsheetEditor">
     <UserControl.Resources>
         <ResourceDictionary>
@@ -63,46 +64,46 @@
             <StackPanel Orientation="Horizontal" Spacing="1">
 
                 <!-- History -->
-                <Button x:Name="UndoButton" Classes="tool" ToolTip.Tip="Undo">
+                <Button x:Name="UndoButton" Classes="tool" ToolTip.Tip="{loc:Loc Undo}">
                     <PathIcon Data="{StaticResource IconUndo}" Width="16" Height="16" />
                 </Button>
-                <Button x:Name="RedoButton" Classes="tool" ToolTip.Tip="Redo">
+                <Button x:Name="RedoButton" Classes="tool" ToolTip.Tip="{loc:Loc Redo}">
                     <PathIcon Data="{StaticResource IconRedo}" Width="16" Height="16" />
                 </Button>
 
                 <Border Classes="divider" />
 
                 <!-- Clipboard -->
-                <Button x:Name="CutButton" Classes="tool" ToolTip.Tip="Cut">
+                <Button x:Name="CutButton" Classes="tool" ToolTip.Tip="{loc:Loc Cut}">
                     <PathIcon Data="{StaticResource IconCut}" Width="16" Height="16" />
                 </Button>
-                <Button x:Name="CopyButton" Classes="tool" ToolTip.Tip="Copy">
+                <Button x:Name="CopyButton" Classes="tool" ToolTip.Tip="{loc:Loc Copy}">
                     <PathIcon Data="{StaticResource IconCopy}" Width="16" Height="16" />
                 </Button>
-                <Button x:Name="PasteButton" Classes="tool" ToolTip.Tip="Paste">
+                <Button x:Name="PasteButton" Classes="tool" ToolTip.Tip="{loc:Loc Paste}">
                     <PathIcon Data="{StaticResource IconPaste}" Width="16" Height="16" />
                 </Button>
 
                 <Border Classes="divider" />
 
                 <!-- Print -->
-                <Button x:Name="PrintButton" Classes="tool" ToolTip.Tip="Print">
+                <Button x:Name="PrintButton" Classes="tool" ToolTip.Tip="{loc:Loc Print}">
                     <PathIcon Data="{StaticResource IconPrint}" Width="16" Height="16" />
                 </Button>
 
                 <Border Classes="divider" />
 
                 <!-- Font -->
-                <ComboBox x:Name="FontFamilyBox" Width="140" Height="28" Focusable="False" ToolTip.Tip="Font" />
-                <ComboBox x:Name="FontSizeBox" Width="60" Height="28" Focusable="False" ToolTip.Tip="Font size" />
+                <ComboBox x:Name="FontFamilyBox" Width="140" Height="28" Focusable="False" ToolTip.Tip="{loc:Loc Font}" />
+                <ComboBox x:Name="FontSizeBox" Width="60" Height="28" Focusable="False" ToolTip.Tip="{loc:Loc FontSize}" />
 
                 <Border Classes="divider" />
 
                 <!-- Color / highlight -->
-                <Button x:Name="ForegroundButton" Classes="tool" ToolTip.Tip="Text color">
+                <Button x:Name="ForegroundButton" Classes="tool" ToolTip.Tip="{loc:Loc TextColor}">
                     <Button.Content>
                         <StackPanel Orientation="Vertical" Spacing="0" HorizontalAlignment="Center">
-                            <TextBlock Text="A" FontWeight="Bold" HorizontalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc TextColorGlyph}" FontWeight="Bold" HorizontalAlignment="Center" />
                             <Border x:Name="ForegroundSwatch" Width="16" Height="3" Background="Black" />
                         </StackPanel>
                     </Button.Content>
@@ -113,7 +114,7 @@
                     </Button.Flyout>
                 </Button>
 
-                <Button x:Name="BackgroundButton" Classes="tool" ToolTip.Tip="Highlight / fill color">
+                <Button x:Name="BackgroundButton" Classes="tool" ToolTip.Tip="{loc:Loc FillColor}">
                     <Button.Content>
                         <Border BorderBrush="#66000000" BorderThickness="1" CornerRadius="2" Width="18" Height="14">
                             <Border x:Name="BackgroundSwatch" Background="Yellow" Margin="1" CornerRadius="1" />
@@ -129,41 +130,41 @@
                 <Border Classes="divider" />
 
                 <!-- Character formatting -->
-                <ToggleButton x:Name="BoldButton" Classes="tool" ToolTip.Tip="Bold">
-                    <TextBlock Text="B" FontWeight="Bold" />
+                <ToggleButton x:Name="BoldButton" Classes="tool" ToolTip.Tip="{loc:Loc Bold}">
+                    <TextBlock Text="{loc:Loc BoldGlyph}" FontWeight="Bold" />
                 </ToggleButton>
-                <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="Italic">
-                    <TextBlock Text="I" FontStyle="Italic" />
+                <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="{loc:Loc Italic}">
+                    <TextBlock Text="{loc:Loc ItalicGlyph}" FontStyle="Italic" />
                 </ToggleButton>
-                <ToggleButton x:Name="UnderlineButton" Classes="tool" ToolTip.Tip="Underline">
-                    <TextBlock Text="U" TextDecorations="Underline" />
+                <ToggleButton x:Name="UnderlineButton" Classes="tool" ToolTip.Tip="{loc:Loc Underline}">
+                    <TextBlock Text="{loc:Loc UnderlineGlyph}" TextDecorations="Underline" />
                 </ToggleButton>
-                <ToggleButton x:Name="StrikethroughButton" Classes="tool" ToolTip.Tip="Strikethrough">
-                    <TextBlock Text="S" TextDecorations="Strikethrough" />
+                <ToggleButton x:Name="StrikethroughButton" Classes="tool" ToolTip.Tip="{loc:Loc Strikethrough}">
+                    <TextBlock Text="{loc:Loc StrikethroughGlyph}" TextDecorations="Strikethrough" />
                 </ToggleButton>
 
                 <Border Classes="divider" />
 
                 <!-- Alignment -->
-                <ToggleButton x:Name="AlignLeftButton" Classes="tool" ToolTip.Tip="Align left">
+                <ToggleButton x:Name="AlignLeftButton" Classes="tool" ToolTip.Tip="{loc:Loc AlignLeft}">
                     <PathIcon Data="{StaticResource IconAlignLeft}" Width="16" Height="16" />
                 </ToggleButton>
-                <ToggleButton x:Name="AlignCenterButton" Classes="tool" ToolTip.Tip="Align center">
+                <ToggleButton x:Name="AlignCenterButton" Classes="tool" ToolTip.Tip="{loc:Loc AlignCenter}">
                     <PathIcon Data="{StaticResource IconAlignCenter}" Width="16" Height="16" />
                 </ToggleButton>
-                <ToggleButton x:Name="AlignRightButton" Classes="tool" ToolTip.Tip="Align right">
+                <ToggleButton x:Name="AlignRightButton" Classes="tool" ToolTip.Tip="{loc:Loc AlignRight}">
                     <PathIcon Data="{StaticResource IconAlignRight}" Width="16" Height="16" />
                 </ToggleButton>
 
                 <Border Classes="divider" />
 
                 <!-- Insert symbol (currency &amp; math). Flyout built in code-behind. -->
-                <Button x:Name="SymbolButton" Classes="tool" Content="&#x3A9;" FontSize="15" ToolTip.Tip="Insert symbol (currency &amp; math)" />
+                <Button x:Name="SymbolButton" Classes="tool" Content="&#x3A9;" FontSize="15" ToolTip.Tip="{loc:Loc InsertSymbol}" />
 
                 <Border Classes="divider" />
 
                 <!-- Overflow: spreadsheet-specific actions (built in code-behind). -->
-                <Button x:Name="OverflowButton" Classes="tool" ToolTip.Tip="More (formulas, chart, rows/columns)">
+                <Button x:Name="OverflowButton" Classes="tool" ToolTip.Tip="{loc:Loc MoreActions}">
                     <PathIcon Data="{StaticResource IconMore}" Width="16" Height="16" />
                 </Button>
             </StackPanel>
@@ -173,7 +174,7 @@
         <Grid Grid.Row="1" ColumnDefinitions="90,Auto,*" Margin="4" ColumnSpacing="6">
             <TextBox x:Name="NameBox" Grid.Column="0" IsReadOnly="True"
                      VerticalContentAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="fx" FontStyle="Italic"
+            <TextBlock Grid.Column="1" Text="{loc:Loc FormulaGlyph}" FontStyle="Italic"
                        VerticalAlignment="Center" Opacity="0.7" />
             <Border x:Name="EditorHost" Grid.Column="2" MinHeight="30"
                     BorderThickness="1" BorderBrush="{DynamicResource ChromeBorder}" CornerRadius="3" />
@@ -185,17 +186,17 @@
                 BorderThickness="0,1,0,1" BorderBrush="{DynamicResource ChromeBorder}"
                 Background="{DynamicResource ChromeBackground}">
             <Grid ColumnDefinitions="Auto,180,Auto,Auto,Auto,180,Auto,Auto,*,Auto" ColumnSpacing="5">
-                <TextBlock Grid.Column="0" Text="Find" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Text="{loc:Loc Find}" VerticalAlignment="Center" />
                 <TextBox x:Name="FindTextBox" Grid.Column="1" MinWidth="120" VerticalContentAlignment="Center" />
-                <Button x:Name="FindPreviousButton" Grid.Column="2" Content="Previous" Padding="8,3" />
-                <Button x:Name="FindNextButton" Grid.Column="3" Content="Next" Padding="8,3" />
-                <TextBlock Grid.Column="4" Text="Replace with" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <Button x:Name="FindPreviousButton" Grid.Column="2" Content="{loc:Loc Previous}" Padding="8,3" />
+                <Button x:Name="FindNextButton" Grid.Column="3" Content="{loc:Loc Next}" Padding="8,3" />
+                <TextBlock Grid.Column="4" Text="{loc:Loc ReplaceWith}" Margin="8,0,0,0" VerticalAlignment="Center" />
                 <TextBox x:Name="ReplaceTextBox" Grid.Column="5" MinWidth="120" VerticalContentAlignment="Center" />
-                <Button x:Name="ReplaceButton" Grid.Column="6" Content="Replace" Padding="8,3" />
-                <Button x:Name="ReplaceAllButton" Grid.Column="7" Content="Replace all" Padding="8,3" />
+                <Button x:Name="ReplaceButton" Grid.Column="6" Content="{loc:Loc Replace}" Padding="8,3" />
+                <Button x:Name="ReplaceAllButton" Grid.Column="7" Content="{loc:Loc ReplaceAll}" Padding="8,3" />
                 <TextBlock x:Name="FindStatusText" Grid.Column="8" Margin="8,0" VerticalAlignment="Center" Opacity="0.75" />
                 <Button x:Name="CloseFindButton" Grid.Column="9" Content="&#x2715;" Width="28" Padding="0"
-                        ToolTip.Tip="Close find and replace" />
+                        ToolTip.Tip="{loc:Loc CloseFindReplace}" />
             </Grid>
         </Border>
 
@@ -214,7 +215,7 @@
         <Border x:Name="LoadingOverlay" Grid.Row="4" IsVisible="False"
                 Background="{DynamicResource ChromeBackground}" Opacity="0.96">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Width="240">
-                <TextBlock Text="Loading…" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                <TextBlock Text="{loc:Loc Loading}" HorizontalAlignment="Center" FontWeight="SemiBold" />
                 <ProgressBar IsIndeterminate="True" Height="4" />
             </StackPanel>
         </Border>
@@ -224,13 +225,13 @@
             <DockPanel LastChildFill="True">
                 <!-- Zoom control (Excel-style): − · 100% · + -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,2,0">
-                    <Button x:Name="ZoomOutButton" Content="−" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Zoom out (Ctrl+-)" />
-                    <Button x:Name="ZoomResetButton" Content="100%" Width="52" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Reset zoom to 100% (Ctrl+0)" />
-                    <Button x:Name="ZoomInButton" Content="+" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="Zoom in (Ctrl++)" />
+                    <Button x:Name="ZoomOutButton" Content="−" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ZoomOut}" />
+                    <Button x:Name="ZoomResetButton" Content="100%" Width="52" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ResetZoom}" />
+                    <Button x:Name="ZoomInButton" Content="+" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ZoomIn}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <Button x:Name="AddSheetButton" Content="+" Width="26" Focusable="False"
-                            ToolTip.Tip="Add sheet" Padding="0" />
+                            ToolTip.Tip="{loc:Loc AddSheet}" Padding="0" />
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="SheetTabs" Orientation="Horizontal" Spacing="2" />
                     </ScrollViewer>

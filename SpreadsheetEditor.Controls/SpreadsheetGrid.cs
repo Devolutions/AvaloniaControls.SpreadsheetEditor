@@ -29,8 +29,11 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using global::SpreadsheetEditor.Controls.Models;
+using global::SpreadsheetEditor.Controls.Localization;
 using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
+using S = global::SpreadsheetEditor.Controls.Localization.EditorString;
+using static global::SpreadsheetEditor.Controls.Localization.EditorText;
 
 // A custom spreadsheet grid: a scrollable cell area with frozen column/row headers, per-column
 // widths and per-row heights, fills, inline-run formatting, and merged-cell spanning. Replaces the
@@ -1343,7 +1346,7 @@ public class SpreadsheetGrid : UserControl
                 Margin = new Thickness(0, 3, 3, 0),
                 Background = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
             };
-            ToolTip.SetTip(settings, "Edit chart");
+            ToolTip.SetTip(settings, Get(S.EditChart));
             SheetChart captured = chart;
             settings.Click += (_, _) => this.ChartEditRequested?.Invoke(captured);
 
@@ -1440,7 +1443,7 @@ public class SpreadsheetGrid : UserControl
             };
 
             // Right-click menu with a Delete item (acts on this chart directly).
-            MenuItem deleteItem = new() { Header = "Delete chart" };
+            MenuItem deleteItem = new() { Header = Get(S.DeleteChart) };
             deleteItem.Click += (_, _) => this.sheet?.RemoveChart(captured);
             MenuFlyout menu = new();
             menu.Items.Add(deleteItem);
@@ -1458,7 +1461,7 @@ public class SpreadsheetGrid : UserControl
                 CornerRadius = new CornerRadius(2, 0, 2, 0),
                 Cursor = new Cursor(StandardCursorType.BottomRightCorner),
             };
-            ToolTip.SetTip(grip, "Drag to resize");
+            ToolTip.SetTip(grip, Get(S.DragToResize));
             content.Children.Add(grip);
 
             bool sizing = false;
@@ -2230,7 +2233,7 @@ public class SpreadsheetGrid : UserControl
                     e.Handled = true;
                 }
             };
-            ToolTip.SetTip(button, $"Sort or filter {cell.DisplayText}");
+            ToolTip.SetTip(button, Format(S.SortOrFilter, cell.DisplayText));
             cellContent = Layered(cellContent, button);
         }
         Border border = new()
@@ -2279,8 +2282,8 @@ public class SpreadsheetGrid : UserControl
             if (!string.IsNullOrWhiteSpace(cell.Hyperlink))
             {
                 tip = string.IsNullOrWhiteSpace(tip)
-                    ? $"Ctrl+click to open: {cell.Hyperlink}"
-                    : $"{tip}\n\nCtrl+click to open: {cell.Hyperlink}";
+                    ? Format(S.CtrlClickOpen, cell.Hyperlink)
+                    : $"{tip}\n\n{Format(S.CtrlClickOpen, cell.Hyperlink)}";
             }
             if (tip is not null || hasAnnotationTip)
             {
@@ -2856,9 +2859,9 @@ public class SpreadsheetGrid : UserControl
     private MenuFlyout BuildRowMenu(int row)
     {
         MenuFlyout menu = new();
-        MenuItem insert = new() { Header = "Insert row above" };
+        MenuItem insert = new() { Header = Get(S.InsertRowAbove) };
         insert.Click += (_, _) => this.InsertSelectedRows(row);
-        MenuItem delete = new() { Header = "Delete row" };
+        MenuItem delete = new() { Header = Get(S.DeleteRow) };
         delete.Click += (_, _) => this.DeleteSelectedRows(row);
         menu.Items.Add(insert);
         menu.Items.Add(delete);
@@ -2873,16 +2876,16 @@ public class SpreadsheetGrid : UserControl
             return menu;
         }
         int headerRow = this.sheet.LikelyHeaderRow();
-        MenuItem ascending = new() { Header = "Sort A to Z / smallest to largest" };
+        MenuItem ascending = new() { Header = Get(S.SortAscending) };
         ascending.Click += (_, _) => this.SortColumn(column, headerRow, descending: false);
-        MenuItem descending = new() { Header = "Sort Z to A / largest to smallest" };
+        MenuItem descending = new() { Header = Get(S.SortDescending) };
         descending.Click += (_, _) => this.SortColumn(column, headerRow, descending: true);
         menu.Items.Add(ascending);
         menu.Items.Add(descending);
         menu.Items.Add(new Separator());
 
-        MenuItem filter = new() { Header = "Filter by value" };
-        filter.Items.Add(new MenuItem { Header = "Choose a value…" });
+        MenuItem filter = new() { Header = Get(S.FilterByValue) };
+        filter.Items.Add(new MenuItem { Header = Get(S.ChooseValue) });
         filter.SubmenuOpened += (_, _) =>
         {
             filter.Items.Clear();
@@ -2893,16 +2896,16 @@ public class SpreadsheetGrid : UserControl
             foreach (string value in this.sheet.ColumnValues(column, headerRow))
             {
                 string selectedValue = value;
-                MenuItem option = new() { Header = value.Length == 0 ? "(Blanks)" : value };
+                MenuItem option = new() { Header = value.Length == 0 ? Get(S.Blanks) : value };
                 option.Click += (_, _) => this.FilterColumn(column, selectedValue, headerRow);
                 filter.Items.Add(option);
             }
             filter.Items.Add(new Separator());
-            MenuItem custom = new() { Header = "Enter a value…" };
+            MenuItem custom = new() { Header = Get(S.EnterValue) };
             custom.Click += async (_, _) =>
             {
                 string? value = await this.PromptCellTextAsync(
-                    "Filter by value", "Show rows where this column equals:", string.Empty);
+                    Get(S.FilterByValue), Get(S.FilterWhereEquals), string.Empty);
                 if (value is not null)
                 {
                     this.FilterColumn(column, value, headerRow);
@@ -2913,11 +2916,11 @@ public class SpreadsheetGrid : UserControl
         menu.Items.Add(filter);
         if (this.sheet.HasColumnFilter(column))
         {
-            MenuItem clear = new() { Header = "Clear column filter" };
+            MenuItem clear = new() { Header = Get(S.ClearColumnFilter) };
             clear.Click += (_, _) => this.FilterColumn(column, null, headerRow);
             menu.Items.Add(clear);
         }
-        MenuItem showAll = new() { Header = "Show all rows" };
+        MenuItem showAll = new() { Header = Get(S.ShowAllRows) };
         showAll.Click += (_, _) =>
         {
             if (this.ReadOnly || this.sheet is null)
@@ -2968,8 +2971,8 @@ public class SpreadsheetGrid : UserControl
             MinHeight = multiline ? 100 : 0,
         };
         TextBlock error = new() { Foreground = Brushes.Firebrick, IsVisible = false, Text = validationMessage };
-        Button save = new() { Content = "Save", IsDefault = true, MinWidth = 80 };
-        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 80 };
+        Button save = new() { Content = Get(S.Save), IsDefault = true, MinWidth = 80 };
+        Button cancel = new() { Content = Get(S.Cancel), IsCancel = true, MinWidth = 80 };
         StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         buttons.Children.Add(cancel);
         buttons.Children.Add(save);
@@ -3010,15 +3013,15 @@ public class SpreadsheetGrid : UserControl
         }
         this.editorSuspended = true;
         string? comment = await this.PromptCellTextAsync(
-            string.IsNullOrWhiteSpace(cell.Comment) ? "Insert Comment" : "Edit Comment",
-            "Comment (clear the text to remove it):", cell.Comment ?? string.Empty, multiline: true);
+            Get(string.IsNullOrWhiteSpace(cell.Comment) ? S.InsertComment : S.EditComment),
+            Get(S.CommentPrompt), cell.Comment ?? string.Empty, multiline: true);
         if (comment is null || comment == cell.Comment)
         {
             return;
         }
         sheet.Checkpoint();
         cell.Comment = comment.Length == 0 ? null : comment;
-        cell.CommentAuthor = comment.Length == 0 ? null : cell.CommentAuthor ?? "Spreadsheet Editor";
+        cell.CommentAuthor = comment.Length == 0 ? null : cell.CommentAuthor ?? Get(S.CommentAuthor);
         sheet.NotifyMetadataChanged();
     }
 
@@ -3035,9 +3038,9 @@ public class SpreadsheetGrid : UserControl
         }
         this.editorSuspended = true;
         string? target = await this.PromptCellTextAsync(
-            "Hyperlink", "Enter an https://, http://, mailto:, or #A1 target. Clear the text to remove the link.",
+            Get(S.Hyperlink), Get(S.HyperlinkPrompt),
             cell.Hyperlink ?? string.Empty, valid: IsValidLinkTarget,
-            validationMessage: "Enter a valid web, email, or worksheet target.");
+            validationMessage: Get(S.HyperlinkInvalid));
         if (target is null || target == cell.Hyperlink)
         {
             return;
@@ -3070,10 +3073,10 @@ public class SpreadsheetGrid : UserControl
         }
 
         TextBox numberFormat = Field(active.NumberFormat);
-        AddField("Number format (blank = General; examples: #,##0.00, $#,##0.00, 0.00%)", numberFormat);
+        AddField(Get(S.NumberFormatLabel), numberFormat);
         ComboBox alignment = new()
         {
-            ItemsSource = new[] { "Left", "Center", "Right" },
+            ItemsSource = new[] { Get(S.Left), Get(S.Center), Get(S.Right) },
             SelectedIndex = active.TextAlignment switch
             {
                 TextAlignment.Center => 1,
@@ -3081,15 +3084,15 @@ public class SpreadsheetGrid : UserControl
                 _ => 0,
             }
         };
-        AddField("Alignment", alignment);
+        AddField(Get(S.Alignment), alignment);
         TextBox fontName = Field(active.FontFamily);
-        AddField("Font family (blank = default)", fontName);
+        AddField(Get(S.FontFamilyLabel), fontName);
         TextBox fontSize = Field((active.FontSize * 3.0 / 4.0).ToString("0.##", CultureInfo.InvariantCulture));
-        AddField("Font size (pt)", fontSize);
-        CheckBox bold = new() { Content = "Bold", IsChecked = active.IsAllBold };
-        CheckBox italic = new() { Content = "Italic", IsChecked = active.IsAllItalic };
-        CheckBox underline = new() { Content = "Underline", IsChecked = active.IsAllUnderline };
-        CheckBox strike = new() { Content = "Strikethrough", IsChecked = active.IsAllStrikethrough };
+        AddField(Get(S.FontSizePoints), fontSize);
+        CheckBox bold = new() { Content = Get(S.Bold), IsChecked = active.IsAllBold };
+        CheckBox italic = new() { Content = Get(S.Italic), IsChecked = active.IsAllItalic };
+        CheckBox underline = new() { Content = Get(S.Underline), IsChecked = active.IsAllUnderline };
+        CheckBox strike = new() { Content = Get(S.Strikethrough), IsChecked = active.IsAllStrikethrough };
         StackPanel flags = new() { Orientation = Orientation.Horizontal, Spacing = 12 };
         flags.Children.Add(bold);
         flags.Children.Add(italic);
@@ -3097,13 +3100,13 @@ public class SpreadsheetGrid : UserControl
         flags.Children.Add(strike);
         fields.Children.Add(flags);
         TextBox foreground = Field(Hex(active.ForegroundColor));
-        AddField("Text color (#RRGGBB, blank = automatic)", foreground);
+        AddField(Get(S.TextColorHex), foreground);
         TextBox background = Field(Hex(active.BackgroundColor));
-        AddField("Fill color (#RRGGBB, blank = none)", background);
+        AddField(Get(S.FillColorHex), background);
         TextBlock error = new() { Foreground = Brushes.Firebrick, IsVisible = false };
         fields.Children.Add(error);
-        Button save = new() { Content = "Apply", IsDefault = true, MinWidth = 80 };
-        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 80 };
+        Button save = new() { Content = Get(S.Apply), IsDefault = true, MinWidth = 80 };
+        Button cancel = new() { Content = Get(S.Cancel), IsCancel = true, MinWidth = 80 };
         StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         buttons.Children.Add(cancel);
         buttons.Children.Add(save);
@@ -3111,7 +3114,7 @@ public class SpreadsheetGrid : UserControl
         ScrollViewer scroller = new() { Content = fields, Margin = new Thickness(16) };
         Window dialog = new()
         {
-            Title = "Format Cells",
+            Title = Get(S.FormatCells),
             Width = 500,
             Height = 570,
             CanResize = true,
@@ -3124,7 +3127,7 @@ public class SpreadsheetGrid : UserControl
             if (!double.TryParse(fontSize.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double points) ||
                 !double.IsFinite(points) || points < 1 || points > 200)
             {
-                error.Text = "Font size must be between 1 and 200 points.";
+                error.Text = Get(S.FontSizeInvalid);
                 error.IsVisible = true;
                 return;
             }
@@ -3137,7 +3140,7 @@ public class SpreadsheetGrid : UserControl
             }
             catch (FormatException)
             {
-                error.Text = "Use a color such as #336699, or leave the field blank.";
+                error.Text = Get(S.ColorInvalid);
                 error.IsVisible = true;
                 return;
             }
@@ -3229,20 +3232,20 @@ public class SpreadsheetGrid : UserControl
             item.Click += (_, _) => act();
             menu.Items.Add(item);
         }
-        Add("Cut", this.CutSelection);
-        Add("Copy", this.CopySelection);
-        Add("Paste", this.PasteSelection);
+        Add(Get(S.Cut), this.CutSelection);
+        Add(Get(S.Copy), this.CopySelection);
+        Add(Get(S.Paste), this.PasteSelection);
         menu.Items.Add(new Separator());
-        Add("Clear Contents", this.ClearSelection);
+        Add(Get(S.ClearContents), this.ClearSelection);
         menu.Items.Add(new Separator());
-        Add("Insert Comment", () => _ = this.EditCommentAsync());
-        Add("Format Cells...", () => _ = this.FormatCellsAsync());
-        Add("Hyperlink...", () => _ = this.EditHyperlinkAsync());
+        Add(Get(S.InsertComment), () => _ = this.EditCommentAsync());
+        Add(Get(S.FormatCellsMenu), () => _ = this.FormatCellsAsync());
+        Add(Get(S.HyperlinkMenu), () => _ = this.EditHyperlinkAsync());
         menu.Items.Add(new Separator());
-        Add("Insert row above", () => this.InsertSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
-        Add("Delete row", () => this.DeleteSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
+        Add(Get(S.InsertRowAbove), () => this.InsertSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
+        Add(Get(S.DeleteRow), () => this.DeleteSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));
         menu.Items.Add(new Separator());
-        Add("Filter this column to this value", () =>
+        Add(Get(S.FilterColumnToValue), () =>
         {
             if (this.sheet is { } sheet)
             {

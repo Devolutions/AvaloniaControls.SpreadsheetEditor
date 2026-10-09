@@ -57,6 +57,31 @@ dotnet run --project SampleApp        # launch the sample app
 dotnet pack SpreadsheetEditor.Controls -c Release   # build the NuGet package
 ```
 
+## Localization
+
+The editor uses .NET `.resx` resources, the same culture-based approach as RDM's
+`UIResources`/`MsgResources`. The English source text and keys are in
+`SpreadsheetEditor.Controls/Localization/SpreadsheetStrings.resx`; localized files
+use the same base name plus a culture suffix. The supported culture files match
+RDM: `cs`, `de`, `es`, `fr`, `hu`, `it`, `ja`, `nb`, `nl`, `pl`, `pt`, `ru`, `sv`,
+`tr`, `uk`, `zh-Hans`, and `zh-Hant-TW`.
+
+RDM only needs to set the normal .NET `CultureInfo.CurrentUICulture` before
+creating the control; the editor has no dependency on RDM assemblies. XAML uses
+`{loc:Loc Key}` and C# uses `EditorText.Get(EditorString.Key)` or
+`EditorText.Format(EditorString.Key, value)`. Missing locale entries fall back
+to the English resource. The XAML lookups are static, like RDM's `UIRes`, so
+recreate the editor after changing the UI language during a session.
+
+For a quick demonstration, run the sample with
+`dotnet run --project SampleApp -- --culture=fr`. All 17 locale files have
+translations for every key. Existing RDM wording was reused where possible;
+editor-specific wording was machine-drafted and should be reviewed by native
+speakers before a production release. Add new UI strings to the neutral `.resx`
+and the matching `EditorString` enum, then translate them in each locale file.
+Formula identifiers, workbook content, file-format tokens, and user-entered
+data are intentionally not translated.
+
 ## Installation
 
 Install the [NuGet package](https://www.nuget.org/packages/Devolutions.AvaloniaControls.SpreadsheetEditor) into your Avalonia project:

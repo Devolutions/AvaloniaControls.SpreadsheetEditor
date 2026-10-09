@@ -3,23 +3,24 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:se="clr-namespace:SpreadsheetEditor.Controls;assembly=SpreadsheetEditor.Controls"
+        xmlns:loc="clr-namespace:SpreadsheetEditor.Controls.Localization;assembly=SpreadsheetEditor.Controls"
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
         x:Class="SampleApp.MainWindow"
         Width="900" Height="600"
-        Title="Spreadsheet Editor">
+        Title="{loc:Loc SampleTitle}">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
-                <MenuItem x:Name="NewItem" Header="_New" />
-                <MenuItem x:Name="OpenItem" Header="_Open…" />
+            <MenuItem Header="{loc:Loc SampleFileMenu}">
+                <MenuItem x:Name="NewItem" Header="{loc:Loc SampleNewMenu}" />
+                <MenuItem x:Name="OpenItem" Header="{loc:Loc SampleOpenMenu}" />
                 <Separator />
-                <MenuItem x:Name="SaveItem" Header="_Save" />
-                <MenuItem x:Name="SaveAsItem" Header="Save _As…" />
+                <MenuItem x:Name="SaveItem" Header="{loc:Loc SampleSaveMenu}" />
+                <MenuItem x:Name="SaveAsItem" Header="{loc:Loc SampleSaveAsMenu}" />
                 <Separator />
-                <MenuItem x:Name="ExportPdfItem" Header="_Export as PDF…" />
-                <MenuItem x:Name="PrintItem" Header="_Print…" InputGesture="Ctrl+P" />
+                <MenuItem x:Name="ExportPdfItem" Header="{loc:Loc SampleExportPdfMenu}" />
+                <MenuItem x:Name="PrintItem" Header="{loc:Loc SamplePrintMenu}" InputGesture="Ctrl+P" />
                 <Separator />
-                <MenuItem x:Name="CloseItem" Header="_Close" />
+                <MenuItem x:Name="CloseItem" Header="{loc:Loc SampleCloseMenu}" />
             </MenuItem>
         </Menu>
         <se:SpreadsheetEditor x:Name="Editor" />

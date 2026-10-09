@@ -419,7 +419,7 @@ public static class XlsxCharts
                 ranges = ClampRanges(ranges, raw.CachedValues.Count);
             }
 
-            string seriesTitle = ResolveTitle(raw, sheet) ?? $"Series {i + 1}";
+            string seriesTitle = ResolveTitle(raw, sheet) ?? Localization.EditorText.Format(Localization.EditorString.SeriesNumber, i + 1);
             series.Add(new ChartSeriesSpec(
                 seriesTitle,
                 ranges.Count > 0 ? ranges : new List<CellRange> { new(0, 0, 0, 0) },

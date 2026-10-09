@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Undo" xml:space="preserve"><value>Скасувати</value></data>
+  <data name="Redo" xml:space="preserve"><value>Повторити</value></data>
+  <data name="Cut" xml:space="preserve"><value>Вирізати</value></data>
+  <data name="Copy" xml:space="preserve"><value>Копіювати</value></data>
+  <data name="Paste" xml:space="preserve"><value>Вставити</value></data>
+  <data name="Print" xml:space="preserve"><value>Друк</value></data>
+  <data name="Font" xml:space="preserve"><value>Шрифт</value></data>
+  <data name="FontSize" xml:space="preserve"><value>Розмір шрифту</value></data>
+  <data name="TextColor" xml:space="preserve"><value>Колір тексту</value></data>
+  <data name="FillColor" xml:space="preserve"><value>Колір виділення/заливки</value></data>
+  <data name="TextColorGlyph" xml:space="preserve"><value>A</value></data>
+  <data name="BoldGlyph" xml:space="preserve"><value>B</value></data>
+  <data name="ItalicGlyph" xml:space="preserve"><value>I</value></data>
+  <data name="UnderlineGlyph" xml:space="preserve"><value>U</value></data>
+  <data name="StrikethroughGlyph" xml:space="preserve"><value>S</value></data>
+  <data name="FormulaGlyph" xml:space="preserve"><value>fx</value></data>
+  <data name="Bold" xml:space="preserve"><value>Жирний</value></data>
+  <data name="Italic" xml:space="preserve"><value>Курсив</value></data>
+  <data name="Underline" xml:space="preserve"><value>Підкреслення</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Закреслення</value></data>
+  <data name="AlignLeft" xml:space="preserve"><value>Вирівняти ліворуч</value></data>
+  <data name="AlignCenter" xml:space="preserve"><value>Вирівняти по центру</value></data>
+  <data name="AlignRight" xml:space="preserve"><value>Вирівняти праворуч</value></data>
+  <data name="InsertSymbol" xml:space="preserve"><value>Вставити символ (валюта та математика)</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>Більше (формули, діаграма, рядки/стовпці)</value></data>
+  <data name="Find" xml:space="preserve"><value>Знайти...</value></data>
+  <data name="Previous" xml:space="preserve"><value>Попередній</value></data>
+  <data name="Next" xml:space="preserve"><value>Далі</value></data>
+  <data name="ReplaceWith" xml:space="preserve"><value>Замінити на</value></data>
+  <data name="Replace" xml:space="preserve"><value>Замінити</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Замінити усі</value></data>
+  <data name="CloseFindReplace" xml:space="preserve"><value>Закрити пошук і заміну</value></data>
+  <data name="Loading" xml:space="preserve"><value>Завантаження</value></data>
+  <data name="ZoomOut" xml:space="preserve"><value>Зменшити (Ctrl+-)</value></data>
+  <data name="ResetZoom" xml:space="preserve"><value>Скинути масштаб до 100% (Ctrl+0)</value></data>
+  <data name="ZoomIn" xml:space="preserve"><value>Збільшити (Ctrl++)</value></data>
+  <data name="AddSheet" xml:space="preserve"><value>Додати аркуш</value></data>
+  <data name="Sheet" xml:space="preserve"><value>Аркуш</value></data>
+  <data name="WorksheetLoadPrompt" xml:space="preserve"><value>Виберіть цю вкладку, щоб завантажити аркуш</value></data>
+  <data name="WorksheetLoadCanceled" xml:space="preserve"><value>Завантаження аркуша скасовано</value></data>
+  <data name="WorksheetLoadFailed" xml:space="preserve"><value>Не вдалося завантажити робочий аркуш</value></data>
+  <data name="StagedWorkbookMissing" xml:space="preserve"><value>Поетапна робоча книга недоступна.</value></data>
+  <data name="StagedMetadataMissing" xml:space="preserve"><value>Метадані поетапної книги недоступні.</value></data>
+  <data name="StagedReaderMissing" xml:space="preserve"><value>Поетапний засіб читання книги недоступний.</value></data>
+  <data name="MissingWorkbookPart" xml:space="preserve"><value>Відсутня частина книги &quot;{0}&quot;.</value></data>
+  <data name="UnsupportedConditionalComparison" xml:space="preserve"><value>Непідтримуване порівняння умовного формату.</value></data>
+  <data name="ColumnLettersMissing" xml:space="preserve"><value>Літери колонки не повинні бути порожніми.</value></data>
+  <data name="InvalidColumnLetter" xml:space="preserve"><value>Недійсна літера стовпця &quot;{0}&quot;.</value></data>
+  <data name="EnterTextToFind" xml:space="preserve"><value>Введіть текст для пошуку</value></data>
+  <data name="NoMatches" xml:space="preserve"><value>Немає збігів</value></data>
+  <data name="ReadOnly" xml:space="preserve"><value>Тільки читання</value></data>
+  <data name="ReplacedCount" xml:space="preserve"><value>Замінено {0:N0}</value></data>
+  <data name="FindReplaceMenu" xml:space="preserve"><value>Знайти та замінити… (Ctrl+F)</value></data>
+  <data name="InsertChartMenu" xml:space="preserve"><value>Вставити діаграму…</value></data>
+  <data name="PrintMenu" xml:space="preserve"><value>Друк</value></data>
+  <data name="AutoSumMenu" xml:space="preserve"><value>Автосума (Σ)</value></data>
+  <data name="Functions" xml:space="preserve"><value>Функції</value></data>
+  <data name="AddRow" xml:space="preserve"><value>Додати рядок</value></data>
+  <data name="AddColumn" xml:space="preserve"><value>Додати стовпець</value></data>
+  <data name="PrintFailed" xml:space="preserve"><value>Помилка друку</value></data>
+  <data name="LprMissing" xml:space="preserve"><value>Для друку потрібна команда «lpr» (частина CUPS), яка, здається, не встановлена.
+
+Встановіть його та повторіть спробу — наприклад, на Debian/Ubuntu:
+    sudo apt install cups-client
+
+Або скористайтеся «Експортувати як PDF», щоб зберегти аркуш і надрукувати його з програми перегляду PDF.</value></data>
+  <data name="LprExitFailed" xml:space="preserve"><value>Команда друку «lpr» завершилася з кодом {0}. Перевірте, чи налаштовано принтер.</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+  <data name="WorksheetLoadFailedTip" xml:space="preserve"><value>Не вдалося завантажити аркуш; натисніть, щоб повторити спробу</value></data>
+  <data name="WorksheetLoadingTip" xml:space="preserve"><value>Завантаження вибраного аркуша у фоновому режимі</value></data>
+  <data name="WorksheetLoadTip" xml:space="preserve"><value>Виберіть цю вкладку, щоб завантажити аркуш</value></data>
+  <data name="Rename" xml:space="preserve"><value>Перейменувати</value></data>
+  <data name="Delete" xml:space="preserve"><value>Видалити</value></data>
+  <data name="Currency" xml:space="preserve"><value>Валюта</value></data>
+  <data name="Math" xml:space="preserve"><value>математика</value></data>
+  <data name="Series" xml:space="preserve"><value>Серія</value></data>
+  <data name="SeriesNumber" xml:space="preserve"><value>Серія {0}</value></data>
+  <data name="FunctionMathTrig" xml:space="preserve"><value>Математика та тригонометрія</value></data>
+  <data name="FunctionStatistical" xml:space="preserve"><value>Статистичний</value></data>
+  <data name="FunctionLogical" xml:space="preserve"><value>Логічно</value></data>
+  <data name="FunctionText" xml:space="preserve"><value>Текст</value></data>
+  <data name="FunctionDateTime" xml:space="preserve"><value>Дата й час</value></data>
+  <data name="FnSum" xml:space="preserve"><value>SUM(діапазон)</value></data>
+  <data name="FnAbs" xml:space="preserve"><value>ABS(число)</value></data>
+  <data name="FnSqrt" xml:space="preserve"><value>SQRT(число)</value></data>
+  <data name="FnPower" xml:space="preserve"><value>POWER(число, ступінь)</value></data>
+  <data name="FnMod" xml:space="preserve"><value>MOD(число, дільник)</value></data>
+  <data name="FnInt" xml:space="preserve"><value>INT(число)</value></data>
+  <data name="FnRound" xml:space="preserve"><value>ROUND(число, цифри)</value></data>
+  <data name="FnRoundUp" xml:space="preserve"><value>ROUNDUP(число, цифри)</value></data>
+  <data name="FnRoundDown" xml:space="preserve"><value>ROUNDDOWN(число, цифри)</value></data>
+  <data name="FnAverage" xml:space="preserve"><value>AVERAGE(діапазон)</value></data>
+  <data name="FnMin" xml:space="preserve"><value>MIN(діапазон)</value></data>
+  <data name="FnMax" xml:space="preserve"><value>MAX(діапазон)</value></data>
+  <data name="FnCount" xml:space="preserve"><value>COUNT(діапазон)</value></data>
+  <data name="FnCountA" xml:space="preserve"><value>COUNTA(діапазон)</value></data>
+  <data name="FnIf" xml:space="preserve"><value>IF(умова, if_true, if_false)</value></data>
+  <data name="FnIfError" xml:space="preserve"><value>IFERROR(значення, значення_якщо_помилка)</value></data>
+  <data name="FnAnd" xml:space="preserve"><value>AND(a, b, …)</value></data>
+  <data name="FnOr" xml:space="preserve"><value>OR(a, b, …)</value></data>
+  <data name="FnNot" xml:space="preserve"><value>NOT(значення)</value></data>
+  <data name="FnConcat" xml:space="preserve"><value>CONCAT(текст, …)</value></data>
+  <data name="FnConcatenate" xml:space="preserve"><value>CONCATENATE(текст, …)</value></data>
+  <data name="FnLen" xml:space="preserve"><value>LEN(текст)</value></data>
+  <data name="FnLeft" xml:space="preserve"><value>LEFT(текст, кількість)</value></data>
+  <data name="FnRight" xml:space="preserve"><value>RIGHT(текст, кількість)</value></data>
+  <data name="FnMid" xml:space="preserve"><value>MID(текст, початок, кількість)</value></data>
+  <data name="FnUpper" xml:space="preserve"><value>UPPER(текст)</value></data>
+  <data name="FnLower" xml:space="preserve"><value>LOWER(текст)</value></data>
+  <data name="FnTrim" xml:space="preserve"><value>TRIM(текст)</value></data>
+  <data name="FnToday" xml:space="preserve"><value>TODAY()</value></data>
+  <data name="FnNow" xml:space="preserve"><value>NOW()</value></data>
+  <data name="FnYear" xml:space="preserve"><value>YEAR(дата)</value></data>
+  <data name="FnMonth" xml:space="preserve"><value>MONTH(дата)</value></data>
+  <data name="FnDay" xml:space="preserve"><value>DAY(дата)</value></data>
+  <data name="FnDate" xml:space="preserve"><value>DATE(рік, місяць, число)</value></data>
+  <data name="EditChart" xml:space="preserve"><value>Редагувати діаграму</value></data>
+  <data name="DeleteChart" xml:space="preserve"><value>Видалити діаграму</value></data>
+  <data name="DragToResize" xml:space="preserve"><value>Перетягніть, щоб змінити розмір</value></data>
+  <data name="SortOrFilter" xml:space="preserve"><value>Сортувати або фільтрувати {0}</value></data>
+  <data name="CtrlClickOpen" xml:space="preserve"><value>Ctrl+click, щоб відкрити: {0}</value></data>
+  <data name="InsertRowAbove" xml:space="preserve"><value>Вставте рядок вище</value></data>
+  <data name="DeleteRow" xml:space="preserve"><value>Видалити рядок</value></data>
+  <data name="SortAscending" xml:space="preserve"><value>Сортування від А до Я / від найменшого до найбільшого</value></data>
+  <data name="SortDescending" xml:space="preserve"><value>Сортування від Я до А / від найбільшого до найменшого</value></data>
+  <data name="FilterByValue" xml:space="preserve"><value>Фільтрувати за значенням</value></data>
+  <data name="ChooseValue" xml:space="preserve"><value>Виберіть значення…</value></data>
+  <data name="Blanks" xml:space="preserve"><value>(Бланки)</value></data>
+  <data name="EnterValue" xml:space="preserve"><value>Введіть значення…</value></data>
+  <data name="FilterWhereEquals" xml:space="preserve"><value>Показати рядки, де цей стовпець дорівнює:</value></data>
+  <data name="ClearColumnFilter" xml:space="preserve"><value>Очистити фільтр стовпців</value></data>
+  <data name="ShowAllRows" xml:space="preserve"><value>Показати всі рядки</value></data>
+  <data name="Save" xml:space="preserve"><value>Зберегти</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Скасувати</value></data>
+  <data name="InsertComment" xml:space="preserve"><value>Вставити коментар</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Редагувати коментар</value></data>
+  <data name="CommentPrompt" xml:space="preserve"><value>Коментар (очистіть текст, щоб видалити його):</value></data>
+  <data name="CommentAuthor" xml:space="preserve"><value>Редактор електронних таблиць</value></data>
+  <data name="Hyperlink" xml:space="preserve"><value>Гіперпосилання</value></data>
+  <data name="HyperlinkPrompt" xml:space="preserve"><value>Введіть ціль https://, http://, mailto: або #A1. Очистіть текст, щоб видалити посилання.</value></data>
+  <data name="HyperlinkInvalid" xml:space="preserve"><value>Введіть дійсну веб-адресу, адресу електронної пошти чи аркуша.</value></data>
+  <data name="NumberFormatLabel" xml:space="preserve"><value>Формат числа (пустий = загальний; приклади: #,##0.00, $#,##0.00, 0.00%)</value></data>
+  <data name="Left" xml:space="preserve"><value>Ліворуч</value></data>
+  <data name="Center" xml:space="preserve"><value>По центру</value></data>
+  <data name="Right" xml:space="preserve"><value>Вправо</value></data>
+  <data name="Alignment" xml:space="preserve"><value>Вирівнювання</value></data>
+  <data name="FontFamilyLabel" xml:space="preserve"><value>Сімейство шрифтів (порожній = за замовчуванням)</value></data>
+  <data name="FontSizePoints" xml:space="preserve"><value>Розмір шрифту (pt)</value></data>
+  <data name="TextColorHex" xml:space="preserve"><value>Колір тексту (#RRGGBB, порожній = автоматичний)</value></data>
+  <data name="FillColorHex" xml:space="preserve"><value>Колір заливки (#RRGGBB, порожній = немає)</value></data>
+  <data name="Apply" xml:space="preserve"><value>Застосувати</value></data>
+  <data name="FormatCells" xml:space="preserve"><value>Формат клітинок</value></data>
+  <data name="FontSizeInvalid" xml:space="preserve"><value>Розмір шрифту має бути від 1 до 200 пунктів.</value></data>
+  <data name="ColorInvalid" xml:space="preserve"><value>Використовуйте колір, наприклад #336699, або залиште поле порожнім.</value></data>
+  <data name="ClearContents" xml:space="preserve"><value>Очистити вміст</value></data>
+  <data name="FormatCellsMenu" xml:space="preserve"><value>Формат клітинок...</value></data>
+  <data name="HyperlinkMenu" xml:space="preserve"><value>Гіперпосилання...</value></data>
+  <data name="FilterColumnToValue" xml:space="preserve"><value>Відфільтруйте цей стовпець до цього значення</value></data>
+  <data name="RangeExample" xml:space="preserve"><value>напр. B6:G10</value></data>
+  <data name="ChartTitleOptional" xml:space="preserve"><value>Назва діаграми (необов&apos;язково)</value></data>
+  <data name="FirstRowHeaders" xml:space="preserve"><value>Перший рядок — заголовки серій</value></data>
+  <data name="FirstColumnCategories" xml:space="preserve"><value>Перший стовпець – це мітки категорій</value></data>
+  <data name="ShowLegend" xml:space="preserve"><value>Показати легенду</value></data>
+  <data name="ShowDataLabels" xml:space="preserve"><value>Показати мітки даних</value></data>
+  <data name="MinimumAuto" xml:space="preserve"><value>Мін. (авто)</value></data>
+  <data name="MaximumAuto" xml:space="preserve"><value>Макс (авто)</value></data>
+  <data name="StepAuto" xml:space="preserve"><value>Крок (авто)</value></data>
+  <data name="Create" xml:space="preserve"><value>Створити</value></data>
+  <data name="ChartType" xml:space="preserve"><value>Тип діаграми</value></data>
+  <data name="DataRange" xml:space="preserve"><value>Діапазон даних</value></data>
+  <data name="DataSource" xml:space="preserve"><value>Джерело даних</value></data>
+  <data name="SeriesValues" xml:space="preserve"><value>Значення</value></data>
+  <data name="SeriesRangeExample" xml:space="preserve"><value>напр. G9:G10 або C7, C10</value></data>
+  <data name="CategoriesRangeExample" xml:space="preserve"><value>Діапазон (E9:E10) або імена (Дохід, Витрати)</value></data>
+  <data name="Categories" xml:space="preserve"><value>Категорії</value></data>
+  <data name="Title" xml:space="preserve"><value>Заголовок</value></data>
+  <data name="ValueAxisFormat" xml:space="preserve"><value>Формат осі значень</value></data>
+  <data name="ValueAxisScale" xml:space="preserve"><value>Шкала осі значень</value></data>
+  <data name="InsertChart" xml:space="preserve"><value>Вставте діаграму</value></data>
+  <data name="RangeInvalid" xml:space="preserve"><value>Введіть допустимий діапазон, наприклад B6:G10.</value></data>
+  <data name="SeriesRangesInvalid" xml:space="preserve"><value>Введіть дійсні клітинки/діапазони значень, наприклад G9:G10 або C7, C10.</value></data>
+  <data name="ChartLine" xml:space="preserve"><value>Лінія</value></data>
+  <data name="ChartSpline" xml:space="preserve"><value>Сплайн</value></data>
+  <data name="ChartStepLine" xml:space="preserve"><value>Крок лінія</value></data>
+  <data name="ChartArea" xml:space="preserve"><value>Площа</value></data>
+  <data name="ChartStackedArea" xml:space="preserve"><value>Складена область</value></data>
+  <data name="ChartBar" xml:space="preserve"><value>Рядок</value></data>
+  <data name="ChartStackedBar" xml:space="preserve"><value>Багатошаровий бар</value></data>
+  <data name="ChartScatter" xml:space="preserve"><value>Скаттер</value></data>
+  <data name="ChartPie" xml:space="preserve"><value>пиріг</value></data>
+  <data name="ChartDonut" xml:space="preserve"><value>Пончик</value></data>
+  <data name="ChartRadar" xml:space="preserve"><value>радар</value></data>
+  <data name="AxisNumber" xml:space="preserve"><value>Номер</value></data>
+  <data name="AxisCurrency" xml:space="preserve"><value>Валюта</value></data>
+  <data name="AxisPercent" xml:space="preserve"><value>відсоток</value></data>
+  <data name="SampleTitle" xml:space="preserve"><value>Редактор електронних таблиць</value></data>
+  <data name="SampleFileMenu" xml:space="preserve"><value>_Файл</value></data>
+  <data name="SampleNewMenu" xml:space="preserve"><value>_Новий</value></data>
+  <data name="SampleOpenMenu" xml:space="preserve"><value>_Відкрити…</value></data>
+  <data name="SampleSaveMenu" xml:space="preserve"><value>_Зберегти</value></data>
+  <data name="SampleSaveAsMenu" xml:space="preserve"><value>_Зберегти як…</value></data>
+  <data name="SampleExportPdfMenu" xml:space="preserve"><value>_Експортувати як PDF…</value></data>
+  <data name="SamplePrintMenu" xml:space="preserve"><value>_Друк…</value></data>
+  <data name="SampleCloseMenu" xml:space="preserve"><value>_Закрити</value></data>
+  <data name="ExcelFileFilter" xml:space="preserve"><value>Книга Excel (*.xlsx)</value></data>
+  <data name="TextFileFilter" xml:space="preserve"><value>Текст (TSV/CSV)</value></data>
+  <data name="PdfFileFilter" xml:space="preserve"><value>PDF документ (*.pdf)</value></data>
+  <data name="SampleSheetPdfName" xml:space="preserve"><value>аркуш.pdf</value></data>
+  <data name="SampleSheetXlsxName" xml:space="preserve"><value>аркуш.xlsx</value></data>
+  <data name="ExportPdfTitle" xml:space="preserve"><value>Експортувати як PDF</value></data>
+  <data name="OpenSpreadsheetTitle" xml:space="preserve"><value>Відкрити електронну таблицю</value></data>
+  <data name="OpenFailed" xml:space="preserve"><value>Не вдалося відкрити</value></data>
+  <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Зберегти електронну таблицю</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Не вдалося зберегти</value></data>
+  <data name="SpreadsheetDocument" xml:space="preserve"><value>Таблиця</value></data>
+</root>

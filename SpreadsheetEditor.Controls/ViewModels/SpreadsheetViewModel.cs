@@ -1,5 +1,7 @@
 namespace SpreadsheetEditor.Controls.ViewModels;
 
+using global::SpreadsheetEditor.Controls.Localization;
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -25,7 +27,7 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     // The sheet's tab name (shown in the bottom tab strip).
     [ObservableProperty]
-    private string name = "Sheet1";
+    private string name = EditorText.Get(EditorString.Sheet) + "1";
 
     // Optional color shown on the worksheet tab (imported from Excel and preserved on save).
     [ObservableProperty]
@@ -497,7 +499,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         List<ChartSeriesSpec> series = new();
         for (int c = valueColStart; c < range.Column + range.ColumnSpan; c++)
         {
-            string seriesTitle = header ? this.GetCell(new CellAddress(range.Row, c))?.DisplayText ?? "" : $"Series {c - valueColStart + 1}";
+            string seriesTitle = header ? this.GetCell(new CellAddress(range.Row, c))?.DisplayText ?? "" : EditorText.Format(EditorString.SeriesNumber, c - valueColStart + 1);
             series.Add(new ChartSeriesSpec(seriesTitle, new CellRange(dataRow, c, dataRowSpan, 1)));
         }
 

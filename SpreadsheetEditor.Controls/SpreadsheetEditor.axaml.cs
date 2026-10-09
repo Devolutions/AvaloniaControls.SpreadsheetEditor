@@ -25,10 +25,13 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 
 using global::SpreadsheetEditor.Controls.Formulas;
+using global::SpreadsheetEditor.Controls.Localization;
 using global::SpreadsheetEditor.Controls.Models;
 using global::SpreadsheetEditor.Controls.Printing;
 using global::SpreadsheetEditor.Controls.ViewModels;
 using global::SpreadsheetEditor.Controls.Xlsx;
+using S = global::SpreadsheetEditor.Controls.Localization.EditorString;
+using static global::SpreadsheetEditor.Controls.Localization.EditorText;
 
 // A reusable spreadsheet editor built on a custom SpreadsheetGrid (not the Avalonia
 // DataGrid) so cells can span (merge) and host rich content. The grid renders each cell's text via
@@ -64,34 +67,34 @@ public partial class SpreadsheetEditor : UserControl
     private static readonly int[] FontSizes = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72 };
 
     // Engine-supported functions grouped for the function library (name + signature).
-    private static readonly (string Category, (string Name, string Signature)[] Functions)[] FunctionLibrary =
+    private static readonly (EditorString Category, (string Name, EditorString Signature)[] Functions)[] FunctionLibrary =
     {
-        ("Math & Trig", new[]
+        (S.FunctionMathTrig, new[]
         {
-            ("SUM", "SUM(range)"), ("ABS", "ABS(number)"), ("SQRT", "SQRT(number)"),
-            ("POWER", "POWER(number, power)"), ("MOD", "MOD(number, divisor)"), ("INT", "INT(number)"),
-            ("ROUND", "ROUND(number, digits)"), ("ROUNDUP", "ROUNDUP(number, digits)"), ("ROUNDDOWN", "ROUNDDOWN(number, digits)"),
+            ("SUM", S.FnSum), ("ABS", S.FnAbs), ("SQRT", S.FnSqrt),
+            ("POWER", S.FnPower), ("MOD", S.FnMod), ("INT", S.FnInt),
+            ("ROUND", S.FnRound), ("ROUNDUP", S.FnRoundUp), ("ROUNDDOWN", S.FnRoundDown),
         }),
-        ("Statistical", new[]
+        (S.FunctionStatistical, new[]
         {
-            ("AVERAGE", "AVERAGE(range)"), ("MIN", "MIN(range)"), ("MAX", "MAX(range)"),
-            ("COUNT", "COUNT(range)"), ("COUNTA", "COUNTA(range)"),
+            ("AVERAGE", S.FnAverage), ("MIN", S.FnMin), ("MAX", S.FnMax),
+            ("COUNT", S.FnCount), ("COUNTA", S.FnCountA),
         }),
-        ("Logical", new[]
+        (S.FunctionLogical, new[]
         {
-            ("IF", "IF(condition, if_true, if_false)"), ("IFERROR", "IFERROR(value, value_if_error)"),
-            ("AND", "AND(a, b, …)"), ("OR", "OR(a, b, …)"), ("NOT", "NOT(value)"),
+            ("IF", S.FnIf), ("IFERROR", S.FnIfError),
+            ("AND", S.FnAnd), ("OR", S.FnOr), ("NOT", S.FnNot),
         }),
-        ("Text", new[]
+        (S.FunctionText, new[]
         {
-            ("CONCAT", "CONCAT(text, …)"), ("CONCATENATE", "CONCATENATE(text, …)"), ("LEN", "LEN(text)"),
-            ("LEFT", "LEFT(text, count)"), ("RIGHT", "RIGHT(text, count)"), ("MID", "MID(text, start, count)"),
-            ("UPPER", "UPPER(text)"), ("LOWER", "LOWER(text)"), ("TRIM", "TRIM(text)"),
+            ("CONCAT", S.FnConcat), ("CONCATENATE", S.FnConcatenate), ("LEN", S.FnLen),
+            ("LEFT", S.FnLeft), ("RIGHT", S.FnRight), ("MID", S.FnMid),
+            ("UPPER", S.FnUpper), ("LOWER", S.FnLower), ("TRIM", S.FnTrim),
         }),
-        ("Date & Time", new[]
+        (S.FunctionDateTime, new[]
         {
-            ("TODAY", "TODAY()"), ("NOW", "NOW()"), ("YEAR", "YEAR(date)"),
-            ("MONTH", "MONTH(date)"), ("DAY", "DAY(date)"), ("DATE", "DATE(year, month, day)"),
+            ("TODAY", S.FnToday), ("NOW", S.FnNow), ("YEAR", S.FnYear),
+            ("MONTH", S.FnMonth), ("DAY", S.FnDay), ("DATE", S.FnDate),
         }),
     };
 
@@ -135,7 +138,7 @@ public partial class SpreadsheetEditor : UserControl
         this.InitializeComponent();
 
         this.vm.Initialize(this.InitialRowCount, this.InitialColumnCount);
-        this.vm.Name = "Sheet1";
+        this.vm.Name = Get(S.Sheet) + "1";
         this.sheets.Add(this.vm);
         this.ConfigureWorkbookFormulaResolution(this.vm);
         this.DataContext = this.vm;
@@ -318,7 +321,7 @@ public partial class SpreadsheetEditor : UserControl
     {
         this.CancelWorkbookLoad();
         this.DetachActiveCell();
-        this.vm = new SpreadsheetViewModel { Name = "Sheet1" };
+        this.vm = new SpreadsheetViewModel { Name = Get(S.Sheet) + "1" };
         this.vm.Initialize(rows, columns);
         this.sheets.Clear();
         this.sheets.Add(this.vm);
@@ -420,12 +423,12 @@ public partial class SpreadsheetEditor : UserControl
         }
         catch (OperationCanceledException)
         {
-            this.StopStagedLoading(generation, "Worksheet loading canceled");
+            this.StopStagedLoading(generation, Get(S.WorksheetLoadCanceled));
             throw;
         }
         catch
         {
-            this.StopStagedLoading(generation, "Worksheet could not be loaded");
+            this.StopStagedLoading(generation, Get(S.WorksheetLoadFailed));
             throw;
         }
         finally
@@ -475,7 +478,7 @@ public partial class SpreadsheetEditor : UserControl
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
     // widths, merges, images, charts, data bars, and names.
     public void LoadSheet(SheetData sheet) =>
-        this.LoadWorkbook(new[] { ("Sheet1", sheet) });
+        this.LoadWorkbook(new[] { (Get(S.Sheet) + "1", sheet) });
 
     // Replaces the whole workbook with the given named sheets (e.g. every worksheet of an
     // opened .xlsx) and opens the first one.
@@ -497,7 +500,7 @@ public partial class SpreadsheetEditor : UserControl
         List<SpreadsheetViewModel> prepared = new(sheets.Count);
         foreach ((string name, SheetData data) in sheets)
         {
-            string desired = string.IsNullOrWhiteSpace(name) ? "Sheet" : name.Trim();
+            string desired = string.IsNullOrWhiteSpace(name) ? Get(S.Sheet) : name.Trim();
             string unique = desired;
             for (int suffix = 2; !names.Add(unique); suffix++)
             {
@@ -542,7 +545,7 @@ public partial class SpreadsheetEditor : UserControl
         for (int index = 0; index < preview.Sheets.Count; index++)
         {
             XlsxSheetPreview metadata = preview.Sheets[index];
-            string desired = string.IsNullOrWhiteSpace(metadata.Name) ? "Sheet" : metadata.Name.Trim();
+            string desired = string.IsNullOrWhiteSpace(metadata.Name) ? Get(S.Sheet) : metadata.Name.Trim();
             string unique = desired;
             for (int suffix = 2; !names.Add(unique); suffix++)
             {
@@ -557,7 +560,7 @@ public partial class SpreadsheetEditor : UserControl
 
             SpreadsheetViewModel placeholder = new() { Name = unique };
             placeholder.Initialize(1, 1);
-            placeholder.GetCell(new CellAddress(0, 0))!.Text = "Select this tab to load the worksheet";
+            placeholder.GetCell(new CellAddress(0, 0))!.Text = Get(S.WorksheetLoadPrompt);
             placeholder.TabColor = metadata.TabColor;
             staged.Add(placeholder);
         }
@@ -630,11 +633,11 @@ public partial class SpreadsheetEditor : UserControl
         SpreadsheetViewModel current = target;
         try
         {
-            byte[] bytes = this.stagedWorkbookBytes ?? throw new InvalidOperationException("The staged workbook is unavailable.");
+            byte[] bytes = this.stagedWorkbookBytes ?? throw new InvalidOperationException(Get(S.StagedWorkbookMissing));
             IReadOnlyList<XlsxSheetPreview> metadata = this.stagedSheetMetadata ??
-                throw new InvalidOperationException("The staged workbook metadata is unavailable.");
+                throw new InvalidOperationException(Get(S.StagedMetadataMissing));
             XlsxWorkbookReader reader = this.stagedWorkbookReader ??
-                throw new InvalidOperationException("The staged workbook reader is unavailable.");
+                throw new InvalidOperationException(Get(S.StagedReaderMissing));
             if (sheetIndex < 0 || sheetIndex >= metadata.Count)
             {
                 throw new ArgumentOutOfRangeException(nameof(sheetIndex));
@@ -701,13 +704,13 @@ public partial class SpreadsheetEditor : UserControl
         catch (OperationCanceledException)
         {
             await Dispatcher.UIThread.InvokeAsync(
-                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, "Worksheet loading canceled"),
+                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, Get(S.WorksheetLoadCanceled)),
                 DispatcherPriority.Background);
         }
         catch
         {
             await Dispatcher.UIThread.InvokeAsync(
-                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, "Worksheet could not be loaded"),
+                () => this.MarkStagedSheetLoadFailed(generation, sheetIndex, Get(S.WorksheetLoadFailed)),
                 DispatcherPriority.Background);
         }
         finally
@@ -1091,7 +1094,7 @@ public partial class SpreadsheetEditor : UserControl
         SpreadsheetViewModel? sheet = this.stagedSheetIndexes
             .FirstOrDefault(pair => pair.Value == sheetIndex).Key;
         CellViewModel? cell = sheet?.GetCell(new CellAddress(0, 0));
-        if (cell?.Text == "Select this tab to load the worksheet")
+        if (cell?.Text == Get(S.WorksheetLoadPrompt))
         {
             cell.Text = placeholderText;
         }
@@ -1133,7 +1136,7 @@ public partial class SpreadsheetEditor : UserControl
         foreach (SpreadsheetViewModel sheet in this.loadingSheets)
         {
             CellViewModel? cell = sheet.GetCell(new CellAddress(0, 0));
-            if (cell?.Text == "Select this tab to load the worksheet")
+            if (cell?.Text == Get(S.WorksheetLoadPrompt))
             {
                 cell.Text = placeholderText;
             }
@@ -1210,7 +1213,7 @@ public partial class SpreadsheetEditor : UserControl
         string query = this.FindTextBox.Text ?? string.Empty;
         if (string.IsNullOrEmpty(query) || this.vm.RowCount == 0 || this.vm.ColumnCount == 0)
         {
-            this.FindStatusText.Text = "Enter text to find";
+            this.FindStatusText.Text = Get(S.EnterTextToFind);
             return;
         }
 
@@ -1236,7 +1239,7 @@ public partial class SpreadsheetEditor : UserControl
             }
         }
 
-        this.FindStatusText.Text = "No matches";
+        this.FindStatusText.Text = Get(S.NoMatches);
     }
 
     private static bool CellContains(CellViewModel cell, string query) =>
@@ -1249,7 +1252,7 @@ public partial class SpreadsheetEditor : UserControl
         string query = this.FindTextBox.Text ?? string.Empty;
         if (this.IsReadOnly || string.IsNullOrEmpty(query))
         {
-            this.FindStatusText.Text = this.IsReadOnly ? "Read-only" : "Enter text to find";
+            this.FindStatusText.Text = Get(this.IsReadOnly ? S.ReadOnly : S.EnterTextToFind);
             return;
         }
 
@@ -1270,7 +1273,7 @@ public partial class SpreadsheetEditor : UserControl
         string query = this.FindTextBox.Text ?? string.Empty;
         if (this.IsReadOnly || string.IsNullOrEmpty(query))
         {
-            this.FindStatusText.Text = this.IsReadOnly ? "Read-only" : "Enter text to find";
+            this.FindStatusText.Text = Get(this.IsReadOnly ? S.ReadOnly : S.EnterTextToFind);
             return;
         }
 
@@ -1294,7 +1297,7 @@ public partial class SpreadsheetEditor : UserControl
 
         if (changes.Count == 0)
         {
-            this.FindStatusText.Text = "No matches";
+            this.FindStatusText.Text = Get(S.NoMatches);
             return;
         }
 
@@ -1306,7 +1309,7 @@ public partial class SpreadsheetEditor : UserControl
                 cell.Text = text;
             }
         });
-        this.FindStatusText.Text = $"Replaced {total:N0}";
+        this.FindStatusText.Text = Format(S.ReplacedCount, total);
     }
 
     private static int CountOccurrences(string text, string query)
@@ -1330,7 +1333,7 @@ public partial class SpreadsheetEditor : UserControl
     // Adds a new blank sheet at the end and switches to it.
     public void AddSheet()
     {
-        SpreadsheetViewModel sheetVm = new() { Name = this.UniqueName("Sheet") };
+        SpreadsheetViewModel sheetVm = new() { Name = this.UniqueName(Get(S.Sheet)) };
         sheetVm.Initialize(this.InitialRowCount, this.InitialColumnCount);
         this.ConfigureWorkbookFormulaResolution(sheetVm);
         this.sheets.Add(sheetVm);
@@ -1373,24 +1376,24 @@ public partial class SpreadsheetEditor : UserControl
     {
         MenuFlyout menu = new();
 
-        MenuItem find = new() { Header = "Find and replace… (Ctrl+F)" };
+        MenuItem find = new() { Header = Get(S.FindReplaceMenu) };
         find.Click += (_, _) => this.ShowFindReplace(focusReplace: false);
         menu.Items.Add(find);
         menu.Items.Add(new Separator());
 
-        MenuItem chart = new() { Header = "Insert chart…" };
+        MenuItem chart = new() { Header = Get(S.InsertChartMenu) };
         chart.Click += async (_, _) => await this.ShowChartBuilderAsync();
         menu.Items.Add(chart);
 
-        MenuItem print = new() { Header = "Print…" };
+        MenuItem print = new() { Header = Get(S.PrintMenu) };
         print.Click += (_, _) => this.PrintPdf();
         menu.Items.Add(print);
 
-        MenuItem autoSum = new() { Header = "AutoSum (Σ)" };
+        MenuItem autoSum = new() { Header = Get(S.AutoSumMenu) };
         autoSum.Click += (_, _) => this.AutoSum();
         menu.Items.Add(autoSum);
 
-        MenuItem functions = new() { Header = "Functions" };
+        MenuItem functions = new() { Header = Get(S.Functions) };
         foreach (MenuItem category in this.BuildFunctionMenuItems())
         {
             functions.Items.Add(category);
@@ -1399,11 +1402,11 @@ public partial class SpreadsheetEditor : UserControl
         menu.Items.Add(functions);
         menu.Items.Add(new Separator());
 
-        MenuItem addRow = new() { Header = "Add row" };
+        MenuItem addRow = new() { Header = Get(S.AddRow) };
         addRow.Click += (_, _) => this.AddRow();
         menu.Items.Add(addRow);
 
-        MenuItem addColumn = new() { Header = "Add column" };
+        MenuItem addColumn = new() { Header = Get(S.AddColumn) };
         addColumn.Click += (_, _) => this.AddColumn();
         menu.Items.Add(addColumn);
 
@@ -1415,13 +1418,13 @@ public partial class SpreadsheetEditor : UserControl
     private List<MenuItem> BuildFunctionMenuItems()
     {
         List<MenuItem> categories = new();
-        foreach ((string category, (string Name, string Signature)[] functions) in FunctionLibrary)
+        foreach ((EditorString category, (string Name, EditorString Signature)[] functions) in FunctionLibrary)
         {
-            MenuItem group = new() { Header = category };
-            foreach ((string name, string signature) in functions)
+            MenuItem group = new() { Header = Get(category) };
+            foreach ((string name, EditorString signature) in functions)
             {
                 MenuItem item = new() { Header = name };
-                ToolTip.SetTip(item, signature);
+                ToolTip.SetTip(item, Get(signature));
                 string fn = name;
                 item.Click += (_, _) => this.InsertFunction(fn);
                 group.Items.Add(item);
@@ -1508,10 +1511,7 @@ public partial class SpreadsheetEditor : UserControl
     public void ResetZoom() => this.Grid.ResetZoom();
 
     // Message shown when the CUPS `lpr` command isn't available on Linux/macOS.
-    private const string LprMissingMessage =
-        "Printing requires the 'lpr' command (part of CUPS), which doesn't appear to be installed.\n\n" +
-        "Install it and try again — for example, on Debian/Ubuntu:\n    sudo apt install cups-client\n\n" +
-        "Alternatively, use \"Export as PDF\" to save the sheet and print it from a PDF viewer.";
+    private static string LprMissingMessage => Get(S.LprMissing);
 
     // Prints the active sheet. On Windows this shows the native Windows print dialog (comdlg32
     // PrintDlg) and prints the rendered pages to the chosen printer via GDI. On Linux/macOS it writes
@@ -1535,7 +1535,7 @@ public partial class SpreadsheetEditor : UserControl
         }
         catch (Exception ex)
         {
-            _ = this.ShowMessageAsync("Print failed", ex.Message);
+            _ = this.ShowMessageAsync(Get(S.PrintFailed), ex.Message);
         }
     }
 
@@ -1558,7 +1558,7 @@ public partial class SpreadsheetEditor : UserControl
             Process? process = Process.Start(info);
             if (process is null)
             {
-                await this.ShowMessageAsync("Print failed", LprMissingMessage);
+                await this.ShowMessageAsync(Get(S.PrintFailed), LprMissingMessage);
                 return;
             }
 
@@ -1567,20 +1567,20 @@ public partial class SpreadsheetEditor : UserControl
             if (process.ExitCode != 0)
             {
                 await this.ShowMessageAsync(
-                    "Print failed",
+                    Get(S.PrintFailed),
                     string.IsNullOrWhiteSpace(error)
-                        ? $"The print command 'lpr' exited with code {process.ExitCode}. Check that a printer is configured."
+                        ? Format(S.LprExitFailed, process.ExitCode)
                         : error.Trim());
             }
         }
         catch (Win32Exception)
         {
             // lpr isn't on PATH — the most common cause on a minimal Linux install.
-            await this.ShowMessageAsync("Print failed", LprMissingMessage);
+            await this.ShowMessageAsync(Get(S.PrintFailed), LprMissingMessage);
         }
         catch (Exception ex)
         {
-            await this.ShowMessageAsync("Print failed", ex.Message);
+            await this.ShowMessageAsync(Get(S.PrintFailed), ex.Message);
         }
     }
 
@@ -1593,7 +1593,7 @@ public partial class SpreadsheetEditor : UserControl
         }
 
         TextBlock text = new() { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
-        Button ok = new() { Content = "OK", IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
+        Button ok = new() { Content = Get(S.OK), IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
         StackPanel panel = new() { Margin = new Thickness(16), Spacing = 8, Children = { text, ok } };
         Window dialog = new()
         {
@@ -2061,7 +2061,7 @@ public partial class SpreadsheetEditor : UserControl
         List<(string Title, string Range)> sources = new();
         foreach (ChartSeriesSpec series in chart.Series)
         {
-            string name = string.IsNullOrWhiteSpace(series.Title) ? "Series" : series.Title;
+            string name = string.IsNullOrWhiteSpace(series.Title) ? Get(S.Series) : series.Title;
             sources.Add((name, series.RangesA1));
         }
 
@@ -2238,7 +2238,7 @@ public partial class SpreadsheetEditor : UserControl
     // Returns desired, suffixed (e.g. "Sheet2") to stay unique among sheets.
     private string UniqueName(string desired, SpreadsheetViewModel? except = null)
     {
-        desired = string.IsNullOrWhiteSpace(desired) ? "Sheet" : desired.Trim();
+        desired = string.IsNullOrWhiteSpace(desired) ? Get(S.Sheet) : desired.Trim();
         bool Taken(string n) => this.sheets.Any(s => !ReferenceEquals(s, except) && s.Name.Equals(n, StringComparison.OrdinalIgnoreCase));
         if (!Taken(desired))
         {
@@ -2314,15 +2314,15 @@ public partial class SpreadsheetEditor : UserControl
         };
         if (failed)
         {
-            ToolTip.SetTip(tab, "Worksheet loading failed; click to retry");
+            ToolTip.SetTip(tab, Get(S.WorksheetLoadFailedTip));
         }
         else if (loading)
         {
-            ToolTip.SetTip(tab, "Loading selected worksheet in the background");
+            ToolTip.SetTip(tab, Get(S.WorksheetLoadingTip));
         }
         else if (pending)
         {
-            ToolTip.SetTip(tab, "Select this tab to load the worksheet");
+            ToolTip.SetTip(tab, Get(S.WorksheetLoadTip));
         }
         tab.Click += async (_, _) => await this.SwitchToSheetAsync(sheet);
 
@@ -2337,9 +2337,9 @@ public partial class SpreadsheetEditor : UserControl
 
         // Right-click: Rename / Delete.
         MenuFlyout menu = new();
-        MenuItem rename = new() { Header = "Rename" };
+        MenuItem rename = new() { Header = Get(S.Rename) };
         rename.Click += (_, _) => this.BeginRenameTab(sheet, tab);
-        MenuItem delete = new() { Header = "Delete", IsEnabled = this.sheets.Count > 1 };
+        MenuItem delete = new() { Header = Get(S.Delete), IsEnabled = this.sheets.Count > 1 };
         delete.Click += (_, _) => this.DeleteSheet(sheet);
         menu.Items.Add(rename);
         menu.Items.Add(delete);
@@ -2570,8 +2570,8 @@ public partial class SpreadsheetEditor : UserControl
     private Flyout BuildSymbolFlyout()
     {
         StackPanel root = new() { Spacing = 6, MaxWidth = 270 };
-        root.Children.Add(this.SymbolSection("Currency", CurrencySymbols));
-        root.Children.Add(this.SymbolSection("Math", MathSymbols));
+        root.Children.Add(this.SymbolSection(Get(S.Currency), CurrencySymbols));
+        root.Children.Add(this.SymbolSection(Get(S.Math), MathSymbols));
         return new Flyout { Content = root };
     }
 
