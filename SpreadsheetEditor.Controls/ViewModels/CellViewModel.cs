@@ -61,6 +61,9 @@ public partial class CellViewModel : ObservableObject
     [ObservableProperty]
     private TextAlignment textAlignment = TextAlignment.Left;
 
+    [ObservableProperty]
+    private bool wrapText;
+
     // The computed result of a formula cell (set by the engine); null for non-formula cells.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EffectiveRuns))]
@@ -88,6 +91,8 @@ public partial class CellViewModel : ObservableObject
     // The unrounded cached number behind a formula's display text. Conditional formatting and
     // data bars compare this value, not a percentage rounded for display (e.g. 90.04% → 90.0%).
     public double? CachedNumericValue { get; set; }
+
+    public CellValue? CachedFormulaValue { get; set; }
 
     public double? NumericValue => this.IsFormula
         ? this.CachedNumericValue
@@ -262,6 +267,7 @@ public partial class CellViewModel : ObservableObject
     partial void OnTextChanged(string value)
     {
         this.CachedNumericValue = null;
+        this.CachedFormulaValue = null;
         if (!this.applyingRuns)
         {
             this.runs = null;
@@ -309,7 +315,8 @@ public partial class CellViewModel : ObservableObject
             this.Comment,
             this.Hyperlink,
             this.CommentAuthor,
-            this.IsFormula ? this.CachedNumericValue : null);
+            this.IsFormula ? this.CachedNumericValue : null)
+        { WrapText = this.WrapText, FormulaValue = this.IsFormula ? this.CachedFormulaValue : null };
 
     public void ApplyData(CellData data)
     {
@@ -323,13 +330,19 @@ public partial class CellViewModel : ObservableObject
         this.BackgroundColor = data.Background;
         this.FontSize = data.FontSize > 0 ? data.FontSize : DefaultFontSize;
         this.TextAlignment = data.Alignment;
+        this.WrapText = data.WrapText;
         this.NumberFormat = data.NumberFormat;
         this.Comment = data.Comment;
         this.CommentAuthor = data.CommentAuthor;
         this.Hyperlink = data.Hyperlink;
         this.FontFamily = data.FontFamily;
-        this.CachedNumericValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaNumericValue : null;
-        this.ComputedValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaResult : null;
+        this.CachedFormulaValue = FormulaEngine.IsFormula(data.Text) ? data.FormulaValue : null;
+        this.CachedNumericValue = this.CachedFormulaValue is { Kind: CellValueKind.Number } number
+            ? number.Number : FormulaEngine.IsFormula(data.Text) ? data.FormulaNumericValue : null;
+        this.ComputedValue = FormulaEngine.IsFormula(data.Text)
+            ? data.FormulaResult ?? (this.CachedFormulaValue is { Kind: CellValueKind.Number } numeric
+                ? NumberFormatter.Format(numeric.Number, data.NumberFormat) : this.CachedFormulaValue?.Display())
+            : null;
         this.OnPropertyChanged(nameof(this.EffectiveRuns));
     }
 }

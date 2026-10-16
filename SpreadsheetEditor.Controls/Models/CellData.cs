@@ -1,6 +1,7 @@
 namespace SpreadsheetEditor.Controls.Models;
 
 using Avalonia.Media;
+using global::SpreadsheetEditor.Controls.Formulas;
 
 // A transport record for a cell's value + whole-cell formatting. Used to move data between the
 // control and host-app serializers (TSV plain text, or XLSX with styles) without exposing the
@@ -24,5 +25,10 @@ public readonly record struct CellData(
     string? CommentAuthor = null,
     double? FormulaNumericValue = null)
 {
+    public bool WrapText { get; init; }
+
+    // The unformatted cached result keeps numbers, text, booleans and errors distinct on save.
+    public CellValue? FormulaValue { get; init; }
+
     public static CellData Plain(string text) => new(text, false, false, false, null, null);
 }

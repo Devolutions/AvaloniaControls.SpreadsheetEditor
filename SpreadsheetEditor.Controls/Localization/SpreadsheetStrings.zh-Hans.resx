@@ -150,6 +150,7 @@
   <data name="Center" xml:space="preserve"><value>居中</value></data>
   <data name="Right" xml:space="preserve"><value>右</value></data>
   <data name="Alignment" xml:space="preserve"><value>对齐</value></data>
+  <data name="WrapText" xml:space="preserve"><value>自动换行</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>字体系列（空白=默认）</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>字体大小（磅）</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>文本颜色（#RRGGBB，空白=自动）</value></data>

@@ -150,6 +150,7 @@ Alternatif olarak, sayfayı kaydetmek ve PDF görüntüleyiciden yazdırmak içi
   <data name="Center" xml:space="preserve"><value>Orta</value></data>
   <data name="Right" xml:space="preserve"><value>Sağ</value></data>
   <data name="Alignment" xml:space="preserve"><value>Hizalama</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Metni kaydır</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Yazı tipi ailesi (boş = varsayılan)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Yazı tipi boyutu (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Metin rengi (#RRGGBB, boş = otomatik)</value></data>

@@ -6,10 +6,13 @@ using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Themes.Fluent;
+using Avalonia.VisualTree;
 
 using ClosedXML.Excel;
 
@@ -32,8 +35,10 @@ public sealed class TestApp : Application
 
 public sealed class TestAppBuilder
 {
+    // Row-fit tests need the same font metrics and text shaping as the desktop renderer.
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        AppBuilder.Configure<TestApp>().UseSkia()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }
 
 public sealed class WorkbookTests
@@ -216,6 +221,115 @@ public sealed class WorkbookTests
         editor.SaveXlsx(secondSave);
         secondSave.Position = 0;
         Assert.Equal("after save", XlsxFile.ReadWorkbook(secondSave)[0].Data.Cells[0][0].Text);
+    }
+
+    [AvaloniaFact]
+    public async Task WrappedHeaderAndRowHeightSurvivePreviewAndSave()
+    {
+        using XLWorkbook workbook = new();
+        IXLWorksheet worksheet = workbook.Worksheets.Add("Headers");
+        worksheet.Cell(2, 1).Value = "Long column heading";
+        worksheet.Cell(2, 1).Style.Alignment.WrapText = true;
+        worksheet.Row(2).Height = 28.5;
+        using MemoryStream source = new();
+        workbook.SaveAs(source);
+        source.Position = 0;
+
+        SheetData full = XlsxFile.Read(source);
+        Assert.True(full.Cells[1][0].WrapText);
+        Assert.InRange(full.RowHeights[1], 37.9, 38.1);
+
+        source.Position = 0;
+        EditorControl editor = new();
+        await editor.OpenXlsxAsync(source);
+        Assert.True(editor.ViewModel.Rows[1].Cells[0].WrapText);
+        Assert.InRange(editor.ViewModel.Rows[1].Height!.Value, 37.9, 38.1);
+
+        using MemoryStream saved = new();
+        await editor.SaveXlsxAsync(saved);
+        saved.Position = 0;
+        using XLWorkbook reopened = new(saved);
+        IXLWorksheet savedSheet = reopened.Worksheet("Headers");
+        Assert.True(savedSheet.Cell(2, 1).Style.Alignment.WrapText);
+        Assert.InRange(savedSheet.Row(2).Height, 28.4, 28.6);
+    }
+
+    [AvaloniaFact]
+    public void WrappedCellsUseMultipleLinesWhenNoRowHeightIsSpecified()
+    {
+        const string heading = "Long wrapped heading with several words";
+        EditorControl editor = new();
+        editor.LoadSheet(new SheetData
+        {
+            Cells = new[] { new[] { CellData.Plain(heading) with { WrapText = true } } },
+            ColumnWidths = new[] { 80d },
+        });
+        Window window = new() { Content = editor, Width = 500, Height = 300 };
+        window.Show();
+        window.UpdateLayout();
+
+        SpreadsheetGrid grid = editor.FindControl<SpreadsheetGrid>("Grid")!;
+        TextBlock text = Assert.Single(grid.GetVisualDescendants().OfType<TextBlock>(),
+            block => block.Inlines?.OfType<Run>().Any(run => run.Text == heading) == true);
+        Assert.Equal(TextWrapping.Wrap, text.TextWrapping);
+        Assert.True(text.TextLayout.TextLines.Count > 1);
+        Assert.True(text.TextLayout.TextLines.Sum(line => line.Length) >= heading.Length,
+            "Every word must be included in the wrapped text layout.");
+        Assert.True(text.Bounds.Height > 22);
+        window.Close();
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WrappedHeaderDisplaysEveryWordWithinAnExcelRowHeight(bool hasFilter)
+    {
+        const string heading = "Avg session (min)";
+        EditorControl editor = new();
+        editor.LoadSheet(new SheetData
+        {
+            Cells = new[] { new[] { CellData.Plain(heading) with
+            {
+                WrapText = true,
+                Bold = true,
+                FontFamily = "Tahoma",
+                FontSize = 11 * 4.0 / 3.0,
+                Alignment = TextAlignment.Center,
+            } } },
+            ColumnWidths = new[] { hasFilter ? 143d : 124d },
+            RowHeights = new[] { 28 * 4.0 / 3.0 },
+            AutoFilterRange = hasFilter ? new CellRange(0, 0, 1, 1) : null,
+        });
+        Window window = new() { Content = editor, Width = 500, Height = 300 };
+        window.Show();
+        window.UpdateLayout();
+
+        SpreadsheetGrid grid = editor.FindControl<SpreadsheetGrid>("Grid")!;
+        TextBlock text = Assert.Single(grid.GetVisualDescendants().OfType<TextBlock>(),
+            block => block.Inlines?.OfType<Run>().Any(run => run.Text == heading) == true);
+        Assert.True(text.TextLayout.TextLines.Count > 1,
+            $"Expected multiple lines, got {text.TextLayout.TextLines.Count} in {text.Bounds}.");
+        Assert.True(text.TextLayout.TextLines.Sum(line => line.Length) >= heading.Length,
+            "The wrapped header must include its last word.");
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void EditedWrappedCellAndRowHeightAreWrittenToXlsx()
+    {
+        EditorControl editor = new();
+        editor.LoadSheet(new SheetData
+        {
+            Cells = new[] { new[] { CellData.Plain("Wrapped heading") with { WrapText = true } } },
+            RowHeights = new[] { 38d },
+        });
+
+        using MemoryStream saved = new();
+        editor.SaveXlsx(saved);
+        saved.Position = 0;
+        using XLWorkbook workbook = new(saved);
+        Assert.True(workbook.Worksheet(1).Cell(1, 1).Style.Alignment.WrapText);
+        Assert.InRange(workbook.Worksheet(1).Row(1).Height, 28.4, 28.6);
     }
 
     private static MemoryStream CreateWorkbook()

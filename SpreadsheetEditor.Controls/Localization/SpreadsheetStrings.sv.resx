@@ -150,6 +150,7 @@ Alternativt kan du använda &quot;Exportera som PDF&quot; för att spara arket o
   <data name="Center" xml:space="preserve"><value>Centrera</value></data>
   <data name="Right" xml:space="preserve"><value>Höger</value></data>
   <data name="Alignment" xml:space="preserve"><value>Justering</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Radbryt text</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Teckensnittsfamilj (tom = standard)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Teckenstorlek (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Textfärg (#RRGGBB, blank = automatisk)</value></data>

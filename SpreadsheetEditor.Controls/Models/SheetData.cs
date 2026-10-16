@@ -14,6 +14,9 @@ public sealed class SheetData
     // Pixel width per column (index = column). May be shorter than the column count.
     public IReadOnlyList<double> ColumnWidths { get; init; } = new List<double>();
 
+    // Pixel height per row (index = row). Zero means use the grid's automatic height.
+    public IReadOnlyList<double> RowHeights { get; init; } = new List<double>();
+
     public IReadOnlyList<MergeRange> Merges { get; init; } = new List<MergeRange>();
 
     // Pictures embedded in the sheet (anchored to cells, sized in pixels).

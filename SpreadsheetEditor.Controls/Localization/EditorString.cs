@@ -144,6 +144,7 @@ public enum EditorString
     Center,
     Right,
     Alignment,
+    WrapText,
     FontFamilyLabel,
     FontSizePoints,
     TextColorHex,

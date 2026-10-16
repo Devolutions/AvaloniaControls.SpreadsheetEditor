@@ -150,6 +150,7 @@ Alternativamente, use &quot;Exportar como PDF&quot; para salvar a planilha e imp
   <data name="Center" xml:space="preserve"><value>Centro</value></data>
   <data name="Right" xml:space="preserve"><value>Direita</value></data>
   <data name="Alignment" xml:space="preserve"><value>Alinhamento</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Quebrar texto</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Família de fontes (em branco = padrão)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Tamanho da fonte (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Cor do texto (#RRGGBB, em branco = automático)</value></data>

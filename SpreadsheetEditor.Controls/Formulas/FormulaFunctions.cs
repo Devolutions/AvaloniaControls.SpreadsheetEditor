@@ -246,14 +246,21 @@ public static class FormulaFunctions
     private static CellValue DatePart(FormulaEvaluator ev, IReadOnlyList<FormulaNode> a, Func<DateTime, int> part)
     {
         Arity(a, 1, 1);
-        try
+        CellValue value = ev.Eval(a[0]);
+        // Imported date cells retain their formatted text. Parse those directly rather than
+        // throwing a numeric-conversion exception for every row in a large date-helper column.
+        if (value.Kind == CellValueKind.Text &&
+            DateTime.TryParse(value.Text, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out DateTime date))
         {
-            return CellValue.FromNumber(part(DateTime.FromOADate(ev.Number(a[0]))));
+            return CellValue.FromNumber(part(date));
         }
-        catch
+
+        if (!value.TryAsNumber(out double serial) || !double.IsFinite(serial) ||
+            serial <= -657435 || serial >= 2958466)
         {
             throw Throw(FormulaErrors.Num);
         }
+        return CellValue.FromNumber(part(DateTime.FromOADate(serial)));
     }
 
     private static CellValue Round(FormulaEvaluator ev, IReadOnlyList<FormulaNode> a, MidpointRounding mode)

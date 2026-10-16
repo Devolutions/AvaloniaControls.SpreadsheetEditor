@@ -150,6 +150,7 @@
   <data name="Center" xml:space="preserve"><value>По центру</value></data>
   <data name="Right" xml:space="preserve"><value>Вправо</value></data>
   <data name="Alignment" xml:space="preserve"><value>Вирівнювання</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Перенесення тексту</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Сімейство шрифтів (порожній = за замовчуванням)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Розмір шрифту (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Колір тексту (#RRGGBB, порожній = автоматичний)</value></data>

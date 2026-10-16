@@ -104,6 +104,8 @@ public partial class SpreadsheetViewModel : ObservableObject
     // Charts embedded in the sheet. The grid renders these as live overlays.
     public AvaloniaList<SheetChart> Charts { get; } = new();
 
+    internal event Action? ChartLayoutChanged;
+
     // Raised after a recalculation so chart overlays can refresh their data.
     public event Action? DataChanged;
 
@@ -114,14 +116,23 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     private Dictionary<string, string> names = new(StringComparer.OrdinalIgnoreCase);
     private Func<string, CellAddress, CellValue?>? workbookCellResolver;
-    private Func<bool>? editRecalculationGate;
+    private Func<IReadOnlyList<CellAddress>, bool, bool>? editRecalculationGate;
+
+    private readonly Dictionary<string, HashSet<CellRange>> formulaInputRanges = new(StringComparer.OrdinalIgnoreCase);
+    private long formulaVersion;
+    private long indexedFormulaVersion = -1;
+    private bool uncertainFormulaInputs;
 
     public SpreadsheetViewModel() => this.engine = new FormulaEngine(this.ReadRaw, this.ResolveName, this.ResolveCellReference);
 
     // Defined names mapped to their formula text (e.g. NetIncome -> "O36",
     // TotalMonthlyIncome -> "SUM('Sheet'!$C$7:$C$10)") so formulas like =NetIncome resolve.
-    public void SetNames(IReadOnlyDictionary<string, string> names) =>
+    public void SetNames(IReadOnlyDictionary<string, string> names)
+    {
         this.names = new Dictionary<string, string>(names, StringComparer.OrdinalIgnoreCase);
+        this.CalculationVersion++;
+        this.formulaVersion++;
+    }
 
     // The defined names (name -> RefersTo formula/range), so a save can persist them back to the
     // .xlsx — otherwise formulas that reference a name become #NAME? on the next open.
@@ -134,33 +145,90 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     // Lets the workbook host postpone a recalculation until lazily loaded cross-sheet references are
     // available. Standalone view models keep their normal immediate-recalculation behavior.
-    internal void SetEditRecalculationGate(Func<bool>? gate) => this.editRecalculationGate = gate;
+    internal void SetEditRecalculationGate(Func<IReadOnlyList<CellAddress>, bool, bool>? gate) => this.editRecalculationGate = gate;
 
     internal CellValue EvaluateCell(CellAddress address) => this.engine.Evaluate(address);
 
+    internal long CalculationVersion { get; private set; }
+
+    internal CellAddress[] FormulaAddresses() => this.formulaCells.ToArray();
+
+    internal void ApplyCalculatedValue(CellAddress address, CellValue value, string display)
+    {
+        CellViewModel? cell = this.GetCell(address);
+        if (cell is null)
+        {
+            return;
+        }
+        cell.CachedNumericValue = value.Kind == CellValueKind.Number ? value.Number : null;
+        cell.CachedFormulaValue = value;
+        cell.ComputedValue = display;
+    }
+
+    internal void CompleteBackgroundCalculation()
+    {
+        this.engine.InvalidateCache();
+        this.DataChanged?.Invoke();
+    }
+
     internal IReadOnlySet<string> ReferencedSheetNames()
     {
-        HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
-        IEnumerable<string> formulas = this.formulaCells
-            .Select(address => this.GetCell(address)?.Text ?? string.Empty)
-            .Where(FormulaEngine.IsFormula)
-            .Select(static formula => formula[1..])
-            .Concat(this.names.Values.Select(static formula => formula.TrimStart('=')));
-        foreach (string formula in formulas)
+        this.IndexFormulaInputs();
+        return new HashSet<string>(this.formulaInputRanges.Keys.Where(name =>
+            name.Length > 0 && name != "*" && !name.Equals(this.Name, StringComparison.OrdinalIgnoreCase)), StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal bool HasVolatileFormulas => this.formulaInputRanges.ContainsKey("*");
+
+    internal bool ReferencesInput(string sheetName, CellAddress address)
+    {
+        if (this.indexedFormulaVersion != this.formulaVersion)
+        {
+            // Import builds this index before publication. A changed formula invalidates it;
+            // be conservative until the next index build, rather than parsing a large sheet on a keystroke.
+            return this.formulaCells.Count > 0;
+        }
+        bool Contains(string key) => this.formulaInputRanges.TryGetValue(key, out HashSet<CellRange>? ranges) &&
+            ranges.Any(range => address.Row >= range.Row && address.Row < range.Row + range.RowSpan &&
+                address.Column >= range.Column && address.Column < range.Column + range.ColumnSpan);
+        return this.uncertainFormulaInputs || Contains("*") || Contains(sheetName) ||
+            (sheetName.Equals(this.Name, StringComparison.OrdinalIgnoreCase) && Contains(string.Empty));
+    }
+
+    private void IndexFormulaInputs()
+    {
+        if (this.indexedFormulaVersion == this.formulaVersion)
+        {
+            return;
+        }
+        this.formulaInputRanges.Clear();
+        this.uncertainFormulaInputs = false;
+        foreach (CellAddress address in this.formulaCells)
         {
             try
             {
-                referenced.UnionWith(FormulaParser.ReferencedSheets(formula));
+                string text = this.GetCell(address)?.Text ?? string.Empty;
+                if (!FormulaEngine.IsFormula(text))
+                {
+                    continue;
+                }
+                foreach ((string? sheet, CellRange range) in FormulaParser.ReferencedRanges(text[1..], this.ResolveName))
+                {
+                    string key = sheet ?? string.Empty;
+                    if (!this.formulaInputRanges.TryGetValue(key, out HashSet<CellRange>? ranges))
+                    {
+                        this.formulaInputRanges[key] = ranges = new HashSet<CellRange>();
+                    }
+                    ranges.Add(range);
+                }
             }
             catch (FormulaParseException)
             {
-                // The normal evaluator will surface the parse error in the cell. Dependency discovery
-                // remains best-effort so one unsupported formula does not block workbook loading.
+                // Unknown inputs must be treated conservatively rather than skipping a needed update.
+                this.uncertainFormulaInputs = true;
             }
         }
-
-        referenced.Remove(this.Name);
-        return referenced;
+        this.indexedFormulaVersion = this.formulaVersion;
     }
 
     public SpreadsheetViewModel(int rows, int columns) : this() => this.Initialize(rows, columns);
@@ -180,6 +248,7 @@ public partial class SpreadsheetViewModel : ObservableObject
     // Runs a bulk edit with recalculation suspended, then recalculates once at the end.
     public void RunBatch(Action action)
     {
+        bool wasSuspended = this.suspendRecalc;
         this.suspendRecalc = true;
         try
         {
@@ -187,10 +256,22 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
         finally
         {
-            this.suspendRecalc = false;
+            this.suspendRecalc = wasSuspended;
         }
 
-        this.Recalculate();
+        if (!wasSuspended) this.RequestRecalculation();
+    }
+
+    private void RequestRecalculation()
+    {
+        // Bulk edits/undo must use the same asynchronous workbook path as single-cell edits.
+        // Formula changes are conservative here because they can introduce new dependencies.
+        CellAddress[] changed = this.batchedChangedCells.ToArray();
+        this.batchedChangedCells.Clear();
+        if (this.editRecalculationGate?.Invoke(changed, true) ?? true)
+        {
+            this.Recalculate();
+        }
     }
 
     // Recomputes only formula cells. Literal cells are resolved on demand by formulas, so walking the
@@ -201,6 +282,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         {
             CellViewModel cell = this.Rows[addr.Row].Cells[addr.Column];
             cell.CachedNumericValue = value is { Kind: CellValueKind.Number } numeric ? numeric.Number : null;
+            cell.CachedFormulaValue = value;
             cell.ComputedValue = value is { } v ? FormatComputed(v, cell.NumberFormat) : null;
         });
 
@@ -310,14 +392,16 @@ public partial class SpreadsheetViewModel : ObservableObject
     public void MoveChart(SheetChart chart, int anchorRow, int anchorColumn, double width, double height)
     {
         chart.MoveTo(anchorRow, anchorColumn, width, height);
-        this.DataChanged?.Invoke();
+        this.ChartLayoutChanged?.Invoke();
+        this.NotifyMetadataChanged();
     }
 
     // Resizes a chart to an explicit pixel size (keeping its anchor) and re-lays-out the overlay.
     public void ResizeChart(SheetChart chart, double width, double height)
     {
         chart.ResizeTo(width, height);
-        this.DataChanged?.Invoke();
+        this.ChartLayoutChanged?.Invoke();
+        this.NotifyMetadataChanged();
     }
 
     // Replaces an existing chart with new settings, keeping its on-sheet placement/size.
@@ -527,9 +611,17 @@ public partial class SpreadsheetViewModel : ObservableObject
                 return;
             }
 
+            this.CalculationVersion++;
+            this.engine.InvalidateCache();
+
             // Row objects move during insert/delete. Resolve their current position instead of
             // retaining the address they had when the cell was first created.
             CellAddress address = new(row.Number - 1, column);
+            bool formulaChanged = this.formulaCells.Contains(address) || FormulaEngine.IsFormula(cell.Text);
+            if (formulaChanged)
+            {
+                this.formulaVersion++;
+            }
 
             if (FormulaEngine.IsFormula(cell.Text))
             {
@@ -540,9 +632,13 @@ public partial class SpreadsheetViewModel : ObservableObject
                 this.formulaCells.Remove(address);
             }
 
+            if (this.suspendRecalc && this.editRecalculationGate is not null)
+            {
+                this.batchedChangedCells.Add(address);
+            }
             if (!this.suspendRecalc)
             {
-                if (this.editRecalculationGate?.Invoke() ?? true)
+                if (this.editRecalculationGate?.Invoke(new[] { address }, formulaChanged) ?? true)
                 {
                     this.Recalculate();
                 }
@@ -550,9 +646,13 @@ public partial class SpreadsheetViewModel : ObservableObject
         };
     }
 
+    private readonly HashSet<CellAddress> batchedChangedCells = new();
+
     // (Re)builds an empty sheet of the given size.
     public void Initialize(int rows, int columns)
     {
+        this.CalculationVersion++;
+        this.formulaVersion++;
         this.Columns.Clear();
         this.Rows.Clear();
         this.formulaCells.Clear();
@@ -718,6 +818,8 @@ public partial class SpreadsheetViewModel : ObservableObject
     // new address. A single DataChanged is raised after the entire operation.
     public void InsertRows(int index, int count = 1)
     {
+        this.CalculationVersion++;
+        this.formulaVersion++;
         index = Math.Clamp(index, 0, this.RowCount);
         count = Math.Clamp(count, 1, 1000);
         for (int i = 0; i < count; i++)
@@ -747,6 +849,8 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     public void DeleteRows(int index, int count = 1)
     {
+        this.CalculationVersion++;
+        this.formulaVersion++;
         if (this.RowCount == 0)
         {
             return;
@@ -879,6 +983,9 @@ public partial class SpreadsheetViewModel : ObservableObject
             return;
         }
 
+        this.CalculationVersion++;
+        this.formulaVersion++;
+        this.engine.InvalidateCache();
         // Capture sort keys once. Reading/formating a formula cell during every comparison made
         // large worksheet sorts needlessly expensive, and comparing percent display strings was wrong.
         var ordered = this.Rows.Skip(start).Take(last - start + 1)
@@ -1235,6 +1342,8 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     private void ReindexFormulaCells()
     {
+        this.CalculationVersion++;
+        this.formulaVersion++;
         this.formulaCells.Clear();
         for (int row = 0; row < this.RowCount; row++)
         {
@@ -1264,7 +1373,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
 
         this.suspendRecalc = false;
-        this.Recalculate();
+        this.RequestRecalculation();
     }
 
     // Projects the sheet back to plain-text rows for value-only serialization.
@@ -1289,7 +1398,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.suspendRecalc = false;
         if (recalculate)
         {
-            this.Recalculate();
+            this.RequestRecalculation();
         }
     }
 
@@ -1389,7 +1498,7 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
 
         this.suspendRecalc = false;
-        this.Recalculate();
+        this.RequestRecalculation();
     }
 
     private static bool SameCells(List<List<CellData>> a, List<List<CellData>> b)

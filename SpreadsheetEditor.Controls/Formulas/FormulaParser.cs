@@ -44,6 +44,57 @@ public static class FormulaParser
         return sheets;
     }
 
+    internal static IEnumerable<(string? Sheet, CellRange Range)> ReferencedRanges(
+        string formulaBody, Func<string, string?> resolveName)
+    {
+        List<(string?, CellRange)> references = new();
+        HashSet<string> visiting = new(StringComparer.OrdinalIgnoreCase);
+        void Collect(FormulaNode node)
+        {
+            switch (node)
+            {
+                case CellNode cell:
+                    references.Add((cell.SheetName, new CellRange(cell.Address.Row, cell.Address.Column, 1, 1)));
+                    break;
+                case RangeNode range:
+                    references.Add((range.SheetName, new CellRange(
+                        Math.Min(range.From.Row, range.To.Row), Math.Min(range.From.Column, range.To.Column),
+                        Math.Abs(range.To.Row - range.From.Row) + 1, Math.Abs(range.To.Column - range.From.Column) + 1)));
+                    break;
+                case NameNode name when visiting.Add(name.Name):
+                    if (resolveName(name.Name) is { Length: > 0 } definition)
+                    {
+                        Collect(Parse(definition.TrimStart('=')));
+                    }
+                    visiting.Remove(name.Name);
+                    break;
+                case UnaryNode unary:
+                    Collect(unary.Operand);
+                    break;
+                case PercentNode percent:
+                    Collect(percent.Operand);
+                    break;
+                case BinaryNode binary:
+                    Collect(binary.Left);
+                    Collect(binary.Right);
+                    break;
+                case FunctionNode function:
+                    if (function.Name is "TODAY" or "NOW")
+                    {
+                        // '*' cannot be an Excel worksheet name: reserve it for volatile inputs.
+                        references.Add(("*", new CellRange(0, 0, int.MaxValue, int.MaxValue)));
+                    }
+                    foreach (FormulaNode argument in function.Args)
+                    {
+                        Collect(argument);
+                    }
+                    break;
+            }
+        }
+        Collect(Parse(formulaBody));
+        return references;
+    }
+
     private static void CollectReferencedSheets(FormulaNode node, ISet<string> sheets)
     {
         switch (node)

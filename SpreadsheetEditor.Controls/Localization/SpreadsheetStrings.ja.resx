@@ -150,6 +150,7 @@
   <data name="Center" xml:space="preserve"><value>中央</value></data>
   <data name="Right" xml:space="preserve"><value>右</value></data>
   <data name="Alignment" xml:space="preserve"><value>アラインメント</value></data>
+  <data name="WrapText" xml:space="preserve"><value>折り返して全体を表示</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>フォントファミリー (空白 = デフォルト)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>フォントサイズ(pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>文字の色 (#RRGGBB、空白 = 自動)</value></data>

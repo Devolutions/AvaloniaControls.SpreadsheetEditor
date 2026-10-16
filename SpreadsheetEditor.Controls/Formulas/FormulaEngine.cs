@@ -3,6 +3,7 @@ namespace SpreadsheetEditor.Controls.Formulas;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
 
 using global::SpreadsheetEditor.Controls.Models;
 
@@ -22,6 +23,14 @@ public sealed class FormulaEngine
 
     private readonly Func<string, string?>? resolveNameFormula;
     private readonly Func<string?, CellAddress, CellValue>? resolveCellReference;
+
+    internal CancellationToken CancellationToken { get; init; }
+
+    internal void InvalidateCache()
+    {
+        this.memo.Clear();
+        this.visiting.Clear();
+    }
 
     public FormulaEngine(
         Func<CellAddress, string> readRaw,
@@ -55,6 +64,7 @@ public sealed class FormulaEngine
     // Resolves a cell to its value (formula result or parsed literal), memoized per pass.
     public CellValue Evaluate(CellAddress address)
     {
+        this.CancellationToken.ThrowIfCancellationRequested();
         if (this.memo.TryGetValue(address, out CellValue cached))
         {
             return cached;

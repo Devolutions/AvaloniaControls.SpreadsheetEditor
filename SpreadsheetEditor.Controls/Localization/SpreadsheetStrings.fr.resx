@@ -150,6 +150,7 @@ Vous pouvez également utiliser « Exporter sous PDF » pour enregistrer la fe
   <data name="Center" xml:space="preserve"><value>Centre</value></data>
   <data name="Right" xml:space="preserve"><value>Droite</value></data>
   <data name="Alignment" xml:space="preserve"><value>Alignement</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Renvoyer à la ligne</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Famille de polices (vide = par défaut)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Taille de la police (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Couleur du texte (#RRGGBB, vide = automatique)</value></data>

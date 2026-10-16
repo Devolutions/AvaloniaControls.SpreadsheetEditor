@@ -150,6 +150,7 @@ U kunt ook &quot;Exporteren als PDF&quot; gebruiken om het blad op te slaan en a
   <data name="Center" xml:space="preserve"><value>Centreren</value></data>
   <data name="Right" xml:space="preserve"><value>Rechts</value></data>
   <data name="Alignment" xml:space="preserve"><value>Uitlijning</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Tekstterugloop</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Lettertypefamilie (leeg = standaard)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Lettergrootte (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Tekstkleur (#RRGGBB, blanco = automatisch)</value></data>

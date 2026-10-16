@@ -39,7 +39,7 @@ using static global::SpreadsheetEditor.Controls.Localization.EditorText;
 // widths and per-row heights, fills, inline-run formatting, and merged-cell spanning. Replaces the
 // Avalonia DataGrid so cells can span (merge) and (later) host a rich editor. Cell content/editing
 // state lives in SpreadsheetViewModel; this control only renders and raises CellActivated on click.
-public class SpreadsheetGrid : UserControl
+public partial class SpreadsheetGrid : UserControl
 {
     private const double RowHeaderWidth = 46;
     private const double ColumnHeaderHeight = 22;
@@ -70,7 +70,10 @@ public class SpreadsheetGrid : UserControl
     private IBrush headerLine = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0));
 
     private readonly ScrollViewer cellScroller = new()
-    { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    {
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalContentAlignment = HorizontalAlignment.Left, VerticalContentAlignment = VerticalAlignment.Top,
+    };
 
     private readonly ScrollViewer columnHeaderScroller = new()
     { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -218,6 +221,7 @@ public class SpreadsheetGrid : UserControl
     private bool[,]? covered;
     private (int RowSpan, int ColumnSpan)[,]? spans;
     private readonly List<(CellViewModel Cell, PropertyChangedEventHandler Handler)> cellSubscriptions = new();
+    private readonly List<Action> calculatedCellRefreshes = new();
     private readonly Dictionary<Color, IBrush> gradientBarBrushes = new();
 
     public event Action<CellAddress>? CellActivated;
@@ -232,7 +236,28 @@ public class SpreadsheetGrid : UserControl
     public bool IsEditing => !this.editorSuspended;
 
     // When true, the grid blocks all content mutation (editing, typing, paste/cut/clear, formatting).
-    public bool ReadOnly { get; set; }
+    public bool ReadOnly
+    {
+        get => this.readOnly;
+        set
+        {
+            this.readOnly = value;
+            if (value)
+            {
+                this.CancelFillDrag();
+                this.FinishHeaderResize(cancel: true);
+                this.FinishChartDrag(cancel: true);
+            }
+            foreach (var entry in this.chartCards)
+            {
+                entry.Settings.IsEnabled = !value;
+                entry.Grip.IsVisible = !value;
+            }
+            this.UpdateSelection();
+        }
+    }
+
+    private bool readOnly;
 
     // Returns one viewport plus a small scroll buffer for the lightweight worksheet preview. The
     // fallback covers startup before Avalonia has completed the first layout pass.
@@ -294,6 +319,9 @@ public class SpreadsheetGrid : UserControl
         this.editorHost.ZIndex = 8;
         this.cells.Children.Add(this.selection);
         this.cells.Children.Add(this.editorHost);
+        this.InitializeFillHandle();
+        this.InitializeHeaderResize();
+        this.InitializeChartDragging();
         this.cellScroller.Content = this.cells;
         Grid.SetRow(this.cellScroller, 1); Grid.SetColumn(this.cellScroller, 1);
 
@@ -401,6 +429,24 @@ public class SpreadsheetGrid : UserControl
     // mode. While editing, arrows move the caret; Enter/Tab commit and move.
     private void OnNavigationKey(object? sender, KeyEventArgs e)
     {
+        if (this.chartDrag is not null)
+        {
+            if (e.Key == Key.Escape) this.FinishChartDrag(cancel: true);
+            e.Handled = true;
+            return;
+        }
+        if (this.resizing)
+        {
+            if (e.Key == Key.Escape) this.FinishHeaderResize(cancel: true);
+            e.Handled = true;
+            return;
+        }
+        if (this.fillDragSource is not null)
+        {
+            if (e.Key == Key.Escape) this.CancelFillDrag();
+            e.Handled = true;
+            return;
+        }
         if (this.sheet is null || this.sheet.RowCount == 0 || this.sheet.ColumnCount == 0)
         {
             return;
@@ -411,7 +457,7 @@ public class SpreadsheetGrid : UserControl
         {
             SheetChart toRemove = this.selectedChart;
             this.selectedChart = null;
-            this.sheet.RemoveChart(toRemove);
+            if (!this.ReadOnly) this.sheet.RemoveChart(toRemove);
             e.Handled = true;
             return;
         }
@@ -547,7 +593,8 @@ public class SpreadsheetGrid : UserControl
             return;
         }
         this.selectedChart = chart;
-        this.RefreshCharts();   // re-render so the selected card shows its highlight border
+        this.fillHandle.IsVisible = false;
+        this.UpdateChartSelection();
         this.Focus();
     }
 
@@ -559,7 +606,7 @@ public class SpreadsheetGrid : UserControl
             return;
         }
         this.selectedChart = null;
-        this.RefreshCharts();
+        this.UpdateChartSelection();
     }
 
     // True when node is ancestor or one of its descendants.
@@ -647,6 +694,11 @@ public class SpreadsheetGrid : UserControl
     // Typing on a selected cell starts editing, replacing its content with the typed text.
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
+        if (this.fillDragSource is not null || this.resizing)
+        {
+            e.Handled = true;
+            return;
+        }
         if (this.sheet is null || !this.editorSuspended || this.ReadOnly)
         {
             return; // already editing, or read-only — let the editor handle the input
@@ -697,24 +749,37 @@ public class SpreadsheetGrid : UserControl
         get => this.sheet;
         set
         {
+            this.CancelFillDrag();
+            this.FinishHeaderResize(cancel: true, rebuild: false);
+            this.FinishChartDrag(cancel: true);
+            this.CancelChartRefresh();
+            this.chartOverlay.Children.Clear();
+            this.chartCards.Clear();
+            this.renderedChartData.Clear();
             if (this.sheet is not null)
             {
                 this.sheet.PropertyChanged -= this.OnSheetPropertyChanged;
-                this.sheet.DataChanged -= this.RefreshCharts;
+                this.sheet.DataChanged -= this.ScheduleChartRefresh;
+                this.sheet.ChartLayoutChanged -= this.ScheduleChartRefresh;
                 this.sheet.Charts.CollectionChanged -= this.OnChartsChanged;
             }
             this.sheet = value;
             if (this.sheet is not null)
             {
                 this.sheet.PropertyChanged += this.OnSheetPropertyChanged;
-                this.sheet.DataChanged += this.RefreshCharts;     // live-refresh charts when data recalculates
+                this.sheet.DataChanged += this.ScheduleChartRefresh;
+                this.sheet.ChartLayoutChanged += this.ScheduleChartRefresh;
                 this.sheet.Charts.CollectionChanged += this.OnChartsChanged;
             }
             this.Rebuild();
         }
     }
 
-    private void OnChartsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => this.RefreshCharts();
+    private void OnChartsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        this.RefreshCharts();
+        this.sheet?.NotifyMetadataChanged();
+    }
 
     private void OnSheetPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -739,6 +804,8 @@ public class SpreadsheetGrid : UserControl
                 return;
             }
 
+            this.FinishHeaderResize(rebuild: false);
+            this.FinishChartDrag(cancel: true);
             this.zoom = clamped;
             if (this.sheet is not null)
             {
@@ -801,6 +868,8 @@ public class SpreadsheetGrid : UserControl
             this.columnOffsets[c + 1] = this.columnOffsets[c] + this.columnWidths[c];
         }
 
+        this.BuildMergeMaps(rows, cols);
+
         this.rowHeights = new double[rows];
         this.rowOffsets = new double[rows + 1];
         for (int r = 0; r < rows; r++)
@@ -816,12 +885,11 @@ public class SpreadsheetGrid : UserControl
             else
             {
                 double maxFont = this.sheet.Rows[r].Cells.Count == 0 ? CellViewModel.DefaultFontSize : this.sheet.Rows[r].Cells.Max(c => c.FontSize);
-                this.rowHeights[r] = Math.Max(DefaultRowHeight, maxFont + 8) * this.zoom;
+                double minHeight = Math.Max(DefaultRowHeight, maxFont + 8) * this.zoom;
+                this.rowHeights[r] = this.MeasureWrappedRowHeight(r, minHeight);
             }
             this.rowOffsets[r + 1] = this.rowOffsets[r] + this.rowHeights[r];
         }
-
-        this.BuildMergeMaps(rows, cols);
 
         this.UpdateCanvasExtents();
 
@@ -870,6 +938,41 @@ public class SpreadsheetGrid : UserControl
             cell.PropertyChanged -= handler;
         }
         this.cellSubscriptions.Clear();
+        this.calculatedCellRefreshes.Clear();
+    }
+
+    // Publishing a calculation must not rebuild the whole grid once per changed formula cell.
+    internal void ApplyCalculatedCells(Action apply)
+    {
+        bool wasApplying = this.applyingCellFormat;
+        this.applyingCellFormat = true;
+        try
+        {
+            apply();
+        }
+        finally
+        {
+            this.applyingCellFormat = wasApplying;
+        }
+    }
+
+    internal void RefreshCalculatedCells()
+    {
+        // Keep the visible controls (and chart pointer capture) intact. Rebuilding a viewport here
+        // used to create hundreds of controls in one dispatcher turn after the worker completed.
+        int generation = this.viewportRenderGeneration;
+        Action[] refreshes = this.calculatedCellRefreshes.ToArray();
+        int index = 0;
+        void RefreshBatch()
+        {
+            if (generation != this.viewportRenderGeneration || index >= refreshes.Length) return;
+            Stopwatch budget = Stopwatch.StartNew();
+            do { refreshes[index++](); }
+            while (index < refreshes.Length && budget.ElapsedMilliseconds < 4);
+            if (index < refreshes.Length)
+                DispatcherTimer.RunOnce(RefreshBatch, TimeSpan.FromMilliseconds(1), DispatcherPriority.Background);
+        }
+        Dispatcher.UIThread.Post(RefreshBatch, DispatcherPriority.Background);
     }
 
     private void ScheduleViewportRender()
@@ -944,7 +1047,12 @@ public class SpreadsheetGrid : UserControl
         this.ClearCellSubscriptions();
         this.columnHeaders.Children.Clear();
         this.rowHeaders.Children.Clear();
-        this.cells.Children.Clear();
+        // Charts and the editor must stay attached during a viewport repaint: detaching a focused
+        // chart can trigger bring-into-view/layout changes and invalidate an in-flight drag.
+        foreach (Control child in this.cells.Children.Where(child => child.ZIndex < 3).ToArray())
+        {
+            this.cells.Children.Remove(child);
+        }
         int generation = ++this.viewportRenderGeneration;
 
         for (int column = viewport.FirstColumn; column <= viewport.LastColumn; column++)
@@ -965,15 +1073,17 @@ public class SpreadsheetGrid : UserControl
         }
         // Persistent layers use explicit Z-order so visible cells can be created in short batches
         // without ever covering images, charts, selection, or the editor.
-        this.cells.Children.Add(this.imageOverlay);
-        this.cells.Children.Add(this.chartOverlay);
+        if (!this.cells.Children.Contains(this.imageOverlay)) this.cells.Children.Add(this.imageOverlay);
+        if (!this.cells.Children.Contains(this.chartOverlay)) this.cells.Children.Add(this.chartOverlay);
         foreach (Border part in this.fillParts)
         {
-            this.cells.Children.Add(part);
+            if (!this.cells.Children.Contains(part)) this.cells.Children.Add(part);
         }
-        this.cells.Children.Add(this.selection);
-        this.cells.Children.Add(this.anchorBorder);
-        this.cells.Children.Add(this.editorHost);
+        if (!this.cells.Children.Contains(this.selection)) this.cells.Children.Add(this.selection);
+        if (!this.cells.Children.Contains(this.anchorBorder)) this.cells.Children.Add(this.anchorBorder);
+        if (!this.cells.Children.Contains(this.editorHost)) this.cells.Children.Add(this.editorHost);
+        if (!this.cells.Children.Contains(this.fillPreview)) this.cells.Children.Add(this.fillPreview);
+        if (!this.cells.Children.Contains(this.fillHandle)) this.cells.Children.Add(this.fillHandle);
         this.UpdateSelection();
 
         HashSet<(int Row, int Column)> renderedCells = new();
@@ -1188,8 +1298,8 @@ public class SpreadsheetGrid : UserControl
         return Math.Clamp((~index) - 1, 0, offsets.Length - 2);
     }
 
-    // Grows the sheet when the user nears the bottom and trims surplus empty rows when they scroll
-    // back up — an Excel-like effectively-unbounded grid without per-row virtualization.
+    // Grows the sheet near the bottom. Keep blank worksheet area: trimming on layout notifications
+    // discarded formatted cells/chart anchors and could collapse the grid when opening a dialog.
     private void AdjustRowsForScroll()
     {
         if (this.sheet is null || this.adjustingRows || this.adjustingColumns || this.resizing || this.chartDragging || this.rowHeights.Length == 0)
@@ -1198,7 +1308,7 @@ public class SpreadsheetGrid : UserControl
         }
 
         double viewport = this.cellScroller.Viewport.Height;
-        double extent = this.cellScroller.Extent.Height;
+        double extent = this.rowOffsets[^1];
         double offsetY = this.cellScroller.Offset.Y;
         if (viewport <= 0)
         {
@@ -1214,15 +1324,8 @@ public class SpreadsheetGrid : UserControl
             int fill = gap > 0 ? (int)Math.Ceiling(gap / Math.Max(1, DefaultRowHeight * this.zoom)) : 0;
             target = this.sheet.RowCount + fill + RowBuffer;
         }
-        else
-        {
-            int bottomVisibleRow = this.RowAtY(offsetY + viewport) + 1;
-            int needed = Math.Max(this.sheet.LastNonEmptyRow() + 1, bottomVisibleRow) + RowBuffer;
-            if (this.sheet.RowCount > needed + RowBuffer) // hysteresis so we don't churn while scrolling
-            {
-                target = needed;
-            }
-        }
+        // Do not trim on layout/scroll events. Blank cells can carry formatting or chart anchors;
+        // opening chart UI is not a request to delete that worksheet area.
 
         if (target == this.sheet.RowCount)
         {
@@ -1242,8 +1345,7 @@ public class SpreadsheetGrid : UserControl
     }
 
     // Column analogue of AdjustRowsForScroll: grows the sheet when the user nears the right edge (e.g.
-    // Shift+scroll to scroll horizontally) and trims surplus empty columns when they scroll back left.
-    // Also fills the viewport width when the content is narrower than the visible area.
+    // Shift+scroll to scroll horizontally). Also fills the viewport when content is narrower.
     private void AdjustColumnsForScroll()
     {
         if (this.sheet is null || this.adjustingColumns || this.adjustingRows || this.resizing || this.chartDragging || this.columnWidths.Length == 0)
@@ -1252,7 +1354,7 @@ public class SpreadsheetGrid : UserControl
         }
 
         double viewport = this.cellScroller.Viewport.Width;
-        double extent = this.cellScroller.Extent.Width;
+        double extent = this.columnOffsets[^1];
         double offsetX = this.cellScroller.Offset.X;
         if (viewport <= 0)
         {
@@ -1267,15 +1369,6 @@ public class SpreadsheetGrid : UserControl
             double gap = (offsetX + viewport) - extent;
             int fill = gap > 0 ? (int)Math.Ceiling(gap / Math.Max(1, this.sheet.DefaultColumnWidth * this.zoom)) : 0;
             target = this.sheet.ColumnCount + fill + ColumnBuffer;
-        }
-        else
-        {
-            int rightVisibleColumn = this.ColAtX(offsetX + viewport) + 1;
-            int needed = Math.Max(this.sheet.LastNonEmptyColumn() + 1, rightVisibleColumn) + ColumnBuffer;
-            if (this.sheet.ColumnCount > needed + ColumnBuffer) // hysteresis so we don't churn while scrolling
-            {
-                target = needed;
-            }
         }
 
         if (target == this.sheet.ColumnCount)
@@ -1295,241 +1388,152 @@ public class SpreadsheetGrid : UserControl
         }
     }
 
-    // Rebuilds every chart overlay from the current cell data (called on structural changes, when a
-    // chart is added/removed, and after each recalculation so charts stay live).
-    private void RefreshCharts()
+    // Chart data is prepared separately; only control creation/layout runs on the UI thread.
+    private void BuildChartCard(SheetChart chart, ChartData data, bool unchanged)
     {
-        this.chartOverlay.Children.Clear();
-        this.chartCards.Clear();
-        if (this.sheet is null || this.columnWidths.Length == 0)
+        // Positions/offsets are in the (zoom-scaled) layout; column/row offsets already include zoom
+        // via OffsetToColumn/Row, and the logical pixel offsets/sizes are scaled by zoom so charts
+        // resize together with the cells.
+        double left = this.OffsetToColumn(chart.AnchorColumn) + (chart.OffsetX * this.zoom);
+        double top = this.OffsetToRow(chart.AnchorRow) + (chart.OffsetY * this.zoom);
+
+        // The displayed size spans from→to cells in OUR (scaled) layout; fall back to the stored
+        // pixel size for one-cell-anchored charts.
+        double z = this.zoom > 0 ? this.zoom : 1;
+        double scaledWidth;
+        double scaledHeight;
+        if (chart.ToColumn is { } toCol && chart.ToRow is { } toRow)
         {
+            scaledWidth = this.OffsetToColumn(toCol) + (chart.ToOffsetX * this.zoom) - left;
+            scaledHeight = this.OffsetToRow(toRow) + (chart.ToOffsetY * this.zoom) - top;
+        }
+        else
+        {
+            scaledWidth = chart.Width * this.zoom;
+            scaledHeight = chart.Height * this.zoom;
+        }
+
+        // Build the chart at its LOGICAL (zoom-independent) size and scale the whole card with a
+        // ScaleTransform — so zoom shrinks/grows the chart as a fixed object (like Excel) instead of
+        // re-laying-out its contents (labels, axis) at every zoom level.
+        double width = Math.Clamp(scaledWidth / z, 120, 2400);
+        double height = Math.Clamp(scaledHeight / z, 80, 1600);
+
+        List<string> cats = data.Categories;
+        List<ChartSeriesData> ser = data.Series;
+        // Reposition an existing chart without recreating its axes/series or losing focus.
+        var existing = this.chartCards.FirstOrDefault(entry => ReferenceEquals(entry.Card.Tag, chart));
+        if (existing.Card is not null && unchanged)
+        {
+            Canvas.SetLeft(existing.Card, left);
+            Canvas.SetTop(existing.Card, top);
+            existing.Card.Width = existing.Chart.Width = width;
+            existing.Card.Height = existing.Chart.Height = height;
+            existing.Card.RenderTransform = new ScaleTransform(z, z);
+            existing.Settings.IsEnabled = !this.ReadOnly;
+            existing.Grip.IsVisible = !this.ReadOnly;
             return;
         }
 
-        // Drop a stale selection (chart deleted or sheet reloaded) so it can't highlight a missing card.
-        if (this.selectedChart is not null && !this.sheet.Charts.Contains(this.selectedChart))
+        Control? control = ChartFactory.Build(chart.Kind, cats, ser, width, height, chart.ShowDataLabels,
+            chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep, chart.LegendPosition);
+        if (control is null) return;
+
+        // A small settings button (top-right) re-opens the builder for this chart.
+        Button settings = new()
         {
-            this.selectedChart = null;
+            Name = "EditChartButton",
+            IsEnabled = !this.ReadOnly,
+            Content = "⚙",
+            Width = 22,
+            Height = 22,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 3, 3, 0),
+            Background = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+        };
+        ToolTip.SetTip(settings, Get(S.EditChart));
+        SheetChart captured = chart;
+        settings.Click += (_, _) =>
+        {
+            if (!this.ReadOnly && this.sheet?.Charts.Contains(captured) == true)
+                this.ChartEditRequested?.Invoke(captured);
+        };
+
+        Grid content = new();
+        content.Children.Add(control);
+        content.Children.Add(settings);
+
+        bool selected = ReferenceEquals(chart, this.selectedChart);
+        Border card = new()
+        {
+            Background = Brushes.White,
+            BorderBrush = selected ? SelectionBorder : SheetGridLine,
+            BorderThickness = new Thickness(selected ? 2 : 1),
+            Child = content,
+            Width = width,
+            Height = height,
+            Cursor = new Cursor(StandardCursorType.SizeAll),
+            // Scale the whole (logical-size) card by the zoom factor, anchored at its top-left so it
+            // stays put — the chart scales uniformly as a fixed object rather than re-laying-out.
+            RenderTransform = new ScaleTransform(z, z),
+            RenderTransformOrigin = RelativePoint.TopLeft,
+        };
+        Canvas.SetLeft(card, left);
+        Canvas.SetTop(card, top);
+
+        card.Tag = captured;
+        card.Name = "ChartCard";
+        card.PointerPressed += (_, e) =>
+        {
+            if (!IsWithin(e.Source as Visual, settings))
+                this.BeginChartDrag(e, captured, card, control, resize: false);
+        };
+
+        // Right-click menu with a Delete item (acts on this chart directly).
+        MenuItem deleteItem = new() { Header = Get(S.DeleteChart) };
+        deleteItem.Click += (_, _) =>
+        {
+            if (!this.ReadOnly) this.sheet?.RemoveChart(captured);
+        };
+        MenuFlyout menu = new();
+        menu.Items.Add(deleteItem);
+        card.ContextFlyout = menu;
+
+        // Resize grip (bottom-right corner): grab and drag to resize like an image.
+        Border grip = new()
+        {
+            IsVisible = !this.ReadOnly,
+            Width = 14,
+            Height = 14,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 1, 1),
+            Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x1A, 0x73, 0xE8)),
+            CornerRadius = new CornerRadius(2, 0, 2, 0),
+            Cursor = new Cursor(StandardCursorType.BottomRightCorner),
+        };
+        ToolTip.SetTip(grip, Get(S.DragToResize));
+        content.Children.Add(grip);
+
+        grip.Name = "ChartResizeGrip";
+        grip.PointerPressed += (_, e) => this.BeginChartDrag(e, captured, card, control, resize: true);
+
+        if (existing.Card is not null)
+        {
+            int index = this.chartCards.IndexOf(existing);
+            int childIndex = this.chartOverlay.Children.IndexOf(existing.Card);
+            this.chartOverlay.Children.Insert(childIndex, card);
+            this.chartOverlay.Children.Remove(existing.Card);
+            this.chartCards[index] = (card, control, settings, grip);
         }
-
-        foreach (SheetChart chart in this.sheet.Charts)
+        else
         {
-            // Positions/offsets are in the (zoom-scaled) layout; column/row offsets already include zoom
-            // via OffsetToColumn/Row, and the logical pixel offsets/sizes are scaled by zoom so charts
-            // resize together with the cells.
-            double left = this.OffsetToColumn(chart.AnchorColumn) + (chart.OffsetX * this.zoom);
-            double top = this.OffsetToRow(chart.AnchorRow) + (chart.OffsetY * this.zoom);
-
-            // The displayed size spans from→to cells in OUR (scaled) layout; fall back to the stored
-            // pixel size for one-cell-anchored charts.
-            double z = this.zoom > 0 ? this.zoom : 1;
-            double scaledWidth;
-            double scaledHeight;
-            if (chart.ToColumn is { } toCol && chart.ToRow is { } toRow)
-            {
-                scaledWidth = this.OffsetToColumn(toCol) + (chart.ToOffsetX * this.zoom) - left;
-                scaledHeight = this.OffsetToRow(toRow) + (chart.ToOffsetY * this.zoom) - top;
-            }
-            else
-            {
-                scaledWidth = chart.Width * this.zoom;
-                scaledHeight = chart.Height * this.zoom;
-            }
-
-            // Build the chart at its LOGICAL (zoom-independent) size and scale the whole card with a
-            // ScaleTransform — so zoom shrinks/grows the chart as a fixed object (like Excel) instead of
-            // re-laying-out its contents (labels, axis) at every zoom level.
-            double width = Math.Clamp(scaledWidth / z, 120, 2400);
-            double height = Math.Clamp(scaledHeight / z, 80, 1600);
-
-            (List<string> cats, List<ChartSeriesData> ser) = this.ExtractChartData(chart);
-            Control? control = ChartFactory.Build(chart.Kind, cats, ser, width, height, chart.ShowDataLabels,
-                chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep, chart.LegendPosition);
-            if (control is null)
-            {
-                continue;
-            }
-
-            // A small settings button (top-right) re-opens the builder for this chart.
-            Button settings = new()
-            {
-                Content = "⚙",
-                Width = 22,
-                Height = 22,
-                Padding = new Thickness(0),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 3, 3, 0),
-                Background = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
-            };
-            ToolTip.SetTip(settings, Get(S.EditChart));
-            SheetChart captured = chart;
-            settings.Click += (_, _) => this.ChartEditRequested?.Invoke(captured);
-
-            Grid content = new();
-            content.Children.Add(control);
-            content.Children.Add(settings);
-
-            bool selected = ReferenceEquals(chart, this.selectedChart);
-            Border card = new()
-            {
-                Background = Brushes.White,
-                BorderBrush = selected ? SelectionBorder : SheetGridLine,
-                BorderThickness = new Thickness(selected ? 2 : 1),
-                Child = content,
-                Width = width,
-                Height = height,
-                Cursor = new Cursor(StandardCursorType.SizeAll),
-                // Scale the whole (logical-size) card by the zoom factor, anchored at its top-left so it
-                // stays put — the chart scales uniformly as a fixed object rather than re-laying-out.
-                RenderTransform = new ScaleTransform(z, z),
-                RenderTransformOrigin = RelativePoint.TopLeft,
-            };
-            Canvas.SetLeft(card, left);
-            Canvas.SetTop(card, top);
-
-            // Drag the card to reposition; the top-left corner snaps into a cell. A small movement
-            // threshold keeps a plain click (or a click on the ⚙ button) from nudging the chart.
-            double cardWidth = width;
-            double cardHeight = height;
-            bool pressed = false;
-            bool moved = false;
-            Point startPointer = default;
-            double startLeft = left;
-            double startTop = top;
-            card.PointerPressed += (_, e) =>
-            {
-                if (IsWithin(e.Source as Visual, settings))
-                {
-                    return;
-                }
-                PointerPoint point = e.GetCurrentPoint(card);
-                if (!point.Properties.IsLeftButtonPressed)
-                {
-                    return; // right-click etc.: let the ContextFlyout open (no rebuild)
-                }
-                // Left-click selects the chart (so the Delete key removes it) and focuses the grid.
-                this.SelectChart(captured);
-                pressed = true;
-                moved = false;
-                startPointer = e.GetPosition(this.cells);
-                startLeft = Canvas.GetLeft(card);
-                startTop = Canvas.GetTop(card);
-                e.Pointer.Capture(card);
-                this.chartDragging = true;
-                e.Handled = true;
-            };
-            card.PointerMoved += (_, e) =>
-            {
-                if (!pressed || !ReferenceEquals(e.Pointer.Captured, card))
-                {
-                    return;
-                }
-                Point p = e.GetPosition(this.cells);
-                double dx = p.X - startPointer.X;
-                double dy = p.Y - startPointer.Y;
-                if (!moved && Math.Abs(dx) < 4 && Math.Abs(dy) < 4)
-                {
-                    return;
-                }
-                moved = true;
-                // Live snap: show the card landing flush in the nearest cell as it's dragged.
-                int col = this.NearestColumn(Math.Max(0, startLeft + dx));
-                int row = this.NearestRow(Math.Max(0, startTop + dy));
-                Canvas.SetLeft(card, this.OffsetToColumn(col));
-                Canvas.SetTop(card, this.OffsetToRow(row));
-            };
-            card.PointerReleased += (_, e) =>
-            {
-                if (!ReferenceEquals(e.Pointer.Captured, card))
-                {
-                    return;
-                }
-                e.Pointer.Capture(null);
-                this.chartDragging = false;
-                if (pressed && moved)
-                {
-                    int col = this.NearestColumn(Canvas.GetLeft(card));
-                    int row = this.NearestRow(Canvas.GetTop(card));
-                    // cardWidth/cardHeight are already logical (the card is scaled via a ScaleTransform).
-                    this.sheet?.MoveChart(captured, row, col, cardWidth, cardHeight);
-                }
-                pressed = false;
-                moved = false;
-            };
-
-            // Right-click menu with a Delete item (acts on this chart directly).
-            MenuItem deleteItem = new() { Header = Get(S.DeleteChart) };
-            deleteItem.Click += (_, _) => this.sheet?.RemoveChart(captured);
-            MenuFlyout menu = new();
-            menu.Items.Add(deleteItem);
-            card.ContextFlyout = menu;
-
-            // Resize grip (bottom-right corner): grab and drag to resize like an image.
-            Border grip = new()
-            {
-                Width = 14,
-                Height = 14,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 1, 1),
-                Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x1A, 0x73, 0xE8)),
-                CornerRadius = new CornerRadius(2, 0, 2, 0),
-                Cursor = new Cursor(StandardCursorType.BottomRightCorner),
-            };
-            ToolTip.SetTip(grip, Get(S.DragToResize));
-            content.Children.Add(grip);
-
-            bool sizing = false;
-            Point startSizePointer = default;
-            double startW = width;
-            double startH = height;
-            grip.PointerPressed += (_, e) =>
-            {
-                sizing = true;
-                startSizePointer = e.GetPosition(this.cells);
-                startW = card.Width;
-                startH = card.Height;
-                e.Pointer.Capture(grip);
-                this.chartDragging = true;   // reuse the guard: suppress row-adjust + block card drag
-                e.Handled = true;
-            };
-            grip.PointerMoved += (_, e) =>
-            {
-                if (!sizing || !ReferenceEquals(e.Pointer.Captured, grip))
-                {
-                    return;
-                }
-                Point p = e.GetPosition(this.cells);
-                // The pointer delta is in scaled space; the card is logical-size (scaled by transform),
-                // so convert the delta back to logical before applying it.
-                double zoomNow = this.zoom > 0 ? this.zoom : 1;
-                double w = Math.Clamp(startW + ((p.X - startSizePointer.X) / zoomNow), 120, 2400);
-                double h = Math.Clamp(startH + ((p.Y - startSizePointer.Y) / zoomNow), 80, 1600);
-                card.Width = w;
-                card.Height = h;
-                control.Width = w;       // live-resize the chart itself
-                control.Height = h;
-            };
-            grip.PointerReleased += (_, e) =>
-            {
-                if (!ReferenceEquals(e.Pointer.Captured, grip))
-                {
-                    return;
-                }
-                e.Pointer.Capture(null);
-                this.chartDragging = false;
-                if (sizing)
-                {
-                    // card.Width/Height are already logical (the card is scaled via a ScaleTransform).
-                    this.sheet?.ResizeChart(captured, card.Width, card.Height);
-                }
-                sizing = false;
-            };
-
             this.chartOverlay.Children.Add(card);
             this.chartCards.Add((card, control, settings, grip));
         }
+        this.renderedChartData[chart] = data;
     }
 
     // Renders each live chart card to a PNG snapshot with its grid position/size, for compositing
@@ -1689,14 +1693,14 @@ public class SpreadsheetGrid : UserControl
 
     // Reads a chart's explicit series + category ranges into the data the factory needs, pulling the
     // live computed cell values.
-    private (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(SheetChart chart) =>
-        ExtractChartData(this.sheet!, chart);
-
     private static (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(
         SpreadsheetViewModel sheet,
-        SheetChart chart)
+        SheetChart chart) => ExtractChartData(chart, address => sheet.GetCell(address)?.DisplayText ?? string.Empty,
+            sheet.RowCount, sheet.ColumnCount);
+
+    private static (List<string> Categories, List<ChartSeriesData> Series) ExtractChartData(
+        SheetChart chart, Func<CellAddress, string> Display, int rows, int columns)
     {
-        string Display(CellAddress a) => sheet.GetCell(a)?.DisplayText ?? string.Empty;
 
         // True when the range resolves to at least one non-empty cell in the loaded sheet, i.e. the
         // chart's data lives here and should be read live (so edits/recalcs update the chart). When
@@ -1708,7 +1712,7 @@ public class SpreadsheetGrid : UserControl
                 return false;
             }
 
-            return EnumerateRange(sheet, range).Any(a => !string.IsNullOrWhiteSpace(Display(a)));
+            return EnumerateRange(rows, columns, range).Any(a => !string.IsNullOrWhiteSpace(Display(a)));
         }
 
         List<ChartSeriesData> series = new();
@@ -1716,7 +1720,7 @@ public class SpreadsheetGrid : UserControl
         {
             // A series can span several ranges/cells — concatenate their cells in order into one series.
             List<double> values = spec.Ranges.Any(RangeHasData)
-                ? spec.Ranges.SelectMany(range => EnumerateRange(sheet, range)).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
+                ? spec.Ranges.SelectMany(range => EnumerateRange(rows, columns, range)).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
                 : spec.CachedValues?.ToList() ?? new List<double>();
             series.Add(new ChartSeriesData(spec.Title, values));
         }
@@ -1725,7 +1729,7 @@ public class SpreadsheetGrid : UserControl
         List<string> categories;
         if (chart.Categories is { } cats && RangeHasData(cats))
         {
-            categories = EnumerateRange(sheet, cats).Select(Display).ToList();
+            categories = EnumerateRange(rows, columns, cats).Select(Display).ToList();
         }
         else if (chart.CachedCategories is { Count: > 0 } cached)
         {
@@ -1733,7 +1737,7 @@ public class SpreadsheetGrid : UserControl
         }
         else if (chart.Categories is { } cats2)
         {
-            categories = EnumerateRange(sheet, cats2).Select(Display).ToList();
+            categories = EnumerateRange(rows, columns, cats2).Select(Display).ToList();
         }
         else
         {
@@ -1757,9 +1761,12 @@ public class SpreadsheetGrid : UserControl
 
     // Yields a range's cell addresses in row-major order (clamped to the sheet).
     private static IEnumerable<CellAddress> EnumerateRange(SpreadsheetViewModel sheet, CellRange range)
+        => EnumerateRange(sheet.RowCount, sheet.ColumnCount, range);
+
+    private static IEnumerable<CellAddress> EnumerateRange(int rows, int columns, CellRange range)
     {
-        int rowEnd = Math.Min(range.Row + range.RowSpan - 1, sheet.RowCount - 1);
-        int colEnd = Math.Min(range.Column + range.ColumnSpan - 1, sheet.ColumnCount - 1);
+        int rowEnd = (int)Math.Min((long)range.Row + range.RowSpan - 1, rows - 1);
+        int colEnd = (int)Math.Min((long)range.Column + range.ColumnSpan - 1, columns - 1);
         for (int r = Math.Max(0, range.Row); r <= rowEnd; r++)
         {
             for (int c = Math.Max(0, range.Column); c <= colEnd; c++)
@@ -1869,15 +1876,15 @@ public class SpreadsheetGrid : UserControl
 
     private const double MinColumnWidth = 24;
     private const double MinRowHeight = 16;
-    private double dragStart;
-    private double dragStartSize;
-    private bool resizing; // suppress dynamic-row growth/trim while dragging a header divider
+    private bool resizing => this.headerResize is not null; // suppress dynamic growth/trim during a drag
 
     // A thin grab strip on a column header's right edge: drag to resize that column.
     private Control ColumnResizeHandle(int column)
     {
         Border handle = new()
         {
+            Name = "ColumnResizeHandle",
+            ZIndex = 1, // Keep both halves of the grab strip above its neighboring headers.
             Background = Brushes.Transparent,
             Width = 6,
             Height = ColumnHeaderHeight * this.zoom,
@@ -1896,30 +1903,7 @@ public class SpreadsheetGrid : UserControl
                 }
                 return;
             }
-            this.dragStart = e.GetPosition(this).X;
-            this.dragStartSize = this.columnWidths[column];
-            this.resizing = true;
-            e.Pointer.Capture(handle);
-            e.Handled = true;
-        };
-        handle.PointerMoved += (_, e) =>
-        {
-            if (!ReferenceEquals(e.Pointer.Captured, handle))
-            {
-                return;
-            }
-            double width = Math.Max(MinColumnWidth, this.dragStartSize + (e.GetPosition(this).X - this.dragStart));
-            this.SetColumnWidth(column, width);
-        };
-        handle.PointerReleased += (_, e) =>
-        {
-            if (!ReferenceEquals(e.Pointer.Captured, handle))
-            {
-                return;
-            }
-            e.Pointer.Capture(null);
-            this.resizing = false;
-            this.Rebuild(); // resync overlays/selection/editor to the final size
+            this.BeginHeaderResize(e, column, isColumn: true);
         };
         return handle;
     }
@@ -1929,6 +1913,8 @@ public class SpreadsheetGrid : UserControl
     {
         Border handle = new()
         {
+            Name = "RowResizeHandle",
+            ZIndex = 1,
             Background = Brushes.Transparent,
             Width = RowHeaderWidth * this.zoom,
             Height = 6,
@@ -1947,30 +1933,7 @@ public class SpreadsheetGrid : UserControl
                 }
                 return;
             }
-            this.dragStart = e.GetPosition(this).Y;
-            this.dragStartSize = this.rowHeights[row];
-            this.resizing = true;
-            e.Pointer.Capture(handle);
-            e.Handled = true;
-        };
-        handle.PointerMoved += (_, e) =>
-        {
-            if (!ReferenceEquals(e.Pointer.Captured, handle))
-            {
-                return;
-            }
-            double height = Math.Max(MinRowHeight, this.dragStartSize + (e.GetPosition(this).Y - this.dragStart));
-            this.SetRowHeight(row, height);
-        };
-        handle.PointerReleased += (_, e) =>
-        {
-            if (!ReferenceEquals(e.Pointer.Captured, handle))
-            {
-                return;
-            }
-            e.Pointer.Capture(null);
-            this.resizing = false;
-            this.Rebuild();
+            this.BeginHeaderResize(e, row, isColumn: false);
         };
         return handle;
     }
@@ -2024,7 +1987,7 @@ public class SpreadsheetGrid : UserControl
     // (left→right, right→left, center→both).
     private (int Left, int Right) ComputeSpill(int row, int column, CellViewModel cell)
     {
-        if (this.sheet is null || cell.NumberFormat is not null)
+        if (this.sheet is null || cell.WrapText || cell.NumberFormat is not null)
         {
             return (0, 0); // number-formatted (e.g. currency) cells don't spill — Excel shows ####
         }
@@ -2066,6 +2029,40 @@ public class SpreadsheetGrid : UserControl
 
     // Total horizontal padding (both sides) of a cell's text, matching the in-cell/overlay Margin.
     private const double CellTextPadding = 8;
+
+    private double MeasureWrappedRowHeight(int row, double minimum)
+    {
+        double height = minimum;
+        for (int column = 0; column < this.sheet!.Rows[row].Cells.Count && column < this.columnWidths.Length; column++)
+        {
+            CellViewModel cell = this.sheet.Rows[row].Cells[column];
+            if (!cell.WrapText || string.IsNullOrEmpty(cell.DisplayText) || this.covered![row, column])
+            {
+                continue;
+            }
+
+            int columnSpan = this.spans![row, column].Item2;
+            double width = this.columnOffsets[Math.Min(column + columnSpan, this.columnWidths.Length)] -
+                this.columnOffsets[column] - CellTextPadding;
+            if (this.sheet.AutoFilterRange is { } filter && row == filter.Row &&
+                column >= filter.Column && column < filter.Column + filter.ColumnSpan)
+            {
+                width -= 23 * this.zoom;
+            }
+
+            FontFamily family = string.IsNullOrWhiteSpace(cell.FontFamily) ? FontFamily.Default : new FontFamily(cell.FontFamily);
+            Typeface typeface = new(family, cell.Italic ? FontStyle.Italic : FontStyle.Normal,
+                cell.Bold ? FontWeight.Bold : FontWeight.Normal);
+            FormattedText formatted = new(cell.DisplayText, CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, typeface, cell.FontSize * this.zoom, null)
+            {
+                MaxTextWidth = Math.Max(1, width),
+            };
+            height = Math.Max(height, Math.Ceiling(formatted.Height + 5));
+        }
+
+        return Math.Min(height, 546 * this.zoom);
+    }
 
     // Measures the rendered width (px, at the current zoom) of a cell's text, summing per-run widths
     // so bold/italic runs are measured with the right typeface.
@@ -2157,6 +2154,7 @@ public class SpreadsheetGrid : UserControl
             text.FontFamily = new FontFamily(cell.FontFamily);
         }
         RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell));
+        this.calculatedCellRefreshes.Add(() => RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell)));
         this.PlaceSheetControl(text, row, startColumn, 1, span);
         return text;
     }
@@ -2166,10 +2164,13 @@ public class SpreadsheetGrid : UserControl
         TextBlock text = new()
         {
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(4, 2),
+            // Excel's wrapped rows are sized for the text lines themselves. Extra vertical margins
+            // can leave too little height for the final line, which TextBlock then drops entirely.
+            Margin = new Thickness(4, cell.WrapText ? 0 : 2),
             // When the text spills into empty neighbours, an overlay TextBlock draws the full text on
             // top; the in-cell one then shouldn't show an ellipsis (the overlay covers it).
-            TextTrimming = spilling ? TextTrimming.None : TextTrimming.CharacterEllipsis,
+            TextTrimming = spilling || cell.WrapText ? TextTrimming.None : TextTrimming.CharacterEllipsis,
+            TextWrapping = cell.WrapText ? TextWrapping.Wrap : TextWrapping.NoWrap,
             FontSize = cell.FontSize * this.zoom,
             TextAlignment = cell.TextAlignment,
             // The sheet stays light in dark mode, so cell text must be explicitly dark — the
@@ -2209,7 +2210,7 @@ public class SpreadsheetGrid : UserControl
             row == filterRange.Row && column >= filterRange.Column &&
             column < filterRange.Column + filterRange.ColumnSpan)
         {
-            text.Margin = new Thickness(4, 2, 23 * this.zoom, 2);
+            text.Margin = new Thickness(4, text.Margin.Top, 23 * this.zoom, text.Margin.Bottom);
             filterButton = new Border
             {
                 Width = 17 * this.zoom,
@@ -2292,9 +2293,7 @@ public class SpreadsheetGrid : UserControl
                 border.Child = cellContent;
             }
 
-            string? tip = string.IsNullOrWhiteSpace(cell.CommentAuthor) || string.IsNullOrWhiteSpace(cell.Comment)
-                ? cell.Comment
-                : $"{cell.CommentAuthor}: {cell.Comment}";
+            string? tip = cell.Comment;
             if (!string.IsNullOrWhiteSpace(cell.Hyperlink))
             {
                 tip = string.IsNullOrWhiteSpace(tip)
@@ -2368,6 +2367,12 @@ public class SpreadsheetGrid : UserControl
 
         // Re-render live as the active cell is edited via the formula bar / toolbar. A font-size
         // change can alter the row height, so that triggers a full rebuild instead.
+        this.calculatedCellRefreshes.Add(() =>
+        {
+            if (spilling || dataBar is { ShowValue: false }) text.Inlines?.Clear();
+            else RenderInlines(text, cell, this.FindCellValueRule(row, column, cell));
+            if (barGrid is not null && dataBar is { } bar) SetBarFraction(barGrid, bar, cell);
+        });
         PropertyChangedEventHandler handler = (_, e) =>
         {
             switch (e.PropertyName)
@@ -2410,6 +2415,12 @@ public class SpreadsheetGrid : UserControl
                 case nameof(CellViewModel.TextAlignment):
                     text.TextAlignment = cell.TextAlignment;
                     break;
+                case nameof(CellViewModel.WrapText):
+                    if (!this.applyingCellFormat)
+                    {
+                        this.Rebuild();
+                    }
+                    break;
                 case nameof(CellViewModel.FontFamily):
                     text.FontFamily = string.IsNullOrWhiteSpace(cell.FontFamily) ? FontFamily.Default : new FontFamily(cell.FontFamily);
                     break;
@@ -2417,6 +2428,10 @@ public class SpreadsheetGrid : UserControl
                     border.Background = cell.Background ?? Brushes.Transparent;
                     break;
                 case nameof(CellViewModel.Comment) or nameof(CellViewModel.CommentAuthor) or nameof(CellViewModel.Hyperlink):
+                    if (this.applyingCellFormat)
+                    {
+                        break;
+                    }
                     UpdateAnnotation();
                     if (e.PropertyName == nameof(CellViewModel.Hyperlink) && spilling)
                     {
@@ -2585,6 +2600,8 @@ public class SpreadsheetGrid : UserControl
 
     private void HideSelectionVisuals()
     {
+        this.fillHandle.IsVisible = false;
+        this.fillPreview.IsVisible = false;
         this.selection.IsVisible = false;
         this.anchorBorder.IsVisible = false;
         this.editorHost.IsVisible = false;
@@ -2675,6 +2692,7 @@ public class SpreadsheetGrid : UserControl
         }
         this.PlaceSheetControl(this.selection, selRow, selCol, selRowSpan, selColSpan);
         this.selection.IsVisible = true;
+        this.UpdateFillHandle(new CellRange(selRow, selCol, selRowSpan, selColSpan), editing);
 
         // Position the shared editor over the anchor cell and load that cell's content.
         this.PlaceSheetControl(this.editorHost, row, col, rowSpan, colSpan);
@@ -2695,6 +2713,7 @@ public class SpreadsheetGrid : UserControl
     {
         this.editorSuspended = true;
         this.editorHost.IsVisible = false;
+        this.UpdateSelection();
     }
 
     // Puts keyboard focus in the in-cell editor (shows the caret) so the user can type.
@@ -3037,7 +3056,10 @@ public class SpreadsheetGrid : UserControl
         }
         sheet.Checkpoint();
         cell.Comment = comment.Length == 0 ? null : comment;
-        cell.CommentAuthor = comment.Length == 0 ? null : cell.CommentAuthor ?? Get(S.CommentAuthor);
+        if (comment.Length == 0)
+        {
+            cell.CommentAuthor = null;
+        }
         sheet.NotifyMetadataChanged();
     }
 
@@ -3101,6 +3123,8 @@ public class SpreadsheetGrid : UserControl
             }
         };
         AddField(Get(S.Alignment), alignment);
+        CheckBox wrapText = new() { Content = Get(S.WrapText), IsChecked = active.WrapText };
+        fields.Children.Add(wrapText);
         TextBox fontName = Field(active.FontFamily);
         AddField(Get(S.FontFamilyLabel), fontName);
         TextBox fontSize = Field((active.FontSize * 3.0 / 4.0).ToString("0.##", CultureInfo.InvariantCulture));
@@ -3174,6 +3198,7 @@ public class SpreadsheetGrid : UserControl
                         2 => TextAlignment.Right,
                         _ => TextAlignment.Left,
                     };
+                    cell.WrapText = wrapText.IsChecked == true;
                     cell.FontFamily = string.IsNullOrWhiteSpace(fontName.Text) ? null : fontName.Text.Trim();
                     cell.FontSize = points * 4.0 / 3.0;
                     cell.SetWholeBold(bold.IsChecked == true);

@@ -91,7 +91,7 @@ internal sealed class XlsxWorkbookReader(byte[] bytes)
     }
 }
 
-public static class XlsxFile
+public static partial class XlsxFile
 {
     // Reads the first worksheet of an .xlsx stream into a SheetData
     // (cells + column widths + merged ranges), resolving theme colors where possible.
@@ -314,10 +314,9 @@ public static class XlsxFile
             int styleIndex = int.TryParse(cell.Attribute("s")?.Value, out int parsedStyle) ? parsedStyle : 0;
             PreviewCellStyle style = styleIndex >= 0 && styleIndex < styles.Count ? styles[styleIndex] : default;
             (string text, string? formulaResult) = PreviewCellText(cell, sharedStrings, style.NumberFormat);
-            double? formulaNumber = cell.Element(Ssml + "f") is not null &&
-                double.TryParse(cell.Element(Ssml + "v")?.Value, NumberStyles.Float,
-                    CultureInfo.InvariantCulture, out double cachedNumber)
-                    ? cachedNumber : null;
+            CellValue? formulaValue = ReadPreviewFormulaValue(cell, sharedStrings);
+            double? formulaNumber = formulaValue is { Kind: CellValueKind.Number } cachedNumber
+                ? cachedNumber.Number : null;
             values[(row, column)] = new CellData(
                 text,
                 style.Bold,
@@ -331,7 +330,8 @@ public static class XlsxFile
                 style.FontFamily,
                 style.Strikethrough,
                 formulaResult,
-                FormulaNumericValue: formulaNumber);
+                FormulaNumericValue: formulaNumber)
+            { WrapText = style.WrapText, FormulaValue = formulaValue };
         }
 
         lastRow = Math.Max(1, lastRow);
@@ -365,10 +365,20 @@ public static class XlsxFile
             }
         }
 
+        List<double> heights = Enumerable.Repeat(0d, lastRow).ToList();
+        foreach ((int row, double height) in slice.RowHeights)
+        {
+            if (row >= 0 && row < heights.Count)
+            {
+                heights[row] = height;
+            }
+        }
+
         return new SheetData
         {
             Cells = rows,
             ColumnWidths = widths,
+            RowHeights = heights,
             Merges = slice.Merges,
             Charts = XlsxCharts.Read(bytes, sheet: null, sheetIndex),
             DataBars = previewBars,
@@ -391,6 +401,7 @@ public static class XlsxFile
         ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException(EditorText.Format(EditorString.MissingWorkbookPart, partPath));
         List<XElement> cells = new();
         List<(int Min, int Max, double Width)> columns = new();
+        List<(int Row, double Height)> rowHeights = new();
         List<MergeRange> merges = new();
         List<int> hiddenRows = new();
         XElement? tabColor = null;
@@ -459,6 +470,12 @@ public static class XlsxFile
                     hiddenRows.Add(oneBasedRow - 1);
                 }
 
+                if (double.TryParse(reader.GetAttribute("ht"), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double pointHeight) && pointHeight > 0)
+                {
+                    rowHeights.Add((oneBasedRow - 1, pointHeight * 4.0 / 3.0));
+                }
+
                 XElement row = (XElement)XNode.ReadFrom(reader);
                 foreach (XElement cell in row.Descendants(Ssml + "c"))
                 {
@@ -488,7 +505,7 @@ public static class XlsxFile
 
         int rowCount = Math.Max(1, Math.Min(rowLimit, dimensionRows > 0 ? dimensionRows : lastLoadedRow));
         int columnCount = Math.Max(1, Math.Min(columnLimit, dimensionColumns > 0 ? dimensionColumns : lastLoadedColumn));
-        return new PreviewWorksheetSlice(cells, columns, merges, hiddenRows, tabColor, rowCount, columnCount);
+        return new PreviewWorksheetSlice(cells, columns, rowHeights, merges, hiddenRows, tabColor, rowCount, columnCount);
     }
 
     // AutoFilter follows sheetData in OOXML, so a limited first-screen preview would otherwise
@@ -577,12 +594,13 @@ public static class XlsxFile
             "s" when int.TryParse(raw, out int index) && sharedStrings.TryGetValue(index, out string? shared) => shared,
             "inlineStr" => string.Concat(cell.Descendants(Ssml + "t").Select(static text => text.Value)),
             "b" => raw == "1" ? "TRUE" : "FALSE",
+            "str" => DecodeCachedText(raw),
             _ => raw,
         };
 
         // Shared-formula followers can carry an empty <f/>. Show their cached value in the small
         // preview; ClosedXML expands the formula when the full sheet is imported.
-        string cachedResult = type.Length == 0 &&
+        string cachedResult = (type is "" or "n") &&
             double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out double number)
                 ? NumberFormatter.Format(number, numberFormat)
                 : value;
@@ -631,6 +649,7 @@ public static class XlsxFile
                 ? custom
                 : BuiltInNumberFormat(numberFormatId);
             string horizontal = xf.Element(Ssml + "alignment")?.Attribute("horizontal")?.Value ?? string.Empty;
+            bool wrapText = xf.Element(Ssml + "alignment")?.Attribute("wrapText")?.Value is "1" or "true";
             result.Add(new PreviewCellStyle(
                 font?.Element(Ssml + "b") is not null,
                 font?.Element(Ssml + "i") is not null,
@@ -643,7 +662,8 @@ public static class XlsxFile
                     : 0,
                 font?.Element(Ssml + "name")?.Attribute("val")?.Value,
                 numberFormat,
-                horizontal is "center" or "centerContinuous" ? TextAlignment.Center : horizontal == "right" ? TextAlignment.Right : TextAlignment.Left));
+                horizontal is "center" or "centerContinuous" ? TextAlignment.Center : horizontal == "right" ? TextAlignment.Right : TextAlignment.Left,
+                wrapText));
         }
 
         return result.Count == 0 ? new List<PreviewCellStyle> { default } : result;
@@ -811,11 +831,13 @@ public static class XlsxFile
         double FontSize,
         string? FontFamily,
         string? NumberFormat,
-        TextAlignment Alignment);
+        TextAlignment Alignment,
+        bool WrapText);
 
     private sealed record PreviewWorksheetSlice(
         List<XElement> Cells,
         List<(int Min, int Max, double Width)> Columns,
+        List<(int Row, double Height)> RowHeights,
         List<MergeRange> Merges,
         List<int> HiddenRows,
         XElement? TabColor,
@@ -833,6 +855,7 @@ public static class XlsxFile
     {
         cancellationToken.ThrowIfCancellationRequested();
         List<List<CellData>> rows = new();
+        List<double> rowHeights = new();
         List<int> hiddenRows = new();
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
@@ -874,10 +897,14 @@ public static class XlsxFile
             }
 
             List<CellData> row = new(lastColumn);
-            if (sheet.Row(r).IsHidden)
+            IXLRow xlRow = sheet.Row(r);
+            if (xlRow.IsHidden)
             {
                 hiddenRows.Add(r - 1);
             }
+            rowHeights.Add(Math.Abs(xlRow.Height - sheet.RowHeight) > 0.01
+                ? xlRow.Height * 4.0 / 3.0
+                : 0);
             for (int c = 1; c <= lastColumn; c++)
             {
                 IXLCell cell = sheet!.Cell(r, c);
@@ -908,11 +935,13 @@ public static class XlsxFile
                 string? numberFormat = null;
                 string? formulaResult = null;
                 double? formulaNumber = null;
+                CellValue? formulaValue = null;
                 if (cell.HasFormula)
                 {
                     text = "=" + StructuredReferences.Translate(cell.FormulaA1, r, c, tables);
                     numberFormat = format;
                     formulaResult = CachedFormulaText(cell.CachedValue, format);
+                    formulaValue = ReadFormulaValue(cell.CachedValue);
                     formulaNumber = cell.CachedValue.Type == XLDataType.Number
                         ? cell.CachedValue.GetNumber() : null;
                 }
@@ -953,7 +982,8 @@ public static class XlsxFile
                           (string.IsNullOrEmpty(cell.GetHyperlink().InternalAddress) ? null : "#" + cell.GetHyperlink().InternalAddress)
                         : null,
                     cell.HasComment ? cell.GetComment().Author : null,
-                    formulaNumber));
+                    formulaNumber)
+                { WrapText = importedStyle.WrapText, FormulaValue = formulaValue });
             }
 
             rows.Add(row);
@@ -1009,6 +1039,7 @@ public static class XlsxFile
         {
             Cells = rows,
             ColumnWidths = widths,
+            RowHeights = rowHeights,
             Merges = merges,
             Images = images,
             Charts = charts,
@@ -1712,14 +1743,15 @@ public static class XlsxFile
         double FontSize,
         string? FontFamily,
         string? NumberFormat,
-        XLAlignmentHorizontalValues HorizontalAlignment);
+        XLAlignmentHorizontalValues HorizontalAlignment,
+        bool WrapText);
 
     private static string CachedFormulaText(XLCellValue value, string? numberFormat) => value.Type switch
     {
         XLDataType.Blank => string.Empty,
         XLDataType.Boolean => value.GetBoolean() ? "TRUE" : "FALSE",
         XLDataType.Number => NumberFormatter.Format(value.GetNumber(), numberFormat),
-        XLDataType.Text => value.GetText(),
+        XLDataType.Text => DecodeCachedText(value.GetText()),
         XLDataType.Error => value.GetError() switch
         {
             XLError.NullValue => "#NULL!",
@@ -1765,7 +1797,8 @@ public static class XlsxFile
             font.FontSize * 4.0 / 3.0, // points -> device pixels (96/72)
             string.IsNullOrWhiteSpace(font.FontName) ? null : font.FontName,
             numberFormat,
-            style.Alignment.Horizontal);
+            style.Alignment.Horizontal,
+            style.Alignment.WrapText);
     }
 
     private readonly record struct ResolvedTableStyle(
@@ -2073,14 +2106,9 @@ public static class XlsxFile
             }
         }
 
-        if (chartGroups.Count == 0)
-        {
-            workbook.SaveAs(stream);
-            return;
-        }
-
         using MemoryStream buffer = new();
         workbook.SaveAs(buffer);
+        RestoreFormulaCaches(buffer, source);
         byte[] bytes = buffer.ToArray();
         foreach ((int sheetIndex, IReadOnlyList<ChartWriteData> charts) in chartGroups)
         {
@@ -2094,6 +2122,7 @@ public static class XlsxFile
     {
         IReadOnlyList<IReadOnlyList<CellData>> rows = data.Cells;
         IReadOnlyList<double> columnWidths = data.ColumnWidths;
+        IReadOnlyList<double> rowHeights = data.RowHeights;
         IReadOnlyList<MergeRange> merges = data.Merges;
         IReadOnlyList<SheetDataBar> dataBars = data.DataBars;
         IReadOnlyList<SheetCellValueRule> valueRules = data.CellValueRules;
@@ -2126,7 +2155,7 @@ public static class XlsxFile
                     IXLComment comment = cell.CreateComment();
                     comment.AddText(cellData.Comment);
                     comment.Author = string.IsNullOrWhiteSpace(cellData.CommentAuthor)
-                        ? "Spreadsheet Editor"
+                        ? string.Empty
                         : cellData.CommentAuthor;
                 }
 
@@ -2190,6 +2219,15 @@ public static class XlsxFile
                     TextAlignment.Right => XLAlignmentHorizontalValues.Right,
                     _ => XLAlignmentHorizontalValues.Left,
                 };
+                cell.Style.Alignment.WrapText = cellData.WrapText;
+            }
+        }
+
+        for (int r = 0; r < rows.Count && r < rowHeights.Count; r++)
+        {
+            if (rowHeights[r] > 0)
+            {
+                sheet.Row(r + 1).Height = rowHeights[r] * 3.0 / 4.0;
             }
         }
 

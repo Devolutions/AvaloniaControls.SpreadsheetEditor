@@ -107,6 +107,9 @@ public partial class SpreadsheetEditor : UserControl
     private readonly HashSet<int> failedSheetLoadIndexes = new();
     private readonly Dictionary<SpreadsheetViewModel, HashSet<string>> sheetDependencies = new();
     private readonly HashSet<SpreadsheetViewModel> pendingUserRecalculations = new();
+    private readonly HashSet<SpreadsheetViewModel> pendingFormulaInputChanges = new();
+    private readonly HashSet<SpreadsheetViewModel> pendingChartInputChanges = new();
+    private readonly Dictionary<string, HashSet<CellAddress>> workbookChangedCells = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<SpreadsheetViewModel> deferredEditRecalculations = new();
     private readonly HashSet<SpreadsheetViewModel> editDirtyNotifications = new();
     private readonly Dictionary<SpreadsheetViewModel, CancellationTokenSource> editRecalculationDelays = new();
@@ -529,6 +532,7 @@ public partial class SpreadsheetEditor : UserControl
     {
         Cells = sheet.ToCellData(),
         ColumnWidths = sheet.Columns.Select(static column => column.Width).ToList(),
+        RowHeights = sheet.Rows.Select(static row => row.Height ?? 0).ToList(),
         Merges = sheet.Merges.ToArray(),
         Images = sheet.Images.ToArray(),
         Charts = sheet.Charts.ToArray(),
@@ -581,6 +585,10 @@ public partial class SpreadsheetEditor : UserControl
 
     private void LoadPreparedWorkbook(IReadOnlyList<SpreadsheetViewModel> prepared)
     {
+        this.CancelWorkbookCalculation(clearPending: true);
+        this.pendingFormulaInputChanges.Clear();
+        this.pendingChartInputChanges.Clear();
+        this.workbookChangedCells.Clear();
         this.DetachActiveCell();
         this.loadingSheets.Clear();
         this.sheetDependencies.Clear();
@@ -816,6 +824,7 @@ public partial class SpreadsheetEditor : UserControl
             return null;
         }
 
+        this.CancelWorkbookCalculation(clearPending: false);
         replacement.Name = target.Name;
         replacement.TabColor ??= target.TabColor;
         this.ConfigureWorkbookFormulaResolution(replacement);
@@ -830,6 +839,14 @@ public partial class SpreadsheetEditor : UserControl
         {
             this.pendingUserRecalculations.Add(replacement);
         }
+        if (this.pendingFormulaInputChanges.Remove(target))
+        {
+            this.pendingFormulaInputChanges.Add(replacement);
+        }
+        if (this.pendingChartInputChanges.Remove(target))
+        {
+            this.pendingChartInputChanges.Add(replacement);
+        }
         this.loadingSheets.Remove(target);
         if (completed)
         {
@@ -837,6 +854,11 @@ public partial class SpreadsheetEditor : UserControl
             this.sheetDependencies[replacement] = new HashSet<string>(
                 dependencies ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 StringComparer.OrdinalIgnoreCase);
+            if (this.workbookChangedCells.Any(change => change.Value.Any(address => replacement.ReferencesInput(change.Key, address))))
+            {
+                this.pendingFormulaInputChanges.Add(replacement);
+                this.QueuePendingUserRecalculation(replacement);
+            }
         }
         else
         {
@@ -867,6 +889,7 @@ public partial class SpreadsheetEditor : UserControl
         {
             this.TryRunPendingUserRecalculations();
         }
+        this.StartPendingWorkbookCalculation();
         if (completed && this.loadingSheets.Count == 0)
         {
             this.stagedWorkbookBytes = null;
@@ -882,12 +905,27 @@ public partial class SpreadsheetEditor : UserControl
     private void ConfigureWorkbookFormulaResolution(SpreadsheetViewModel sheet)
     {
         sheet.SetWorkbookCellResolver(this.ResolveWorkbookCell);
-        sheet.SetEditRecalculationGate(() => this.RequestUserEditRecalculation(sheet));
+        sheet.SetEditRecalculationGate((addresses, formulaChanged) => this.RequestUserEditRecalculation(sheet, addresses, formulaChanged));
     }
 
-    private bool RequestUserEditRecalculation(SpreadsheetViewModel sheet)
+    private bool RequestUserEditRecalculation(SpreadsheetViewModel sheet, IReadOnlyList<CellAddress> addresses, bool formulaChanged)
     {
+        this.CancelWorkbookCalculation(clearPending: false);
         this.CancelScheduledEditRecalculation(sheet);
+        if (!this.workbookChangedCells.TryGetValue(sheet.Name, out HashSet<CellAddress>? changed))
+        {
+            this.workbookChangedCells[sheet.Name] = changed = new HashSet<CellAddress>();
+        }
+        changed.UnionWith(addresses);
+        if (addresses.Any(address => IsChartInput(sheet, address)))
+        {
+            this.pendingChartInputChanges.Add(sheet);
+        }
+        if (formulaChanged || this.sheets.Any(candidate => !this.loadingSheets.Contains(candidate) &&
+            addresses.Any(address => candidate.ReferencesInput(sheet.Name, address))))
+        {
+            this.pendingFormulaInputChanges.Add(sheet);
+        }
         bool editing = this.IsActivelyEditing(sheet);
         if (editing)
         {
@@ -899,7 +937,7 @@ public partial class SpreadsheetEditor : UserControl
                 this.ContentChanged?.Invoke(this, EventArgs.Empty);
             }
         }
-        else if (this.AreDependenciesReady(sheet))
+        else if (!this.pendingFormulaInputChanges.Contains(sheet) || this.AreDependenciesReady(sheet))
         {
             CancellationTokenSource delay = new();
             this.editRecalculationDelays[sheet] = delay;
@@ -929,6 +967,7 @@ public partial class SpreadsheetEditor : UserControl
         this.editDirtyNotifications.Remove(sheet);
         if (!this.deferredEditRecalculations.Contains(sheet))
         {
+            this.StartPendingWorkbookCalculation();
             return;
         }
 
@@ -944,7 +983,7 @@ public partial class SpreadsheetEditor : UserControl
 
                 this.deferredEditRecalculations.Remove(sheet);
                 this.CancelScheduledEditRecalculation(sheet);
-                if (this.AreDependenciesReady(sheet))
+                if (!this.pendingFormulaInputChanges.Contains(sheet) || this.AreDependenciesReady(sheet))
                 {
                     this.RecalculateWorkbookFrom(sheet.Name, recalculateSource: true);
                     if (!ReferenceEquals(this.hookedSheet, sheet))
@@ -1066,27 +1105,59 @@ public partial class SpreadsheetEditor : UserControl
             return;
         }
 
-        this.recalculatingWorkbookDependencies = true;
-        try
+        SpreadsheetViewModel? changedSource = this.sheets.FirstOrDefault(
+            sheet => sheet.Name.Equals(changedSheetName, StringComparison.OrdinalIgnoreCase));
+        if (recalculateSource && !recalculateAll && changedSource is not null &&
+            !this.pendingFormulaInputChanges.Remove(changedSource))
         {
-            if (recalculateAll)
+            // An unreferenced note/label still updates charts and dirty tracking, but must not
+            // load formula dependencies or replace Excel's cached totals with needless calculations.
+            this.recalculatingWorkbookDependencies = true;
+            try
             {
-                foreach (SpreadsheetViewModel sheet in this.sheets.Where(sheet => !this.loadingSheets.Contains(sheet)))
+                if (this.pendingChartInputChanges.Remove(changedSource))
                 {
-                    sheet.Recalculate();
+                    changedSource.CompleteBackgroundCalculation();
                 }
-                return;
+                else
+                {
+                    changedSource.NotifyMetadataChanged();
+                }
             }
+            finally
+            {
+                this.recalculatingWorkbookDependencies = false;
+            }
+            this.StartPendingWorkbookCalculation();
+            return;
+        }
 
-            HashSet<SpreadsheetViewModel> recalculated = new();
+        HashSet<string> targets = new(StringComparer.OrdinalIgnoreCase);
+        if (recalculateAll)
+        {
+            targets.UnionWith(this.sheets.Where(sheet => !this.loadingSheets.Contains(sheet)).Select(sheet => sheet.Name));
+        }
+        else
+        {
+            HashSet<SpreadsheetViewModel> visited = new();
             Queue<string> changed = new();
             changed.Enqueue(changedSheetName);
             SpreadsheetViewModel? source = this.sheets.FirstOrDefault(
                 sheet => sheet.Name.Equals(changedSheetName, StringComparison.OrdinalIgnoreCase));
             if (recalculateSource && source is not null && !this.loadingSheets.Contains(source))
             {
-                source.Recalculate();
-                recalculated.Add(source);
+                targets.Add(source.Name);
+                visited.Add(source);
+            }
+
+            foreach (SpreadsheetViewModel volatileSheet in this.sheets.Where(sheet =>
+                !this.loadingSheets.Contains(sheet) && sheet.HasVolatileFormulas))
+            {
+                targets.Add(volatileSheet.Name);
+                if (visited.Add(volatileSheet))
+                {
+                    changed.Enqueue(volatileSheet.Name);
+                }
             }
 
             while (changed.Count > 0)
@@ -1094,7 +1165,7 @@ public partial class SpreadsheetEditor : UserControl
                 string dependencyName = changed.Dequeue();
                 foreach ((SpreadsheetViewModel sheet, HashSet<string> dependencies) in this.sheetDependencies)
                 {
-                    if (recalculated.Contains(sheet) ||
+                    if (visited.Contains(sheet) ||
                         this.loadingSheets.Contains(sheet) ||
                         !dependencies.Contains(dependencyName))
                     {
@@ -1111,16 +1182,20 @@ public partial class SpreadsheetEditor : UserControl
                         continue;
                     }
 
-                    sheet.Recalculate();
-                    recalculated.Add(sheet);
+                    targets.Add(sheet.Name);
+                    visited.Add(sheet);
                     changed.Enqueue(sheet.Name);
                 }
             }
         }
-        finally
+
+        this.pendingCalculationSheets.UnionWith(targets);
+        if (changedSource is not null)
         {
-            this.recalculatingWorkbookDependencies = false;
+            this.pendingChartInputChanges.Remove(changedSource);
         }
+        this.CancelWorkbookCalculation(clearPending: false);
+        this.StartPendingWorkbookCalculation();
     }
 
     private void TryRunPendingUserRecalculations()
@@ -1177,6 +1252,7 @@ public partial class SpreadsheetEditor : UserControl
 
     private void CancelWorkbookLoad()
     {
+        this.CancelWorkbookCalculation(clearPending: true);
         this.workbookLoadGeneration++;
         this.workbookLoadCancellation?.Cancel();
         this.workbookLoadCancellation?.Dispose();
@@ -1192,6 +1268,9 @@ public partial class SpreadsheetEditor : UserControl
         this.failedSheetLoadIndexes.Clear();
         this.sheetDependencies.Clear();
         this.pendingUserRecalculations.Clear();
+        this.pendingFormulaInputChanges.Clear();
+        this.pendingChartInputChanges.Clear();
+        this.workbookChangedCells.Clear();
         this.deferredEditRecalculations.Clear();
         this.editDirtyNotifications.Clear();
         this.formulaBarEditSheet = null;
@@ -1432,6 +1511,14 @@ public partial class SpreadsheetEditor : UserControl
             if (sheet.ColumnWidths[i] > 0)
             {
                 vm.Columns[i].Width = sheet.ColumnWidths[i];
+            }
+        }
+
+        for (int i = 0; i < vm.Rows.Count && i < sheet.RowHeights.Count; i++)
+        {
+            if (sheet.RowHeights[i] > 0)
+            {
+                vm.Rows[i].Height = sheet.RowHeights[i];
             }
         }
 
@@ -2068,13 +2155,28 @@ public partial class SpreadsheetEditor : UserControl
     }
 
     // Opens the builder pre-filled with a chart's settings and applies the user's changes.
+    private bool chartEditorOpen;
+
     private async Task EditChartAsync(SheetChart chart)
     {
-        if (TopLevel.GetTopLevel(this) is not Window owner)
+        if (this.IsReadOnly || this.Grid.ReadOnly || this.chartEditorOpen || !this.vm.Charts.Contains(chart) ||
+            TopLevel.GetTopLevel(this) is not Window owner)
         {
             return;
         }
+        this.chartEditorOpen = true;
+        try
+        {
+            await this.EditChartCoreAsync(owner, this.vm, chart);
+        }
+        finally
+        {
+            this.chartEditorOpen = false;
+        }
+    }
 
+    private async Task EditChartCoreAsync(Window owner, SpreadsheetViewModel sheet, SheetChart chart)
+    {
         // Charts built from a contiguous block carry a SourceRange the dialog can re-read. Imported
         // charts define their series as explicit ranges (no single SourceRange) — for those, show the
         // first series' range and only apply setting changes, so editing never rebuilds (and wipes) the data.
@@ -2106,7 +2208,7 @@ public partial class SpreadsheetEditor : UserControl
 
         ChartBuilderResult? result = await ChartBuilderDialog.ShowAsync(
             owner, displayRange.ToA1(), initial, blockBuilt, seriesSources, categorySource);
-        if (result is null)
+        if (result is null || this.IsReadOnly || !this.sheets.Contains(sheet) || !sheet.Charts.Contains(chart))
         {
             return;
         }
@@ -2114,14 +2216,14 @@ public partial class SpreadsheetEditor : UserControl
         if (blockBuilt && CellRange.TryParse(result.Range, out CellRange newRange))
         {
             // Chart built from a block: rebuild from the (possibly edited) range.
-            this.vm.UpdateChart(chart, result.Kind, newRange, result.FirstRowHeaders, result.FirstColCategories,
+            sheet.UpdateChart(chart, result.Kind, newRange, result.FirstRowHeaders, result.FirstColCategories,
                 result.Title, result.ShowLegend, result.ShowDataLabels,
                 result.ValueAxisFormat, result.AxisMinimum, result.AxisMaximum, result.AxisMajorStep);
         }
         else
         {
             // Imported chart: apply the (possibly edited) series/category ranges plus the settings.
-            this.vm.UpdateChartSource(chart, result.SeriesRanges, result.CategoryRange, result.Kind,
+            sheet.UpdateChartSource(chart, result.SeriesRanges, result.CategoryRange, result.Kind,
                 result.Title, result.ShowLegend, result.ShowDataLabels,
                 result.ValueAxisFormat, result.AxisMinimum, result.AxisMaximum, result.AxisMajorStep);
         }
@@ -2270,8 +2372,19 @@ public partial class SpreadsheetEditor : UserControl
             return;
         }
 
+        this.CancelWorkbookCalculation(clearPending: false);
+        string previousName = sheet.Name;
         sheet.Name = this.UniqueName(name, except: sheet);
+        if (this.pendingCalculationSheets.Remove(previousName))
+        {
+            this.pendingCalculationSheets.Add(sheet.Name);
+        }
+        if (this.workbookChangedCells.Remove(previousName, out HashSet<CellAddress>? changed))
+        {
+            this.workbookChangedCells[sheet.Name] = changed;
+        }
         this.RebuildTabs();
+        this.StartPendingWorkbookCalculation();
         this.ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -2284,10 +2397,15 @@ public partial class SpreadsheetEditor : UserControl
 
         int index = this.sheets.IndexOf(sheet);
         bool wasActive = ReferenceEquals(sheet, this.vm);
+        this.CancelWorkbookCalculation(clearPending: false);
+        this.pendingCalculationSheets.Remove(sheet.Name);
+        this.workbookChangedCells.Remove(sheet.Name);
         this.sheets.Remove(sheet);
         this.loadingSheets.Remove(sheet);
         this.sheetDependencies.Remove(sheet);
         this.pendingUserRecalculations.Remove(sheet);
+        this.pendingFormulaInputChanges.Remove(sheet);
+        this.pendingChartInputChanges.Remove(sheet);
         this.deferredEditRecalculations.Remove(sheet);
         this.editDirtyNotifications.Remove(sheet);
         if (ReferenceEquals(this.formulaBarEditSheet, sheet))
@@ -2310,6 +2428,7 @@ public partial class SpreadsheetEditor : UserControl
         }
 
         this.RebuildTabs();
+        this.StartPendingWorkbookCalculation();
         this.ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 

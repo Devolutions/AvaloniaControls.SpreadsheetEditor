@@ -150,6 +150,7 @@ Alternatív megoldásként használja az „Exportálás mint PDF” parancsot a
   <data name="Center" xml:space="preserve"><value>Középre</value></data>
   <data name="Right" xml:space="preserve"><value>Jobb</value></data>
   <data name="Alignment" xml:space="preserve"><value>Igazítás</value></data>
+  <data name="WrapText" xml:space="preserve"><value>Szöveg tördelése</value></data>
   <data name="FontFamilyLabel" xml:space="preserve"><value>Betűtípuscsalád (üres = alapértelmezett)</value></data>
   <data name="FontSizePoints" xml:space="preserve"><value>Betűméret (pt)</value></data>
   <data name="TextColorHex" xml:space="preserve"><value>Szöveg színe (#RRGGBB, üres = automatikus)</value></data>
