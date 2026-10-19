@@ -1499,6 +1499,7 @@ public partial class SpreadsheetGrid : UserControl
         };
         MenuFlyout menu = new();
         menu.Items.Add(deleteItem);
+        this.ConfigureReadOnlyMenu(menu);
         card.ContextFlyout = menu;
 
         // Resize grip (bottom-right corner): grab and drag to resize like an image.
@@ -2900,6 +2901,7 @@ public partial class SpreadsheetGrid : UserControl
         delete.Click += (_, _) => this.DeleteSelectedRows(row);
         menu.Items.Add(insert);
         menu.Items.Add(delete);
+        this.ConfigureReadOnlyMenu(menu);
         return menu;
     }
 
@@ -2966,6 +2968,7 @@ public partial class SpreadsheetGrid : UserControl
             this.Rebuild();
         };
         menu.Items.Add(showAll);
+        this.ConfigureReadOnlyMenu(menu);
         return menu;
     }
 
@@ -3050,7 +3053,7 @@ public partial class SpreadsheetGrid : UserControl
         string? comment = await this.PromptCellTextAsync(
             Get(string.IsNullOrWhiteSpace(cell.Comment) ? S.InsertComment : S.EditComment),
             Get(S.CommentPrompt), cell.Comment ?? string.Empty, multiline: true);
-        if (comment is null || comment == cell.Comment)
+        if (this.ReadOnly || !ReferenceEquals(this.sheet, sheet) || comment is null || comment == cell.Comment)
         {
             return;
         }
@@ -3079,7 +3082,7 @@ public partial class SpreadsheetGrid : UserControl
             Get(S.Hyperlink), Get(S.HyperlinkPrompt),
             cell.Hyperlink ?? string.Empty, valid: IsValidLinkTarget,
             validationMessage: Get(S.HyperlinkInvalid));
-        if (target is null || target == cell.Hyperlink)
+        if (this.ReadOnly || !ReferenceEquals(this.sheet, sheet) || target is null || target == cell.Hyperlink)
         {
             return;
         }
@@ -3164,6 +3167,12 @@ public partial class SpreadsheetGrid : UserControl
         cancel.Click += (_, _) => dialog.Close();
         save.Click += (_, _) =>
         {
+            if (this.ReadOnly || !ReferenceEquals(this.sheet, sheet))
+            {
+                dialog.Close();
+                return;
+            }
+
             if (!double.TryParse(fontSize.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double points) ||
                 !double.IsFinite(points) || points < 1 || points > 200)
             {
@@ -3264,17 +3273,32 @@ public partial class SpreadsheetGrid : UserControl
         }
     }
 
+    private void ConfigureReadOnlyMenu(MenuFlyout menu, MenuItem? copy = null)
+    {
+        void UpdateEnabledState()
+        {
+            foreach (MenuItem item in menu.Items.OfType<MenuItem>())
+            {
+                item.IsEnabled = !this.ReadOnly || ReferenceEquals(item, copy);
+            }
+        }
+
+        UpdateEnabledState();
+        menu.Opening += (_, _) => UpdateEnabledState();
+    }
+
     private MenuFlyout BuildCellMenu()
     {
         MenuFlyout menu = new();
-        void Add(string header, Action act)
+        MenuItem Add(string header, Action act)
         {
             MenuItem item = new() { Header = header };
             item.Click += (_, _) => act();
             menu.Items.Add(item);
+            return item;
         }
         Add(Get(S.Cut), this.CutSelection);
-        Add(Get(S.Copy), this.CopySelection);
+        MenuItem copy = Add(Get(S.Copy), this.CopySelection);
         Add(Get(S.Paste), this.PasteSelection);
         menu.Items.Add(new Separator());
         Add(Get(S.ClearContents), this.ClearSelection);
@@ -3294,6 +3318,7 @@ public partial class SpreadsheetGrid : UserControl
                 this.FilterColumn(address.Column, sheet.GetCell(address)?.DisplayText ?? string.Empty, sheet.LikelyHeaderRow());
             }
         });
+        this.ConfigureReadOnlyMenu(menu, copy);
         return menu;
     }
 

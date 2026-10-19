@@ -23,6 +23,8 @@
                 <MenuItem x:Name="CloseItem" Header="{loc:Loc SampleCloseMenu}" />
             </MenuItem>
         </Menu>
+        <CheckBox x:Name="ReadOnlyCheckBox" DockPanel.Dock="Top" Margin="8,4"
+                  Content="{loc:Loc ReadOnly}" />
         <se:SpreadsheetEditor x:Name="Editor" />
     </DockPanel>
 </Window>

@@ -100,6 +100,7 @@ public partial class SpreadsheetEditor : UserControl
 
     // The workbook: an ordered list of sheets, each its own view model; vm points at the active one.
     private readonly List<SpreadsheetViewModel> sheets = new();
+    private readonly List<Control> editingControls = new();
     private readonly HashSet<SpreadsheetViewModel> loadingSheets = new();
     private readonly Dictionary<SpreadsheetViewModel, int> stagedSheetIndexes = new();
     private readonly HashSet<int> previewedSheetIndexes = new();
@@ -140,6 +141,15 @@ public partial class SpreadsheetEditor : UserControl
     public SpreadsheetEditor()
     {
         this.InitializeComponent();
+
+        this.editingControls.AddRange(new Control[]
+        {
+            this.CutButton, this.PasteButton, this.FontFamilyBox, this.FontSizeBox,
+            this.ForegroundButton, this.BackgroundButton, this.BoldButton, this.ItalicButton,
+            this.UnderlineButton, this.StrikethroughButton, this.AlignLeftButton,
+            this.AlignCenterButton, this.AlignRightButton, this.SymbolButton,
+            this.ReplaceButton, this.ReplaceAllButton,
+        });
 
         this.vm.Initialize(this.InitialRowCount, this.InitialColumnCount);
         this.vm.Name = Get(S.Sheet) + "1";
@@ -296,15 +306,22 @@ public partial class SpreadsheetEditor : UserControl
         if (change.Property == IsReadOnlyProperty)
         {
             this.ApplyReadOnly();
+            this.RebuildTabs();
         }
     }
 
+    private bool IsActiveSheetReadOnly => this.IsReadOnly || this.loadingSheets.Contains(this.vm);
+
     private void ApplyReadOnly(bool raiseEvent = true)
     {
-        bool readOnly = this.IsReadOnly || this.loadingSheets.Contains(this.vm);
+        bool readOnly = this.IsActiveSheetReadOnly;
         this.Grid.ReadOnly = readOnly;
-        this.ReplaceButton.IsEnabled = !readOnly;
-        this.ReplaceAllButton.IsEnabled = !readOnly;
+        foreach (Control control in this.editingControls)
+        {
+            control.IsEnabled = !readOnly;
+        }
+        this.AddSheetButton.IsEnabled = !this.IsReadOnly;
+        this.RefreshUndoButtons();
         if (this.formulaBar is not null)
         {
             this.formulaBar.IsReadOnly = readOnly;
@@ -1486,6 +1503,11 @@ public partial class SpreadsheetEditor : UserControl
     // Adds a new blank sheet at the end and switches to it.
     public void AddSheet()
     {
+        if (this.IsReadOnly)
+        {
+            return;
+        }
+
         SpreadsheetViewModel sheetVm = new() { Name = this.NextSheetName() };
         sheetVm.Initialize(this.InitialRowCount, this.InitialColumnCount);
         this.ConfigureWorkbookFormulaResolution(sheetVm);
@@ -1571,6 +1593,8 @@ public partial class SpreadsheetEditor : UserControl
         MenuItem addColumn = new() { Header = Get(S.AddColumn) };
         addColumn.Click += (_, _) => this.AddColumn();
         menu.Items.Add(addColumn);
+
+        this.editingControls.AddRange(new Control[] { chart, autoSum, functions, addRow, addColumn });
 
         return menu;
     }
@@ -1983,7 +2007,7 @@ public partial class SpreadsheetEditor : UserControl
 
     public void Undo()
     {
-        if (!this.vm.CanUndo)
+        if (this.IsActiveSheetReadOnly || !this.vm.CanUndo)
         {
             return;
         }
@@ -1998,7 +2022,7 @@ public partial class SpreadsheetEditor : UserControl
 
     public void Redo()
     {
-        if (!this.vm.CanRedo)
+        if (this.IsActiveSheetReadOnly || !this.vm.CanRedo)
         {
             return;
         }
@@ -2046,8 +2070,8 @@ public partial class SpreadsheetEditor : UserControl
 
     private void RefreshUndoButtons()
     {
-        this.UndoButton.IsEnabled = this.vm.CanUndo;
-        this.RedoButton.IsEnabled = this.vm.CanRedo;
+        this.UndoButton.IsEnabled = !this.IsActiveSheetReadOnly && this.vm.CanUndo;
+        this.RedoButton.IsEnabled = !this.IsActiveSheetReadOnly && this.vm.CanRedo;
     }
 
     // Inserts =NAME() into the active cell and puts the caret inside the parentheses
@@ -2122,7 +2146,7 @@ public partial class SpreadsheetEditor : UserControl
     // Opens the chart builder and inserts the chart the user configures.
     private async Task ShowChartBuilderAsync()
     {
-        if (TopLevel.GetTopLevel(this) is not Window owner)
+        if (this.IsActiveSheetReadOnly || TopLevel.GetTopLevel(this) is not Window owner)
         {
             return;
         }
@@ -2140,15 +2164,16 @@ public partial class SpreadsheetEditor : UserControl
             defaultRange = new CellRange(region.Row, region.Column, region.RowSpan, region.ColumnSpan);
         }
 
+        SpreadsheetViewModel sheet = this.vm;
         ChartBuilderResult? result = await ChartBuilderDialog.ShowAsync(owner, defaultRange.ToA1());
-        if (result is null)
+        if (result is null || this.IsReadOnly || !this.sheets.Contains(sheet) || this.loadingSheets.Contains(sheet))
         {
             return;
         }
 
         if (CellRange.TryParse(result.Range, out CellRange range))
         {
-            this.vm.InsertChart(result.Kind, range, result.FirstRowHeaders, result.FirstColCategories,
+            sheet.InsertChart(result.Kind, range, result.FirstRowHeaders, result.FirstColCategories,
                 result.Title, result.ShowLegend, result.ShowDataLabels,
                 result.ValueAxisFormat, result.AxisMinimum, result.AxisMaximum, result.AxisMajorStep);
         }
@@ -2366,6 +2391,11 @@ public partial class SpreadsheetEditor : UserControl
 
     private void RenameSheet(SpreadsheetViewModel sheet, string name)
     {
+        if (this.IsReadOnly)
+        {
+            return;
+        }
+
         name = name.Trim();
         if (string.IsNullOrEmpty(name) || name.Equals(sheet.Name, StringComparison.Ordinal))
         {
@@ -2390,7 +2420,7 @@ public partial class SpreadsheetEditor : UserControl
 
     private void DeleteSheet(SpreadsheetViewModel sheet)
     {
-        if (this.sheets.Count <= 1)
+        if (this.IsReadOnly || this.sheets.Count <= 1)
         {
             return; // keep at least one sheet
         }
@@ -2550,9 +2580,9 @@ public partial class SpreadsheetEditor : UserControl
 
         // Right-click: Rename / Delete.
         MenuFlyout menu = new();
-        MenuItem rename = new() { Header = Get(S.Rename) };
+        MenuItem rename = new() { Header = Get(S.Rename), IsEnabled = !this.IsReadOnly };
         rename.Click += (_, _) => this.BeginRenameTab(sheet, tab);
-        MenuItem delete = new() { Header = Get(S.Delete), IsEnabled = this.sheets.Count > 1 };
+        MenuItem delete = new() { Header = Get(S.Delete), IsEnabled = !this.IsReadOnly && this.sheets.Count > 1 };
         delete.Click += (_, _) => this.DeleteSheet(sheet);
         menu.Items.Add(rename);
         menu.Items.Add(delete);
@@ -2563,6 +2593,11 @@ public partial class SpreadsheetEditor : UserControl
     // Swaps a tab's label for an inline editor to rename the sheet.
     private void BeginRenameTab(SpreadsheetViewModel sheet, Button tab)
     {
+        if (this.IsReadOnly)
+        {
+            return;
+        }
+
         TextBox box = new()
         {
             Text = sheet.Name,

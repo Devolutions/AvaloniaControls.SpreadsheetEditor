@@ -49,6 +49,13 @@ public partial class MainWindow : Window
         this.ExportPdfItem.Click += this.OnExportPdf;
         this.PrintItem.Click += this.OnPrint;
         this.CloseItem.Click += this.OnClose;
+        this.ReadOnlyCheckBox.IsCheckedChanged += (_, _) =>
+        {
+            bool readOnly = this.ReadOnlyCheckBox.IsChecked == true;
+            this.Editor.IsReadOnly = readOnly;
+            this.SaveItem.IsEnabled = !readOnly;
+            this.SaveAsItem.IsEnabled = !readOnly;
+        };
 
         // Ctrl+P prints (the grid's key handler ignores it, so it bubbles up to here).
         this.KeyDown += (_, e) =>
