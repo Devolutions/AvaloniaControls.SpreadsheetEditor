@@ -557,6 +557,8 @@ public partial class SpreadsheetEditor : UserControl
         DataBars = sheet.DataBars.ToArray(),
         CellValueRules = sheet.CellValueRules.ToArray(),
         AutoFilterRange = sheet.AutoFilterRange,
+        Tables = sheet.Tables.ToArray(),
+        ColumnFilters = sheet.ColumnFilterSnapshot(),
         HiddenRows = sheet.Rows.Select((row, index) => (row, index))
             .Where(static item => item.row.IsHidden).Select(static item => item.index).ToArray(),
         TabColor = sheet.TabColor,
@@ -1549,6 +1551,8 @@ public partial class SpreadsheetEditor : UserControl
         vm.SetDataBars(sheet.DataBars);
         vm.SetCellValueRules(sheet.CellValueRules);
         vm.SetAutoFilterRange(sheet.AutoFilterRange);
+        vm.SetTables(sheet.Tables);
+        vm.SetColumnFilters(sheet.ColumnFilters);
         vm.SetHiddenRows(sheet.HiddenRows);
         vm.SetCharts(sheet.Charts);
         vm.TabColor = sheet.TabColor;

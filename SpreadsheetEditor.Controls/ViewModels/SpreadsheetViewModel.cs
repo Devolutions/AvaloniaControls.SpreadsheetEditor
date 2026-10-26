@@ -79,9 +79,10 @@ public partial class SpreadsheetViewModel : ObservableObject
             if (row >= 0 && row < this.RowCount)
             {
                 this.Rows[row].IsHidden = true;
-                this.sourceHiddenRows.Add(this.Rows[row]);
+                if (!this.IsFilteredOut(row)) this.sourceHiddenRows.Add(this.Rows[row]);
             }
         }
+        this.ApplyColumnFilters();
     }
 
     public void ShowAllRows()
@@ -662,9 +663,9 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.DataBars = new List<SheetDataBar>();
         this.CellValueRules = new List<SheetCellValueRule>();
         this.AutoFilterRange = null;
+        this.Tables = Array.Empty<SheetTable>();
         this.sourceHiddenRows.Clear();
         this.columnFilters.Clear();
-        this.filterHeaderRow = 0;
 
         ColumnViewModel[] newColumns = new ColumnViewModel[columns];
         for (int c = 0; c < columns; c++)
@@ -884,86 +885,6 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.DataChanged?.Invoke();
     }
 
-    public int LikelyHeaderRow()
-    {
-        if (this.AutoFilterRange is { } filter)
-        {
-            return Math.Clamp(filter.Row, 0, Math.Max(0, this.RowCount - 1));
-        }
-        int limit = Math.Min(this.RowCount, 50);
-        for (int row = 0; row < limit; row++)
-        {
-            if (this.Rows[row].Cells.Count(static cell => !string.IsNullOrWhiteSpace(cell.Text)) >= 2)
-            {
-                return row;
-            }
-        }
-        return 0;
-    }
-
-    private int DataEndRow(int headerRow)
-    {
-        if (this.AutoFilterRange is { } filter && headerRow == filter.Row)
-        {
-            return Math.Min(this.RowCount - 1, filter.Row + filter.RowSpan - 1);
-        }
-        int last = headerRow;
-        for (int row = headerRow + 1; row < this.RowCount; row++)
-        {
-            if (this.Rows[row].Cells.All(static cell => string.IsNullOrWhiteSpace(cell.Text)))
-            {
-                break;
-            }
-            last = row;
-        }
-        return last;
-    }
-
-    public IReadOnlyList<string> ColumnValues(int column, int headerRow, int limit = 100)
-    {
-        if (column < 0 || column >= this.ColumnCount)
-        {
-            return Array.Empty<string>();
-        }
-        int last = this.DataEndRow(headerRow);
-        return this.Rows.Skip(headerRow + 1).Take(Math.Max(0, last - headerRow))
-            .Select(row => row.Cells[column].DisplayText)
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .OrderBy(static value => value, StringComparer.CurrentCultureIgnoreCase)
-            .Take(limit).ToArray();
-    }
-
-    private readonly Dictionary<int, string> columnFilters = new();
-    private int filterHeaderRow;
-
-    public bool HasColumnFilter(int column) => this.columnFilters.ContainsKey(column);
-
-    public void FilterColumn(int column, string? value, int headerRow)
-    {
-        this.filterHeaderRow = headerRow;
-        if (value is null)
-        {
-            this.columnFilters.Remove(column);
-        }
-        else
-        {
-            this.columnFilters[column] = value;
-        }
-        this.ApplyColumnFilters();
-        this.ViewChanged?.Invoke();
-    }
-
-    private void ApplyColumnFilters()
-    {
-        int last = this.DataEndRow(this.filterHeaderRow);
-        for (int row = 0; row < this.RowCount; row++)
-        {
-            this.Rows[row].IsHidden = this.sourceHiddenRows.Contains(this.Rows[row]) ||
-                row > this.filterHeaderRow && row <= last && this.columnFilters.Any(filter =>
-                filter.Key < this.Rows[row].Cells.Count &&
-                !string.Equals(this.Rows[row].Cells[filter.Key].DisplayText, filter.Value, StringComparison.CurrentCultureIgnoreCase));
-        }
-    }
 
     public void SortRows(int column, int headerRow, bool descending)
     {
@@ -971,13 +892,17 @@ public partial class SpreadsheetViewModel : ObservableObject
         {
             return;
         }
-        if (this.AutoFilterRange is { } filter &&
-            (column < filter.Column || column >= filter.Column + filter.ColumnSpan))
+        if (!this.IsFilterColumn(column, headerRow))
         {
             return;
         }
+        if (this.FilterHeaderRange(headerRow, column) is { } filter)
+        {
+            this.SortTableCells(filter, column, descending);
+            return;
+        }
         int start = headerRow + 1;
-        int last = this.DataEndRow(headerRow);
+        int last = this.DataEndRow(headerRow, column);
         if (last <= start)
         {
             return;
@@ -1193,6 +1118,13 @@ public partial class SpreadsheetViewModel : ObservableObject
         {
             this.AutoFilterRange = ShiftRange(autoFilter);
         }
+        this.Tables = this.Tables.Select(table => (Table: table, Range: ShiftRange(table.Range)))
+            .Where(item => item.Range is not null)
+            .Select(item => item.Table with
+            {
+                Range = item.Range!.Value,
+                AutoFilterRange = item.Table.AutoFilterRange is { } tableFilter ? ShiftRange(tableFilter) : null,
+            }).ToArray();
 
         this.DataBars = this.DataBars.Select(bar => (Bar: bar, Range: ShiftRange(bar.Range)))
             .Where(static item => item.Range is not null)
@@ -1236,7 +1168,10 @@ public partial class SpreadsheetViewModel : ObservableObject
         }
         if (this.columnFilters.Count > 0)
         {
-            this.filterHeaderRow = Shift(this.filterHeaderRow);
+            var filters = this.columnFilters.ToArray();
+            this.columnFilters.Clear();
+            foreach (var filter in filters)
+                this.columnFilters[(Shift(filter.Key.HeaderRow), filter.Key.Column)] = filter.Value;
         }
     }
 

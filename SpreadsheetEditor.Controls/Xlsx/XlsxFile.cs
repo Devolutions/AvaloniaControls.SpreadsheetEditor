@@ -286,7 +286,9 @@ public static partial class XlsxFile
             rowLimit,
             columnLimit,
             cancellationToken);
-        CellRange? autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken);
+        List<SheetColumnFilter> filters = new();
+        CellRange? autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken, filters);
+        List<SheetTable> tables = ReadTableDefinitions(archive, partPath, cancellationToken, filters);
         List<XElement> cells = slice.Cells;
         HashSet<int> sharedStringIndexes = new();
         foreach (XElement cell in cells)
@@ -384,6 +386,8 @@ public static partial class XlsxFile
             DataBars = previewBars,
             CellValueRules = previewValueRules,
             AutoFilterRange = autoFilterRange,
+            Tables = tables,
+            ColumnFilters = filters,
             HiddenRows = slice.HiddenRows,
             TabColor = tabColor ?? PreviewColor(slice.TabColor, ReadThemeColors(archive)),
         };
@@ -511,7 +515,7 @@ public static partial class XlsxFile
     // AutoFilter follows sheetData in OOXML, so a limited first-screen preview would otherwise
     // miss it. Skip the large cell subtree without allocating it to find the header range.
     private static CellRange? ReadAutoFilterRange(
-        ZipArchive archive, string partPath, CancellationToken cancellationToken)
+        ZipArchive archive, string partPath, CancellationToken cancellationToken, List<SheetColumnFilter>? filters = null)
     {
         if (archive.GetEntry(partPath) is not { } entry)
         {
@@ -535,7 +539,10 @@ public static partial class XlsxFile
             }
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "autoFilter")
             {
-                return CellRange.TryParse(reader.GetAttribute("ref"), out CellRange range) ? range : null;
+                XElement filter = (XElement)XNode.ReadFrom(reader);
+                if (!CellRange.TryParse(filter.Attribute("ref")?.Value ?? string.Empty, out CellRange range)) return null;
+                if (filters is not null) ReadValueFilters(filter, range, filters);
+                return range;
             }
             reader.Read();
         }
@@ -860,9 +867,13 @@ public static partial class XlsxFile
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
         CellRange? autoFilterRange;
+        List<SheetColumnFilter> filters = new();
+        List<SheetTable> tableDefinitions;
         using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
         {
-            autoFilterRange = ReadAutoFilterRange(archive, WorksheetPartPath(archive, sheetIndex), cancellationToken);
+            string partPath = WorksheetPartPath(archive, sheetIndex);
+            autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken, filters);
+            tableDefinitions = ReadTableDefinitions(archive, partPath, cancellationToken, filters);
         }
         if (autoFilterRange is { } filterRange)
         {
@@ -1047,6 +1058,8 @@ public static partial class XlsxFile
             DataBars = dataBars,
             CellValueRules = cellValueRules,
             AutoFilterRange = autoFilterRange,
+            Tables = tableDefinitions,
+            ColumnFilters = filters,
             HiddenRows = hiddenRows,
             TabColor = sheet!.TabColor is { } tabColor && tabColor != XLColor.NoColor
                 ? ResolveColor(workbook, tabColor)
@@ -2108,6 +2121,7 @@ public static partial class XlsxFile
 
         using MemoryStream buffer = new();
         workbook.SaveAs(buffer);
+        RestoreTables(buffer, source);
         RestoreFormulaCaches(buffer, source);
         byte[] bytes = buffer.ToArray();
         foreach ((int sheetIndex, IReadOnlyList<ChartWriteData> charts) in chartGroups)
@@ -2251,6 +2265,8 @@ public static partial class XlsxFile
                 // Keep the worksheet writable even if a source range is invalid after editing.
             }
         }
+
+        WriteValueFilters(sheet.AutoFilter, autoFilterRange, data.ColumnFilters);
 
         // Persist column widths (px) so the layout survives the round-trip — otherwise every column
         // falls back to Excel's default and the content truncates. Invert the reader's chars->px

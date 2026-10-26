@@ -2045,8 +2045,7 @@ public partial class SpreadsheetGrid : UserControl
             int columnSpan = this.spans![row, column].Item2;
             double width = this.columnOffsets[Math.Min(column + columnSpan, this.columnWidths.Length)] -
                 this.columnOffsets[column] - CellTextPadding;
-            if (this.sheet.AutoFilterRange is { } filter && row == filter.Row &&
-                column >= filter.Column && column < filter.Column + filter.ColumnSpan)
+            if (this.sheet.FilterHeaderRange(row, column) is not null)
             {
                 width -= 23 * this.zoom;
             }
@@ -2207,19 +2206,19 @@ public partial class SpreadsheetGrid : UserControl
 
         Control cellContent = barGrid is null ? text : Layered(barGrid, text);
         Border? filterButton = null;
-        if (this.sheet?.AutoFilterRange is { } filterRange &&
-            row == filterRange.Row && column >= filterRange.Column &&
-            column < filterRange.Column + filterRange.ColumnSpan)
+        if (this.sheet?.FilterHeaderRange(row, column) is not null)
         {
             text.Margin = new Thickness(4, text.Margin.Top, 23 * this.zoom, text.Margin.Bottom);
             filterButton = new Border
             {
+                Name = "ColumnFilterButton",
+                Tag = new CellAddress(row, column),
                 Width = 17 * this.zoom,
                 Height = Math.Min(19 * this.zoom, this.rowHeights[row] - 2),
                 Margin = new Thickness(0, 0, 2 * this.zoom, 0),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
-                Background = Brushes.White,
+                Background = this.sheet.HasColumnFilter(column, row) ? new SolidColorBrush(Color.FromRgb(0xDE, 0xEB, 0xFF)) : Brushes.White,
                 BorderBrush = SheetGridLine,
                 BorderThickness = new Thickness(1),
                 Focusable = true,
@@ -2235,11 +2234,13 @@ public partial class SpreadsheetGrid : UserControl
                 },
             };
             Border button = filterButton;
+            MenuFlyout headerMenu = this.BuildColumnMenu(column, row);
+            button.ContextFlyout = headerMenu;
             button.PointerPressed += (_, e) =>
             {
                 if (e.GetCurrentPoint(button).Properties.IsLeftButtonPressed)
                 {
-                    this.BuildColumnMenu(column).ShowAt(button);
+                    headerMenu.ShowAt(button);
                     e.Handled = true;
                 }
             };
@@ -2247,7 +2248,7 @@ public partial class SpreadsheetGrid : UserControl
             {
                 if (e.Key is Key.Enter or Key.Space or Key.Down)
                 {
-                    this.BuildColumnMenu(column).ShowAt(button);
+                    headerMenu.ShowAt(button);
                     e.Handled = true;
                 }
             };
@@ -2265,7 +2266,7 @@ public partial class SpreadsheetGrid : UserControl
         };
         if (filterButton is not null)
         {
-            border.ContextFlyout = this.BuildColumnMenu(column);
+            border.ContextFlyout = filterButton.ContextFlyout;
         }
         Grid? annotatedContent = null;
         bool hasAnnotationTip = false;
@@ -2905,14 +2906,14 @@ public partial class SpreadsheetGrid : UserControl
         return menu;
     }
 
-    private MenuFlyout BuildColumnMenu(int column)
+    private MenuFlyout BuildColumnMenu(int column, int? tableHeaderRow = null)
     {
         MenuFlyout menu = new();
         if (this.sheet is null)
         {
             return menu;
         }
-        int headerRow = this.sheet.LikelyHeaderRow();
+        int headerRow = tableHeaderRow ?? this.sheet.ColumnHeaderRow(column);
         MenuItem ascending = new() { Header = Get(S.SortAscending) };
         ascending.Click += (_, _) => this.SortColumn(column, headerRow, descending: false);
         MenuItem descending = new() { Header = Get(S.SortDescending) };
@@ -2951,7 +2952,7 @@ public partial class SpreadsheetGrid : UserControl
             filter.Items.Add(custom);
         };
         menu.Items.Add(filter);
-        if (this.sheet.HasColumnFilter(column))
+        if (this.sheet.HasColumnFilter(column, headerRow))
         {
             MenuItem clear = new() { Header = Get(S.ClearColumnFilter) };
             clear.Click += (_, _) => this.FilterColumn(column, null, headerRow);
@@ -2964,7 +2965,8 @@ public partial class SpreadsheetGrid : UserControl
             {
                 return;
             }
-            this.sheet.ShowAllRows();
+            if (this.sheet.FilterHeaderRange(headerRow, column) is not null) this.sheet.ClearTableFilters(column, headerRow);
+            else this.sheet.ShowAllRows();
             this.Rebuild();
         };
         menu.Items.Add(showAll);
@@ -2978,7 +2980,7 @@ public partial class SpreadsheetGrid : UserControl
         {
             return;
         }
-        this.sheet.SortRows(column, headerRow, descending);
+        this.ApplyCalculatedCells(() => this.sheet.SortRows(column, headerRow, descending));
         this.Rebuild();
         this.SelectCell(this.sheet.ActiveCell);
     }

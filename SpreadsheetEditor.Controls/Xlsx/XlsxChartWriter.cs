@@ -397,7 +397,14 @@ internal static class XlsxChartWriter
         }
 
         root.Elements(Main + "drawing").Remove();
-        root.Add(new XElement(Main + "drawing", new XAttribute(R + "id", drawingRelId)));
+        XElement drawing = new(Main + "drawing", new XAttribute(R + "id", drawingRelId));
+        // OOXML places drawings before tableParts (and the other worksheet tail elements).
+        // Appending after a preserved table definition produces a schema-invalid worksheet.
+        XElement? next = root.Elements().FirstOrDefault(element => element.Name.Namespace == Main &&
+            element.Name.LocalName is "legacyDrawing" or "legacyDrawingHF" or "picture" or "oleObjects" or
+                "controls" or "webPublishItems" or "tableParts" or "extLst");
+        if (next is null) root.Add(drawing);
+        else next.AddBeforeSelf(drawing);
         return doc;
     }
 

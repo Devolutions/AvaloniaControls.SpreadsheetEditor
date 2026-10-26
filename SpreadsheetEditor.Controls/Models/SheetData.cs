@@ -38,6 +38,10 @@ public sealed class SheetData
     // Worksheet AutoFilter range (including its header row), if present.
     public CellRange? AutoFilterRange { get; init; }
 
+    public IReadOnlyList<SheetTable> Tables { get; init; } = new List<SheetTable>();
+
+    public IReadOnlyList<SheetColumnFilter> ColumnFilters { get; init; } = new List<SheetColumnFilter>();
+
     // Zero-based row indices hidden by filtering (or hidden in the source workbook).
     public IReadOnlyList<int> HiddenRows { get; init; } = new List<int>();
 
