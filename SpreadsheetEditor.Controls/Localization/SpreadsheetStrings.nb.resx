@@ -220,4 +220,6 @@ Alternativt kan du bruke &quot;Eksporter som PDF&quot; for å lagre arket og skr
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Lagre regnearket</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Lagring mislyktes</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Regneark</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Rull arkfaner mot venstre</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Rull arkfaner mot høyre</value></data>
 </root>

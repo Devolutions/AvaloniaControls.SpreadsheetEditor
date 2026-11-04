@@ -220,4 +220,6 @@ Alternatív megoldásként használja az „Exportálás mint PDF” parancsot a
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Táblázat mentése</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>A mentés nem sikerült</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Táblázat</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Munkalapfülek görgetése balra</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Munkalapfülek görgetése jobbra</value></data>
 </root>

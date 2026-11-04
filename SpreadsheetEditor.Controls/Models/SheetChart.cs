@@ -111,6 +111,9 @@ public sealed record ChartSeriesSpec
     public IReadOnlyList<CellRange> Ranges { get; }
 
     public IReadOnlyList<double>? CachedValues { get; }
+    public ChartKind? Kind { get; init; }
+    public bool SecondaryAxis { get; init; }
+    public Avalonia.Media.Color? Color { get; init; }
 
     // The first range — for callers that only need an anchor/representative range.
     public CellRange PrimaryRange => this.Ranges.Count > 0 ? this.Ranges[0] : new CellRange(0, 0, 0, 0);
@@ -146,6 +149,11 @@ public sealed record ChartSeriesSpec
 // + pixel offset + size). The grid reads the live cell values in those ranges to build/update it.
 public sealed class SheetChart
 {
+    internal string? SourceXml { get; init; }
+    public bool HorizontalBars { get; init; }
+    public string? ValueAxisTitle { get; init; }
+    public string? SecondaryAxisTitle { get; init; }
+    public string? CategoryAxisTitle { get; init; }
     public required ChartKind Kind { get; init; }
 
     public required IReadOnlyList<ChartSeriesSpec> Series { get; init; }

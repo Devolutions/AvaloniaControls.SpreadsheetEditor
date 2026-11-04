@@ -10,7 +10,12 @@ using Avalonia.Media;
 using global::SpreadsheetEditor.Controls.Models;
 
 // One chart series: a title and its numeric values (aligned to the shared category list).
-public sealed record ChartSeriesData(string Title, IReadOnlyList<double> Values);
+public sealed record ChartSeriesData(string Title, IReadOnlyList<double> Values)
+{
+    public ChartKind? Kind { get; init; }
+    public bool SecondaryAxis { get; init; }
+    public Color? Color { get; init; }
+}
 
 // Builds an Avalonia Pro chart control from extracted spreadsheet data. Isolated here (and wrapped in
 // try/catch) so the Pro Avalonia.Controls.Charts dependency — which, like the RichTextEditor,
@@ -64,6 +69,7 @@ public static class ChartFactory
         public string Category { get; set; } = string.Empty;
 
         public double Value { get; set; }
+        public double X { get; set; }
 
         public IBrush? Brush { get; set; }
     }
@@ -81,7 +87,7 @@ public static class ChartFactory
         bool showDataLabels = false, string? title = null, bool? showLegend = null,
         AxisNumberFormat valueFormat = AxisNumberFormat.Number,
         double? axisMin = null, double? axisMax = null, double? axisStep = null,
-        ChartLegendPosition legendPosition = ChartLegendPosition.Bottom)
+        ChartLegendPosition legendPosition = ChartLegendPosition.Bottom, SheetChart? options = null)
     {
         if (series.Count == 0)
         {
@@ -95,7 +101,8 @@ public static class ChartFactory
             {
                 ChartKind.Pie or ChartKind.Donut => BuildPie(categories, series[0], width, height, donut: kind == ChartKind.Donut, legend),
                 ChartKind.Radar => BuildRadar(categories, series, width, height, legend),
-                _ => BuildCartesian(kind, categories, series, width, height, showDataLabels, legend, valueFormat, axisMin, axisMax, axisStep),
+                ChartKind.Bar or ChartKind.StackedBar when options?.HorizontalBars == true => new HorizontalBarChart(categories, series, kind == ChartKind.StackedBar, title, legend) { Width = width, Height = height },
+                _ => BuildCartesian(kind, categories, series, width, height, showDataLabels, legend, valueFormat, axisMin, axisMax, axisStep, options),
             };
             if (chart is ChartBase cb)
             {
@@ -123,15 +130,16 @@ public static class ChartFactory
 
             return chart;
         }
-        catch
+        catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError("Spreadsheet chart construction failed: {0}", exception);
             return null;
         }
     }
 
     private static Control BuildCartesian(ChartKind kind, IReadOnlyList<string> categories,
         IReadOnlyList<ChartSeriesData> series, double width, double height, bool showDataLabels, bool showLegend,
-        AxisNumberFormat valueFormat, double? axisMin, double? axisMax, double? axisStep)
+        AxisNumberFormat valueFormat, double? axisMin, double? axisMax, double? axisStep, SheetChart? options)
     {
         string axisFmt = AxisFormat(valueFormat);
         NumericalAxis valueAxis = new()
@@ -180,12 +188,28 @@ public static class ChartFactory
         };
         ApplyLightAxis(valueAxis);
         ApplyLightAxis(categoryAxis);
+        valueAxis.Title = options?.ValueAxisTitle;
+        categoryAxis.Title = options?.CategoryAxisTitle;
+        if (kind == ChartKind.Scatter)
+        {
+            NumericalAxis xAxis = new() { ShowLabels = true, ShowGridLines = false, Title = options?.CategoryAxisTitle };
+            ApplyLightAxis(xAxis);
+            chart.HorizontalAxis = xAxis;
+        }
+        if (series.Any(s => s.SecondaryAxis))
+        {
+            NumericalAxis secondary = new() { ShowLabels = true, ShowGridLines = false, Title = options?.SecondaryAxisTitle };
+            ApplyLightAxis(secondary);
+            chart.SecondaryVerticalAxis = secondary;
+        }
         for (int i = 0; i < series.Count; i++)
         {
-            CartesianSeries cs = MakeCartesianSeries(kind, PaletteBrush(i));
+            ChartKind seriesKind = series[i].Kind ?? kind;
+            CartesianSeries cs = MakeCartesianSeries(seriesKind, series[i].Color is { } color ? new SolidColorBrush(color) : series[i].SecondaryAxis ? Brushes.Red : PaletteBrush(i));
             cs.ItemsSource = Points(categories, series[i].Values);
-            cs.CategoryPath = nameof(ChartPoint.Category);
+            cs.CategoryPath = seriesKind == ChartKind.Scatter ? nameof(ChartPoint.X) : nameof(ChartPoint.Category);
             cs.ValuePath = nameof(ChartPoint.Value);
+            cs.YAxisPosition = series[i].SecondaryAxis ? YAxisPosition.Secondary : YAxisPosition.Primary;
             cs.Title = series[i].Title;
             if (labelsFit)
             {
@@ -241,6 +265,8 @@ public static class ChartFactory
     {
         RadarChart chart = new()
         {
+            AxisCount = Math.Max(3, categories.Count),
+            AxisLabels = categories.ToList(),
             Width = width,
             Height = height,
             ShowLegend = showLegend,
@@ -269,5 +295,5 @@ public static class ChartFactory
             : brush;
 
     private static List<ChartPoint> Points(IReadOnlyList<string> categories, IReadOnlyList<double> values) =>
-        categories.Select((c, i) => new ChartPoint { Category = c, Value = i < values.Count ? values[i] : double.NaN }).ToList();
+        categories.Select((c, i) => new ChartPoint { Category = c, X = double.TryParse(c, System.Globalization.CultureInfo.InvariantCulture, out double x) ? x : i, Value = i < values.Count ? values[i] : double.NaN }).ToList();
 }

@@ -64,6 +64,8 @@ public partial class CellViewModel : ObservableObject
     [ObservableProperty]
     private bool wrapText;
 
+    public CellAppearance? Appearance { get; set; }
+
     // The computed result of a formula cell (set by the engine); null for non-formula cells.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EffectiveRuns))]
@@ -282,7 +284,12 @@ public partial class CellViewModel : ObservableObject
 
     partial void OnItalicChanged(bool value) => this.NotifyEffectiveRuns();
 
-    partial void OnUnderlineChanged(bool value) => this.NotifyEffectiveRuns();
+    partial void OnUnderlineChanged(bool value)
+    {
+        if (!value && this.Appearance is { DoubleUnderline: true } appearance)
+            this.Appearance = appearance with { DoubleUnderline = false };
+        this.NotifyEffectiveRuns();
+    }
 
     partial void OnStrikethroughChanged(bool value) => this.NotifyEffectiveRuns();
 
@@ -316,7 +323,7 @@ public partial class CellViewModel : ObservableObject
             this.Hyperlink,
             this.CommentAuthor,
             this.IsFormula ? this.CachedNumericValue : null)
-        { WrapText = this.WrapText, FormulaValue = this.IsFormula ? this.CachedFormulaValue : null };
+        { WrapText = this.WrapText, Appearance = this.Appearance, FormulaValue = this.IsFormula ? this.CachedFormulaValue : null };
 
     public void ApplyData(CellData data)
     {
@@ -331,6 +338,7 @@ public partial class CellViewModel : ObservableObject
         this.FontSize = data.FontSize > 0 ? data.FontSize : DefaultFontSize;
         this.TextAlignment = data.Alignment;
         this.WrapText = data.WrapText;
+        this.Appearance = data.Appearance;
         this.NumberFormat = data.NumberFormat;
         this.Comment = data.Comment;
         this.CommentAuthor = data.CommentAuthor;

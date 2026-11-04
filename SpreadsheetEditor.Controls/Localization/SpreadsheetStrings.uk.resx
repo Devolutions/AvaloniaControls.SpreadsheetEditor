@@ -220,4 +220,6 @@
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Зберегти електронну таблицю</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Не вдалося зберегти</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Таблиця</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Прокрутити вкладки аркушів ліворуч</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Прокрутити вкладки аркушів праворуч</value></data>
 </root>

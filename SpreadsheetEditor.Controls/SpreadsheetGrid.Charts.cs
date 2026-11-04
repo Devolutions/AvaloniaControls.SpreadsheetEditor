@@ -22,6 +22,29 @@ public partial class SpreadsheetGrid
     private CancellationTokenSource? chartRefreshCancellation;
     private bool chartRefreshDeferred;
 
+    private void RebindPreviewCharts(SpreadsheetViewModel model)
+    {
+        List<SheetChart> remaining = model.Charts.ToList();
+        foreach (var entry in this.chartCards.ToArray())
+        {
+            if (entry.Card.Tag is not SheetChart previous) continue;
+            SheetChart? replacement = previous.SourceXml is null ? null :
+                remaining.FirstOrDefault(chart => chart.SourceXml == previous.SourceXml);
+            if (replacement is null)
+            {
+                this.chartOverlay.Children.Remove(entry.Card);
+                this.chartCards.Remove(entry);
+                this.renderedChartData.Remove(previous);
+                continue;
+            }
+            remaining.Remove(replacement);
+            entry.Card.Tag = entry.Settings.Tag = replacement;
+            if (this.renderedChartData.Remove(previous, out ChartData? data))
+                this.renderedChartData[replacement] = data;
+            if (ReferenceEquals(this.selectedChart, previous)) this.selectedChart = replacement;
+        }
+    }
+
     private static bool SameChartData(ChartData first, ChartData second) =>
         first.Categories.SequenceEqual(second.Categories) && first.Series.Count == second.Series.Count &&
         first.Series.Zip(second.Series).All(pair => pair.First.Title == pair.Second.Title &&

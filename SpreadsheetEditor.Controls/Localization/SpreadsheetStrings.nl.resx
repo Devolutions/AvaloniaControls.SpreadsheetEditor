@@ -220,4 +220,6 @@ U kunt ook &quot;Exporteren als PDF&quot; gebruiken om het blad op te slaan en a
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Spreadsheet opslaan</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Opslaan mislukt</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Rekenblad</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Werkbladtabbladen naar links schuiven</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Werkbladtabbladen naar rechts schuiven</value></data>
 </root>

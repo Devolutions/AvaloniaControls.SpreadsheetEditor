@@ -1,137 +1,69 @@
 namespace SpreadsheetEditor.Controls.Formulas;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.RegularExpressions;
+using Avalonia.Media;
+using ExcelNumberFormat;
 
-// Formats a number with a (subset of) Excel number-format codes — enough to render currency,
-// percent, thousands separators, decimal places, and parenthesised negatives faithfully. Falls back
-// to "General" for empty/unknown codes. Used so imported/computed numeric cells keep their look
-// (e.g. "$"#,##0_);("$"#,##0) → $50,000 / ($5,060)).
+// ClosedXML's ECMA-376 formatter also handles dates, fractions, literals, scientific notation,
+// locale currency symbols and the positive/negative/zero format sections.
 public static class NumberFormatter
 {
+    private static readonly ConcurrentDictionary<string, NumberFormat> Formats = new(StringComparer.Ordinal);
+
     public static string Format(double value, string? code)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            return General(value);
-        }
-
-        if (string.IsNullOrWhiteSpace(code) || code.Equals("General", StringComparison.OrdinalIgnoreCase))
-        {
-            return General(value);
-        }
-
-        List<string> sections = SplitSections(code!);
-        string section;
-        if (value < 0 && sections.Count > 1)
-        {
-            section = sections[1];
-        }
-        else if (value == 0 && sections.Count > 2)
-        {
-            section = sections[2];
-        }
-        else
-        {
-            section = sections[0];
-        }
-
-        try
-        {
-            return FormatSection(value, section);
-        }
-        catch
-        {
-            return General(value);
-        }
+        if (string.IsNullOrWhiteSpace(code) || code.Equals("General", StringComparison.OrdinalIgnoreCase) || !double.IsFinite(value))
+            return value.ToString("0.##########", CultureInfo.InvariantCulture);
+        NumberFormat format = Formats.GetOrAdd(code, static c => new NumberFormat(c));
+        return format.IsValid ? format.Format(value, CultureInfo.InvariantCulture) : value.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string FormatSection(double value, string section)
+    public static Color? Foreground(double value, string? code)
     {
-        bool percent = section.Contains('%');
-        bool currency = section.Contains('$');
-        bool parens = section.Contains('(');
-        bool thousands = section.Contains(',');
-        int decimals = DecimalPlaces(section);
-
-        double magnitude = Math.Abs(value) * (percent ? 100 : 1);
-        string pattern = (thousands ? "#,##0" : "0") + (decimals > 0 ? "." + new string('0', decimals) : string.Empty);
-        string number = magnitude.ToString(pattern, CultureInfo.InvariantCulture);
-
-        string body = (currency ? "$" : string.Empty) + number + (percent ? "%" : string.Empty);
-        if (value < 0)
+        if (string.IsNullOrEmpty(code) || !code.Contains('[')) return null;
+        List<string> sections = SplitSections(code);
+        string section = sections[value < 0 && sections.Count > 1 ? 1 : value == 0 && sections.Count > 2 ? 2 : 0];
+        foreach (string candidate in sections)
         {
-            return parens ? $"({body})" : "-" + body;
+            Match condition = Regex.Match(candidate, @"\[(<=|>=|<>|=|<|>)(-?[0-9.]+)\]");
+            if (!condition.Success) continue;
+            if (!double.TryParse(condition.Groups[2].Value, CultureInfo.InvariantCulture, out double threshold)) continue;
+            bool matches = condition.Groups[1].Value switch
+            {
+                "<=" => value <= threshold, ">=" => value >= threshold, "<>" => value != threshold,
+                "=" => value == threshold, "<" => value < threshold, _ => value > threshold,
+            };
+            if (matches) { section = candidate; break; }
         }
-
-        return body;
+        Match color = Regex.Match(section, @"\[(Black|Blue|Cyan|Green|Magenta|Red|White|Yellow)\]", RegexOptions.IgnoreCase);
+        return color.Success ? Color.Parse(color.Groups[1].Value) : null;
     }
 
-    private static int DecimalPlaces(string section)
-    {
-        int dot = section.IndexOf('.');
-        if (dot < 0)
-        {
-            return 0;
-        }
-
-        int count = 0;
-        for (int i = dot + 1; i < section.Length && (section[i] == '0' || section[i] == '#'); i++)
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    // Splits a format code into its positive;negative;zero;text sections, ignoring ';'
-    // inside quotes or [brackets].
     private static List<string> SplitSections(string code)
     {
-        List<string> sections = new();
+        List<string> result = new();
+        bool quoted = false;
         int start = 0;
-        bool inQuote = false;
-        bool inBracket = false;
         for (int i = 0; i < code.Length; i++)
         {
-            char c = code[i];
-            if (c == '"')
-            {
-                inQuote = !inQuote;
-            }
-            else if (c == '[' && !inQuote)
-            {
-                inBracket = true;
-            }
-            else if (c == ']' && !inQuote)
-            {
-                inBracket = false;
-            }
-            else if (c == ';' && !inQuote && !inBracket)
-            {
-                sections.Add(code[start..i]);
-                start = i + 1;
-            }
+            if (code[i] == '\\') { i++; continue; }
+            if (code[i] == '"') quoted = !quoted;
+            if (code[i] == ';' && !quoted) { result.Add(code[start..i]); start = i + 1; }
         }
-
-        sections.Add(code[start..]);
-        return sections;
+        result.Add(code[start..]);
+        return result;
     }
 
-    // Excel "General": integers without decimals, otherwise up to ~10 trimmed fractional digits.
-    private static string General(double value)
+    public static string? AccountingPrefix(string? code)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            return value.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (value == Math.Floor(value) && Math.Abs(value) < 1e15)
-        {
-            return ((long)value).ToString(CultureInfo.InvariantCulture);
-        }
-
-        return value.ToString("0.##########", CultureInfo.InvariantCulture);
+        if (code is null || !code.Contains('*')) return null;
+        Match localeCurrency = Regex.Match(code, @"\[\$([^\]-]+)(?:-[^\]]+)?\]");
+        if (localeCurrency.Success) return localeCurrency.Groups[1].Value;
+        Match symbol = Regex.Match(code, @"\p{Sc}");
+        return symbol.Success ? symbol.Value : null;
     }
 }

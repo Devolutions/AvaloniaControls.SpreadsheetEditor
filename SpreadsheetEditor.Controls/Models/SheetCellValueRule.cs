@@ -27,6 +27,13 @@ public sealed class SheetCellValueRule
     public bool? Bold { get; init; }
 
     public int Priority { get; init; }
+    public string? Expression { get; init; }
+    public string? TextThreshold { get; init; }
+    public Color? Background { get; init; }
+    public string? IconSet { get; init; }
+    public double[] IconThresholds { get; init; } = System.Array.Empty<double>();
+    public bool ShowValue { get; init; } = true;
+    public bool ReverseIcons { get; init; }
 
     public bool Matches(double value) => this.Comparison switch
     {

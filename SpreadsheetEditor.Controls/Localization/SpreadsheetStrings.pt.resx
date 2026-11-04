@@ -220,4 +220,6 @@ Alternativamente, use &quot;Exportar como PDF&quot; para salvar a planilha e imp
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Salvar planilha</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Falha ao salvar</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Planilha</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Deslocar os separadores das folhas para a esquerda</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Deslocar os separadores das folhas para a direita</value></data>
 </root>

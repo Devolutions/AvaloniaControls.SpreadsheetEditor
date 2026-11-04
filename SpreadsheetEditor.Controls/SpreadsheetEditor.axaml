@@ -13,15 +13,68 @@
                     <!-- Softer than pure black so the solid vector icons don't read heavier than the
                          toolbar's text (B/I/U/S) and combo boxes. -->
                     <SolidColorBrush x:Key="IconForeground" Color="#5F6368" />
+                    <SolidColorBrush x:Key="CompactButtonHover" Color="#E2E6EB" />
+                    <SolidColorBrush x:Key="CompactButtonPressed" Color="#D2D9E2" />
+                    <SolidColorBrush x:Key="CompactButtonFocusBorder" Color="#1A73E8" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ChromeBackground" Color="#2D2D30" />
                     <SolidColorBrush x:Key="ChromeBorder" Color="#22FFFFFF" />
                     <SolidColorBrush x:Key="IconForeground" Color="#C8CAD0" />
+                    <SolidColorBrush x:Key="CompactButtonHover" Color="#3C4047" />
+                    <SolidColorBrush x:Key="CompactButtonPressed" Color="#4B515B" />
+                    <SolidColorBrush x:Key="CompactButtonFocusBorder" Color="#75B8FF" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+            <ControlTheme x:Key="CompactButtonTheme" TargetType="Button">
+                <Setter Property="Width" Value="26" />
+                <Setter Property="Height" Value="26" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Foreground" Value="{DynamicResource IconForeground}" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <ControlTemplate>
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          CornerRadius="{TemplateBinding CornerRadius}"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          Padding="{TemplateBinding Padding}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </ControlTemplate>
+                </Setter>
+                <Style Selector="^:pointerover:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource CompactButtonHover}" />
+                </Style>
+                <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource CompactButtonPressed}" />
+                </Style>
+                <Style Selector="^:disabled">
+                    <Setter Property="Opacity" Value="0.35" />
+                </Style>
+                <Style Selector="^:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="BorderBrush" Value="{DynamicResource CompactButtonFocusBorder}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </Style>
+            </ControlTheme>
         </ResourceDictionary>
     </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Button, ToggleButton, RepeatButton">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
         <!-- Formatting toolbar (above the editor) — grouped icon buttons styled after the
@@ -46,6 +99,8 @@
                 <Style Selector="Button.tool, ToggleButton.tool">
                     <Setter Property="Width" Value="30" />
                     <Setter Property="Height" Value="28" />
+                    <Setter Property="MinWidth" Value="0" />
+                    <Setter Property="MinHeight" Value="0" />
                     <Setter Property="Padding" Value="0" />
                     <Setter Property="Focusable" Value="False" />
                     <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -54,6 +109,9 @@
                 <!-- Vector toolbar icons use a slightly lighter shade for visual weight consistency. -->
                 <Style Selector="PathIcon">
                     <Setter Property="Foreground" Value="{DynamicResource IconForeground}" />
+                    <Setter Property="HorizontalAlignment" Value="Center" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="IsHitTestVisible" Value="False" />
                 </Style>
                 <Style Selector="Border.divider">
                     <Setter Property="Width" Value="1" />
@@ -195,8 +253,11 @@
                 <Button x:Name="ReplaceButton" Grid.Column="6" Content="{loc:Loc Replace}" Padding="8,3" />
                 <Button x:Name="ReplaceAllButton" Grid.Column="7" Content="{loc:Loc ReplaceAll}" Padding="8,3" />
                 <TextBlock x:Name="FindStatusText" Grid.Column="8" Margin="8,0" VerticalAlignment="Center" Opacity="0.75" />
-                <Button x:Name="CloseFindButton" Grid.Column="9" Content="&#x2715;" Width="28" Padding="0"
-                        ToolTip.Tip="{loc:Loc CloseFindReplace}" />
+                <Button x:Name="CloseFindButton" Grid.Column="9" Theme="{StaticResource CompactButtonTheme}" Width="28" Height="28" VerticalAlignment="Center"
+                        ToolTip.Tip="{loc:Loc CloseFindReplace}" AutomationProperties.Name="{loc:Loc CloseFindReplace}">
+                    <PathIcon Data="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z"
+                              Width="12" Height="12" Foreground="{DynamicResource IconForeground}" IsHitTestVisible="False" />
+                </Button>
             </Grid>
         </Border>
 
@@ -221,21 +282,54 @@
         </Border>
 
         <!-- Sheet tabs (Excel-style) + add-sheet button, with a zoom control docked right. -->
-        <Border Grid.Row="5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,2">
+        <Border x:Name="SheetBar" Grid.Row="5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChromeBorder}" Background="{DynamicResource ChromeBackground}" Padding="4,3">
+            <Border.Resources>
+                <StreamGeometry x:Key="SheetChevronLeft">M14.7 5.3 8 12 14.7 18.7 16.1 17.3 10.8 12 16.1 6.7Z</StreamGeometry>
+                <StreamGeometry x:Key="SheetChevronRight">M9.3 5.3 16 12 9.3 18.7 7.9 17.3 13.2 12 7.9 6.7Z</StreamGeometry>
+                <StreamGeometry x:Key="SheetPlus">M11 5H13V11H19V13H13V19H11V13H5V11H11Z</StreamGeometry>
+                <StreamGeometry x:Key="SheetMinus">M5 11H19V13H5Z</StreamGeometry>
+            </Border.Resources>
+            <Border.Styles>
+                <Style Selector="PathIcon">
+                    <Setter Property="Foreground" Value="{DynamicResource IconForeground}" />
+                    <Setter Property="HorizontalAlignment" Value="Center" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="IsHitTestVisible" Value="False" />
+                </Style>
+            </Border.Styles>
             <DockPanel LastChildFill="True">
                 <!-- Zoom control (Excel-style): − · 100% · + -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,2,0">
-                    <Button x:Name="ZoomOutButton" Content="−" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ZoomOut}" />
-                    <Button x:Name="ZoomResetButton" Content="100%" Width="52" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ResetZoom}" />
-                    <Button x:Name="ZoomInButton" Content="+" Width="24" Height="22" Padding="0" Focusable="False" ToolTip.Tip="{loc:Loc ZoomIn}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <Button x:Name="AddSheetButton" Content="+" Width="26" Focusable="False"
-                            ToolTip.Tip="{loc:Loc AddSheet}" Padding="0" />
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <Border DockPanel.Dock="Right" BorderThickness="1,0,0,0" BorderBrush="{DynamicResource ChromeBorder}" Padding="8,0,0,0" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <Button x:Name="ZoomOutButton" Theme="{StaticResource CompactButtonTheme}" ToolTip.Tip="{loc:Loc ZoomOut}" AutomationProperties.Name="{loc:Loc ZoomOut}">
+                            <PathIcon Data="{StaticResource SheetMinus}" Width="12" Height="12" />
+                        </Button>
+                        <Button x:Name="ZoomResetButton" Theme="{StaticResource CompactButtonTheme}" Content="100%" Width="48" FontSize="12"
+                                ToolTip.Tip="{loc:Loc ResetZoom}" AutomationProperties.Name="{loc:Loc ResetZoom}" />
+                        <Button x:Name="ZoomInButton" Theme="{StaticResource CompactButtonTheme}" ToolTip.Tip="{loc:Loc ZoomIn}" AutomationProperties.Name="{loc:Loc ZoomIn}">
+                            <PathIcon Data="{StaticResource SheetPlus}" Width="12" Height="12" />
+                        </Button>
+                    </StackPanel>
+                </Border>
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="4">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <RepeatButton x:Name="ScrollSheetTabsLeftButton" Theme="{StaticResource CompactButtonTheme}" IsEnabled="False" Delay="350" Interval="70"
+                                      ToolTip.Tip="{loc:Loc ScrollSheetTabsLeft}" AutomationProperties.Name="{loc:Loc ScrollSheetTabsLeft}">
+                            <PathIcon Data="{StaticResource SheetChevronLeft}" Width="12" Height="12" />
+                        </RepeatButton>
+                        <RepeatButton x:Name="ScrollSheetTabsRightButton" Theme="{StaticResource CompactButtonTheme}" IsEnabled="False" Delay="350" Interval="70"
+                                      ToolTip.Tip="{loc:Loc ScrollSheetTabsRight}" AutomationProperties.Name="{loc:Loc ScrollSheetTabsRight}">
+                            <PathIcon Data="{StaticResource SheetChevronRight}" Width="12" Height="12" />
+                        </RepeatButton>
+                    </StackPanel>
+                    <Button x:Name="AddSheetButton" Grid.Column="1" Theme="{StaticResource CompactButtonTheme}" VerticalAlignment="Center"
+                            ToolTip.Tip="{loc:Loc AddSheet}" AutomationProperties.Name="{loc:Loc AddSheet}">
+                        <PathIcon Data="{StaticResource SheetPlus}" Width="14" Height="14" />
+                    </Button>
+                    <ScrollViewer x:Name="SheetTabScroller" Grid.Column="2" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="SheetTabs" Orientation="Horizontal" Spacing="2" />
                     </ScrollViewer>
-                </StackPanel>
+                </Grid>
             </DockPanel>
         </Border>
     </Grid>

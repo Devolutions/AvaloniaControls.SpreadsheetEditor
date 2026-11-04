@@ -220,4 +220,6 @@ In alternativa, utilizza &quot;Esporta come PDF&quot; per salvare il foglio e st
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Salva foglio di calcolo</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Salvataggio non riuscito</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Foglio di calcolo</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Scorri le schede dei fogli a sinistra</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Scorri le schede dei fogli a destra</value></data>
 </root>

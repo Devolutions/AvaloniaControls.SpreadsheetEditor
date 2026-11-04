@@ -14,6 +14,10 @@ public sealed class SheetData
     // Pixel width per column (index = column). May be shorter than the column count.
     public IReadOnlyList<double> ColumnWidths { get; init; } = new List<double>();
 
+    // Imported worksheet defaults also apply to the blank area added as the viewport grows.
+    public double DefaultColumnWidth { get; init; } = 90;
+    public CellData DefaultCell { get; init; } = CellData.Plain(string.Empty);
+
     // Pixel height per row (index = row). Zero means use the grid's automatic height.
     public IReadOnlyList<double> RowHeights { get; init; } = new List<double>();
 
@@ -47,4 +51,11 @@ public sealed class SheetData
 
     // Optional worksheet tab color from the workbook theme/direct color.
     public Color? TabColor { get; init; }
+
+    public string Visibility { get; init; } = "visible";
+    public IReadOnlyList<int> HiddenColumns { get; init; } = new List<int>();
+    public IReadOnlyList<SheetOutlineGroup> RowGroups { get; init; } = new List<SheetOutlineGroup>();
+    public IReadOnlyList<SheetOutlineGroup> ColumnGroups { get; init; } = new List<SheetOutlineGroup>();
+    // Kept verbatim so saving cannot remove a password/hash or relax protection permissions.
+    public string? ProtectionXml { get; init; }
 }

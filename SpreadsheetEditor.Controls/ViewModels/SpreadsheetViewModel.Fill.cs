@@ -14,6 +14,7 @@ public partial class SpreadsheetViewModel
     // completed fill is one undo point and one workbook-recalculation request, not one per cell.
     public bool FillCells(CellRange source, CellRange target)
     {
+        if (!this.CanEdit(target)) return false;
         if (source.Row < 0 || source.Column < 0 || source.RowSpan <= 0 || source.ColumnSpan <= 0 ||
             !this.IsValid(new CellAddress(source.Row + source.RowSpan - 1, source.Column + source.ColumnSpan - 1)) ||
             target.Row < 0 || target.Column < 0 || target.RowSpan <= 0 || target.ColumnSpan <= 0 ||
@@ -88,7 +89,8 @@ public partial class SpreadsheetViewModel
                         // A source's cached result belongs to its original references, not this cell.
                         cell = cell with { FormulaResult = null, FormulaNumericValue = null, FormulaValue = null };
                     }
-                    destination.ApplyData(cell);
+                    if (this.IsProtected) destination.Text = cell.Text;
+                    else destination.ApplyData(cell);
                 }
             }
         }

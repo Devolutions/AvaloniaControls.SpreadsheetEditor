@@ -29,7 +29,12 @@ public static class XlsxCharts
     // A chart's raw series as parsed from the chart XML: range formulas plus the cached
     // values/labels Excel stores in the chart (numCache/strCache).
     public sealed record RawSeries(string? TitleFormula, string? TitleLiteral, string? ValueFormula,
-        string? CategoryFormula, IReadOnlyList<double> CachedValues, IReadOnlyList<string> CachedCategories);
+        string? CategoryFormula, IReadOnlyList<double> CachedValues, IReadOnlyList<string> CachedCategories)
+    {
+        public ChartKind? Kind { get; init; }
+        public bool SecondaryAxis { get; init; }
+        public Avalonia.Media.Color? Color { get; init; }
+    }
 
     public static List<SheetChart> Read(byte[] bytes, IXLWorksheet? sheet, int sheetIndex = 0)
     {
@@ -87,7 +92,7 @@ public static class XlsxCharts
                     }
 
                     (ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend) = ParseChartPart(chartDoc);
-                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, axisMinimum, title, legend, anchor, sheet);
+                    SheetChart? built = BuildChart(kind, rawSeries, showDataLabels, axisMinimum, title, legend, anchor, sheet, chartDoc);
                     if (built is not null)
                     {
                         charts.Add(built);
@@ -131,14 +136,18 @@ public static class XlsxCharts
         string? grouping = typeElement?.Element(C + "grouping")?.Attribute("val")?.Value;
         ChartKind kind = MapKind(typeElement?.Name.LocalName, grouping);
 
-        foreach (XElement ser in (typeElement ?? plotArea).Elements(C + "ser"))
+        string[] primaryIds = typeElement?.Elements(C + "axId").Select(id => id.Attribute("val")?.Value ?? string.Empty).ToArray() ?? Array.Empty<string>();
+        string? secondaryId = plotArea.Elements(C + "valAx").Select(axis => axis.Element(C + "axId")?.Attribute("val")?.Value)
+            .FirstOrDefault(id => id is not null && !primaryIds.Contains(id));
+        foreach (XElement group in plotArea.Elements().Where(e => e.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal)))
+        foreach (XElement ser in group.Elements(C + "ser"))
         {
             XElement? tx = ser.Element(C + "tx");
             string? titleFormula = tx?.Descendants(C + "f").FirstOrDefault()?.Value;
             string? titleLiteral = tx?.Descendants(C + "v").FirstOrDefault()?.Value;
 
-            XElement? val = ser.Element(C + "val");
-            XElement? cat = ser.Element(C + "cat");
+            XElement? val = ser.Element(C + "val") ?? ser.Element(C + "yVal");
+            XElement? cat = ser.Element(C + "cat") ?? ser.Element(C + "xVal");
             string? valueFormula = val?.Descendants(C + "f").FirstOrDefault()?.Value;
             string? categoryFormula = cat?.Descendants(C + "f").FirstOrDefault()?.Value;
 
@@ -146,7 +155,13 @@ public static class XlsxCharts
                 double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out double v) ? v : double.NaN).ToList();
             List<string> cachedCategories = ReadCache(cat);
 
-            series.Add(new RawSeries(titleFormula, titleLiteral, valueFormula, categoryFormula, cachedValues, cachedCategories));
+            string? rgb = ser.Element(C + "spPr")?.Descendants(A + "srgbClr").FirstOrDefault()?.Attribute("val")?.Value;
+            series.Add(new RawSeries(titleFormula, titleLiteral, valueFormula, categoryFormula, cachedValues, cachedCategories)
+            {
+                Kind = MapKind(group.Name.LocalName, group.Element(C + "grouping")?.Attribute("val")?.Value),
+                SecondaryAxis = secondaryId is not null && group.Elements(C + "axId").Any(id => id.Attribute("val")?.Value == secondaryId),
+                Color = rgb is { Length: 6 } && Avalonia.Media.Color.TryParse("#" + rgb, out Avalonia.Media.Color color) ? color : null,
+            });
         }
 
         return (kind, series, showDataLabels, axisMinimum, title, legend);
@@ -394,7 +409,7 @@ public static class XlsxCharts
 
     // ----- stitching -----
 
-    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend, Anchor anchor, IXLWorksheet? sheet)
+    private static SheetChart? BuildChart(ChartKind kind, List<RawSeries> rawSeries, bool showDataLabels, double? axisMinimum, string? title, ChartLegendPosition legend, Anchor anchor, IXLWorksheet? sheet, XDocument chartDoc)
     {
         List<ChartSeriesSpec> series = new();
         CellRange? categories = null;
@@ -423,7 +438,7 @@ public static class XlsxCharts
             series.Add(new ChartSeriesSpec(
                 seriesTitle,
                 ranges.Count > 0 ? ranges : new List<CellRange> { new(0, 0, 0, 0) },
-                hasCache ? raw.CachedValues : null));
+                hasCache ? raw.CachedValues : null) { Kind = raw.Kind, SecondaryAxis = raw.SecondaryAxis, Color = raw.Color });
 
             if (categories is null && ParseRange(raw.CategoryFormula) is { } catRange)
             {
@@ -447,6 +462,11 @@ public static class XlsxCharts
         return new SheetChart
         {
             Kind = kind,
+            SourceXml = chartDoc.ToString(System.Xml.Linq.SaveOptions.DisableFormatting),
+            HorizontalBars = chartDoc.Descendants(C + "barDir").FirstOrDefault()?.Attribute("val")?.Value == "bar",
+            ValueAxisTitle = AxisTitle(chartDoc, "valAx", "l"),
+            SecondaryAxisTitle = SecondaryAxisTitle(chartDoc),
+            CategoryAxisTitle = AxisTitle(chartDoc, "catAx", "b"),
             Title = string.IsNullOrWhiteSpace(title) ? null : title,
             Series = series,
             Categories = categories,
@@ -469,6 +489,23 @@ public static class XlsxCharts
             Width = anchor.ExtWidthPx > 0 ? anchor.ExtWidthPx : 380,
             Height = anchor.ExtHeightPx > 0 ? anchor.ExtHeightPx : 260,
         };
+    }
+
+    private static string? AxisTitle(XDocument document, string kind, string position)
+    {
+        XElement? axis = document.Descendants(C + kind).FirstOrDefault(e => e.Element(C + "axPos")?.Attribute("val")?.Value == position);
+        string title = string.Concat(axis?.Element(C + "title")?.Descendants(A + "t").Select(t => t.Value) ?? Enumerable.Empty<string>());
+        return string.IsNullOrEmpty(title) ? null : title;
+    }
+
+    private static string? SecondaryAxisTitle(XDocument document)
+    {
+        XElement? plot = document.Descendants(C + "plotArea").FirstOrDefault();
+        string[] primaryIds = plot?.Elements().FirstOrDefault(e => e.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal))?
+            .Elements(C + "axId").Select(e => e.Attribute("val")?.Value ?? string.Empty).ToArray() ?? Array.Empty<string>();
+        XElement? axis = plot?.Elements(C + "valAx").FirstOrDefault(e => !primaryIds.Contains(e.Element(C + "axId")?.Attribute("val")?.Value));
+        string title = string.Concat(axis?.Element(C + "title")?.Descendants(A + "t").Select(t => t.Value) ?? Enumerable.Empty<string>());
+        return string.IsNullOrEmpty(title) ? null : title;
     }
 
     // Limits a set of ranges to at most `maxCount` cells total (in order), trimming the range that

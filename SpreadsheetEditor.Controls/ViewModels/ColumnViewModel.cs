@@ -12,6 +12,9 @@ public partial class ColumnViewModel : ObservableObject
     [ObservableProperty]
     private double width = 90;
 
+    [ObservableProperty]
+    private bool isHidden;
+
     public string Header => CellAddress.ColumnToLetters(this.Index);
 
     public ColumnViewModel(int index, double width)

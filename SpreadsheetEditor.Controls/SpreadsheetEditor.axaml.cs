@@ -175,6 +175,7 @@ public partial class SpreadsheetEditor : UserControl
         this.ReplaceTextBox.KeyDown += (_, e) => this.OnFindBoxKeyDown(e);
 
         this.AddSheetButton.Click += (_, _) => this.AddSheet();
+        this.InitializeSheetTabScrolling();
 
         // Zoom control (bottom bar) — buttons + a live "100%" readout.
         this.ZoomInButton.Click += (_, _) => this.Grid.ZoomIn();
@@ -310,7 +311,7 @@ public partial class SpreadsheetEditor : UserControl
         }
     }
 
-    private bool IsActiveSheetReadOnly => this.IsReadOnly || this.loadingSheets.Contains(this.vm);
+    private bool IsActiveSheetReadOnly => this.IsReadOnly || this.loadingSheets.Contains(this.vm) || !this.vm.CanEdit(this.vm.ActiveCell);
 
     private void ApplyReadOnly(bool raiseEvent = true)
     {
@@ -340,6 +341,7 @@ public partial class SpreadsheetEditor : UserControl
 
     public void NewSheet(int rows, int columns)
     {
+        this.ResetSheetTabScroll();
         this.CancelWorkbookLoad();
         this.DetachActiveCell();
         this.vm = new SpreadsheetViewModel { Name = Get(S.Sheet) + "1" };
@@ -429,14 +431,14 @@ public partial class SpreadsheetEditor : UserControl
             this.stagedWorkbookBytes = bytes;
             this.stagedSheetMetadata = prepared.Preview.Sheets;
             this.stagedWorkbookReader = new XlsxWorkbookReader(bytes);
-            this.LoadStagedWorkbook(prepared.Staged);
+            this.LoadStagedWorkbook(prepared.Staged, prepared.Preview.FirstSheetIndex);
             this.LoadingOverlay.IsVisible = false;
             keepLoadLifetime = true;
 
             // The first worksheet is selected as part of opening the workbook. Its preview is already
             // visible, so begin only that worksheet's full import. Every other worksheet waits for a
             // tab click before doing any cell work.
-            this.StartStagedSheetLoad(prepared.Staged[0], generation, loadToken);
+            this.StartStagedSheetLoad(prepared.Staged[prepared.Preview.FirstSheetIndex], generation, loadToken);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -548,7 +550,9 @@ public partial class SpreadsheetEditor : UserControl
     private static SheetData CaptureSheetData(SpreadsheetViewModel sheet) => new()
     {
         Cells = sheet.ToCellData(),
-        ColumnWidths = sheet.Columns.Select(static column => column.Width).ToList(),
+        ColumnWidths = sheet.ColumnWidthSnapshot(),
+        DefaultColumnWidth = sheet.DefaultColumnWidth,
+        DefaultCell = sheet.DefaultCell,
         RowHeights = sheet.Rows.Select(static row => row.Height ?? 0).ToList(),
         Merges = sheet.Merges.ToArray(),
         Images = sheet.Images.ToArray(),
@@ -562,6 +566,11 @@ public partial class SpreadsheetEditor : UserControl
         HiddenRows = sheet.Rows.Select((row, index) => (row, index))
             .Where(static item => item.row.IsHidden).Select(static item => item.index).ToArray(),
         TabColor = sheet.TabColor,
+        Visibility = sheet.Visibility,
+        HiddenColumns = sheet.HiddenColumnSnapshot(),
+        RowGroups = sheet.RowGroups,
+        ColumnGroups = sheet.ColumnGroups,
+        ProtectionXml = sheet.ProtectionXml,
     };
 
     // Loads a full single-sheet snapshot (resets the workbook to one sheet): cells, per-column
@@ -604,6 +613,7 @@ public partial class SpreadsheetEditor : UserControl
 
     private void LoadPreparedWorkbook(IReadOnlyList<SpreadsheetViewModel> prepared)
     {
+        this.ResetSheetTabScroll();
         this.CancelWorkbookCalculation(clearPending: true);
         this.pendingFormulaInputChanges.Clear();
         this.pendingChartInputChanges.Clear();
@@ -620,7 +630,7 @@ public partial class SpreadsheetEditor : UserControl
             this.sheetDependencies[sheet] = new HashSet<string>(sheet.ReferencedSheetNames(), StringComparer.OrdinalIgnoreCase);
         }
 
-        this.ActivateSheet(0);
+        this.ActivateSheet(Math.Max(0, this.sheets.FindIndex(sheet => sheet.Visibility == "visible")));
         this.RebuildTabs();
     }
 
@@ -645,9 +655,11 @@ public partial class SpreadsheetEditor : UserControl
                 unique = $"{desired}{suffix}";
             }
 
-            if (index == 0)
+            if (index == preview.FirstSheetIndex)
             {
-                staged.Add(PrepareSheet(unique, preview.FirstSheet));
+                SpreadsheetViewModel first = PrepareSheet(unique, preview.FirstSheet);
+                first.Visibility = metadata.Visibility;
+                staged.Add(first);
                 continue;
             }
 
@@ -655,14 +667,16 @@ public partial class SpreadsheetEditor : UserControl
             placeholder.Initialize(1, 1);
             placeholder.GetCell(new CellAddress(0, 0))!.Text = Get(S.WorksheetLoadPrompt);
             placeholder.TabColor = metadata.TabColor;
+            placeholder.Visibility = metadata.Visibility;
             staged.Add(placeholder);
         }
 
         return staged;
     }
 
-    private void LoadStagedWorkbook(IReadOnlyList<SpreadsheetViewModel> staged)
+    private void LoadStagedWorkbook(IReadOnlyList<SpreadsheetViewModel> staged, int firstSheetIndex)
     {
+        this.ResetSheetTabScroll();
         this.DetachActiveCell();
         this.sheets.Clear();
         this.loadingSheets.Clear();
@@ -681,9 +695,9 @@ public partial class SpreadsheetEditor : UserControl
             this.stagedSheetIndexes[sheet] = index;
             this.ConfigureWorkbookFormulaResolution(sheet);
         }
-        this.previewedSheetIndexes.Add(0);
+        this.previewedSheetIndexes.Add(firstSheetIndex);
 
-        this.ActivateSheet(0);
+        this.ActivateSheet(firstSheetIndex);
         this.RebuildTabs();
     }
 
@@ -775,10 +789,15 @@ public partial class SpreadsheetEditor : UserControl
 
             SheetData fullData = await reader.ReadWorksheetAsync(sheetIndex, cancellationToken).ConfigureAwait(false);
             string loadedName = current.Name;
+            (int Rows, int Columns) previewSize = await Dispatcher.UIThread.InvokeAsync(
+                () => (current.RowCount, current.ColumnCount), DispatcherPriority.Background);
             (SpreadsheetViewModel Loaded, HashSet<string> Dependencies) completedSheet = await Task.Run(
                 () =>
                 {
                     SpreadsheetViewModel loaded = PrepareSheet(loadedName, fullData);
+                    // Keep the blank viewport area already displayed by the preview. Shrinking it
+                    // here would toggle scrollbars and grow the same rows/columns a second time.
+                    loaded.EnsureSize(Math.Max(loaded.RowCount, previewSize.Rows), Math.Max(loaded.ColumnCount, previewSize.Columns));
                     return (loaded, new HashSet<string>(loaded.ReferencedSheetNames(), StringComparer.OrdinalIgnoreCase));
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -847,6 +866,7 @@ public partial class SpreadsheetEditor : UserControl
         replacement.Name = target.Name;
         replacement.TabColor ??= target.TabColor;
         this.ConfigureWorkbookFormulaResolution(replacement);
+        replacement.Visibility = target.Visibility;
         bool active = ReferenceEquals(target, this.vm);
         bool activatePreview = !completed && this.pendingSheetActivationIndex == sheetIndex;
         CellAddress activeCell = target.ActiveCell;
@@ -894,7 +914,8 @@ public partial class SpreadsheetEditor : UserControl
             this.DetachActiveCell();
             this.vm = replacement;
             this.DataContext = replacement;
-            this.Grid.Sheet = replacement;
+            if (completed && active) this.Grid.CompleteSheetPreview(replacement);
+            else this.Grid.Sheet = replacement;
             this.SetActiveCell(new CellAddress(
                 Math.Clamp(activeCell.Row, 0, replacement.RowCount - 1),
                 Math.Clamp(activeCell.Column, 0, replacement.ColumnCount - 1)));
@@ -1522,6 +1543,7 @@ public partial class SpreadsheetEditor : UserControl
     // Loads a SheetData snapshot into a view model (names set before cells so =Name resolves).
     private static void ApplySheetData(SpreadsheetViewModel vm, SheetData sheet)
     {
+        vm.DefaultColumnWidth = sheet.DefaultColumnWidth;
         vm.SetNames(sheet.Names);
         // XLSX files already contain the last values calculated by Excel. Keep those cached results
         // during import; recalculating here both delays the first paint and can replace valid values
@@ -1530,13 +1552,12 @@ public partial class SpreadsheetEditor : UserControl
             .SelectMany(static row => row)
             .Any(static cell => FormulaEngine.IsFormula(cell.Text) && cell.FormulaResult is null);
         vm.LoadCellData(sheet.Cells, recalculate: hasUncachedFormula);
-        for (int i = 0; i < vm.Columns.Count && i < sheet.ColumnWidths.Count; i++)
-        {
-            if (sheet.ColumnWidths[i] > 0)
-            {
-                vm.Columns[i].Width = sheet.ColumnWidths[i];
-            }
-        }
+        vm.DefaultCell = sheet.DefaultCell;
+        vm.Visibility = sheet.Visibility;
+        vm.ProtectionXml = sheet.ProtectionXml;
+        vm.RowGroups = sheet.RowGroups;
+        vm.ColumnGroups = sheet.ColumnGroups;
+        vm.SetColumnWidths(sheet.ColumnWidths);
 
         for (int i = 0; i < vm.Rows.Count && i < sheet.RowHeights.Count; i++)
         {
@@ -1547,6 +1568,7 @@ public partial class SpreadsheetEditor : UserControl
         }
 
         vm.SetMerges(sheet.Merges);
+        vm.SetHiddenColumns(sheet.HiddenColumns);
         vm.SetImages(sheet.Images);
         vm.SetDataBars(sheet.DataBars);
         vm.SetCellValueRules(sheet.CellValueRules);
@@ -2422,9 +2444,13 @@ public partial class SpreadsheetEditor : UserControl
         this.ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private bool CanDeleteSheet(SpreadsheetViewModel sheet) =>
+        !this.IsReadOnly && this.sheets.Contains(sheet) && this.sheets.Count > 1 &&
+        (sheet.Visibility != "visible" || this.sheets.Count(candidate => candidate.Visibility == "visible") > 1);
+
     private void DeleteSheet(SpreadsheetViewModel sheet)
     {
-        if (this.IsReadOnly || this.sheets.Count <= 1)
+        if (!this.CanDeleteSheet(sheet))
         {
             return; // keep at least one sheet
         }
@@ -2458,7 +2484,8 @@ public partial class SpreadsheetEditor : UserControl
         }
         if (wasActive)
         {
-            this.ActivateSheet(Math.Min(index, this.sheets.Count - 1));
+            int next = this.sheets.FindIndex(Math.Min(index, this.sheets.Count - 1), candidate => candidate.Visibility == "visible");
+            this.ActivateSheet(next >= 0 ? next : this.sheets.FindIndex(candidate => candidate.Visibility == "visible"));
         }
 
         this.RebuildTabs();
@@ -2508,8 +2535,9 @@ public partial class SpreadsheetEditor : UserControl
         this.SheetTabs.Children.Clear();
         foreach (SpreadsheetViewModel sheet in this.sheets)
         {
-            this.SheetTabs.Children.Add(this.BuildTab(sheet));
+            if (sheet.Visibility == "visible") this.SheetTabs.Children.Add(this.BuildTab(sheet));
         }
+        this.ScheduleSheetTabLayout();
     }
 
     private Control BuildTab(SpreadsheetViewModel sheet)
@@ -2550,9 +2578,12 @@ public partial class SpreadsheetEditor : UserControl
             : new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
         Button tab = new()
         {
+            Tag = sheet.Name,
             Content = text,
             Focusable = false,
             Padding = new Thickness(10, 3),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Background = active
                 ? activeBackground
                 : tabColor is { } inactiveColor ? new SolidColorBrush(inactiveColor) : Brushes.Transparent,
@@ -2586,7 +2617,7 @@ public partial class SpreadsheetEditor : UserControl
         MenuFlyout menu = new();
         MenuItem rename = new() { Header = Get(S.Rename), IsEnabled = !this.IsReadOnly };
         rename.Click += (_, _) => this.BeginRenameTab(sheet, tab);
-        MenuItem delete = new() { Header = Get(S.Delete), IsEnabled = !this.IsReadOnly && this.sheets.Count > 1 };
+        MenuItem delete = new() { Header = Get(S.Delete), IsEnabled = this.CanDeleteSheet(sheet) };
         delete.Click += (_, _) => this.DeleteSheet(sheet);
         menu.Items.Add(rename);
         menu.Items.Add(delete);
@@ -2657,6 +2688,7 @@ public partial class SpreadsheetEditor : UserControl
         }
 
         this.SyncToolbar(this.activeCell);
+        this.ApplyReadOnly(raiseEvent: false);
         this.SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -2790,6 +2822,8 @@ public partial class SpreadsheetEditor : UserControl
             {
                 Width = 28,
                 Height = 28,
+                MinWidth = 0,
+                MinHeight = 0,
                 Margin = new Thickness(1),
                 Padding = new Thickness(0),
                 Background = new SolidColorBrush(color),
@@ -2839,6 +2873,11 @@ public partial class SpreadsheetEditor : UserControl
                 Content = symbol,
                 Width = 30,
                 Height = 28,
+                MinWidth = 0,
+                MinHeight = 0,
+                Theme = this.Resources["CompactButtonTheme"] as ControlTheme,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(1),
                 Padding = new Thickness(0),
                 Focusable = false,

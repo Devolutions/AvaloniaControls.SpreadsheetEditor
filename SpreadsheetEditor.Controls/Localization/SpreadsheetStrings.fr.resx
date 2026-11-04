@@ -220,4 +220,6 @@ Vous pouvez également utiliser « Exporter sous PDF » pour enregistrer la fe
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Enregistrer la feuille de calcul</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Échec de l&apos;enregistrement</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tableur</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Faire défiler les onglets de feuille vers la gauche</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Faire défiler les onglets de feuille vers la droite</value></data>
 </root>

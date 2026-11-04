@@ -220,4 +220,6 @@ Alternatywnie użyj opcji „Eksportuj jako PDF”, aby zapisać arkusz i wydruk
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Zapisz arkusz kalkulacyjny</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Zapisywanie nie powiodło się</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Arkusz kalkulacyjny</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Przewiń karty arkuszy w lewo</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Przewiń karty arkuszy w prawo</value></data>
 </root>

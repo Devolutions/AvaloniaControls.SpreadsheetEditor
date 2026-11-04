@@ -220,4 +220,6 @@ Alternatively, use "Export as PDF" to save the sheet and print it from a PDF vie
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Save spreadsheet</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Save failed</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Spreadsheet</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Scroll sheet tabs left</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Scroll sheet tabs right</value></data>
 </root>

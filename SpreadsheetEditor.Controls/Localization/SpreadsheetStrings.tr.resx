@@ -220,4 +220,6 @@ Alternatif olarak, sayfayı kaydetmek ve PDF görüntüleyiciden yazdırmak içi
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>E-tabloyu kaydet</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Kaydetme başarısız oldu</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Elektronik tablo</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Sayfa sekmelerini sola kaydır</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Sayfa sekmelerini sağa kaydır</value></data>
 </root>

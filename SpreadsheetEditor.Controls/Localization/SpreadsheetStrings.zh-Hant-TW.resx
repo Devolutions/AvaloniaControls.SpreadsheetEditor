@@ -220,4 +220,6 @@
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>儲存電子表格</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>保存失敗</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>試算表</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>向左捲動工作表索引標籤</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>向右捲動工作表索引標籤</value></data>
 </root>

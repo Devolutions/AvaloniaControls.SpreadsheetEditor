@@ -23,9 +23,9 @@ using global::SpreadsheetEditor.Controls.Models;
 // .xlsx open/save backed by ClosedXML (+ raw OOXML parsing for charts, via XlsxCharts). Round-trips cell
 // text/formulas plus whole-cell formatting (bold/italic/underline/strikethrough, colors, number format,
 // font). ReadWorkbook and WriteWorkbook preserve every worksheet in tab order.
-internal sealed record XlsxSheetPreview(int Index, string Name, string PartPath, Color? TabColor);
+internal sealed record XlsxSheetPreview(int Index, string Name, string PartPath, Color? TabColor, string Visibility = "visible");
 
-internal sealed record XlsxWorkbookPreview(IReadOnlyList<XlsxSheetPreview> Sheets, SheetData FirstSheet);
+internal sealed record XlsxWorkbookPreview(IReadOnlyList<XlsxSheetPreview> Sheets, SheetData FirstSheet, int FirstSheetIndex = 0);
 
 internal sealed record XlsxSheetWriteData(
     string Name,
@@ -225,7 +225,7 @@ public static partial class XlsxFile
             {
                 string resolvedName = string.IsNullOrWhiteSpace(name) ? $"{EditorText.Get(EditorString.Sheet)}{sheets.Count + 1}" : name;
                 Color? tabColor = ReadPreviewTabColor(archive, part, theme, cancellationToken);
-                sheets.Add(new XlsxSheetPreview(sheets.Count, resolvedName, part, tabColor));
+                sheets.Add(new XlsxSheetPreview(sheets.Count, resolvedName, part, tabColor, sheet.Attribute("state")?.Value ?? "visible"));
             }
         }
 
@@ -237,16 +237,17 @@ public static partial class XlsxFile
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        XlsxSheetPreview firstVisible = sheets.FirstOrDefault(sheet => sheet.Visibility == "visible") ?? sheets[0];
         SheetData firstSheet = ReadPreviewSheet(
             archive,
             bytes,
-            sheets[0].PartPath,
-            sheets[0].Index,
-            sheets[0].TabColor,
+            firstVisible.PartPath,
+            firstVisible.Index,
+            firstVisible.TabColor,
             rowLimit,
             columnLimit,
             cancellationToken);
-        return new XlsxWorkbookPreview(sheets, firstSheet);
+        return new XlsxWorkbookPreview(sheets, firstSheet, firstVisible.Index);
     }
 
     // Reads only a screen-sized slice of a selected worksheet. The metadata object carries its
@@ -302,6 +303,9 @@ public static partial class XlsxFile
 
         Dictionary<int, string> sharedStrings = ReadSharedStrings(archive, sharedStringIndexes, cancellationToken);
         List<PreviewCellStyle> styles = ReadPreviewStyles(archive);
+        CellData defaultCell = PreviewBlankCell(styles[0]);
+        Dictionary<(int Row, int Column), TableCellStyle> tableStyles =
+            BuildTableStyles(archive, tables, slice.RowCount, slice.ColumnCount);
         Dictionary<(int Row, int Column), CellData> values = new();
         int lastRow = slice.RowCount;
         int lastColumn = slice.ColumnCount;
@@ -344,7 +348,17 @@ public static partial class XlsxFile
             List<CellData> rowData = new(lastColumn);
             for (int column = 0; column < lastColumn; column++)
             {
-                rowData.Add(values.TryGetValue((row, column), out CellData value) ? value : CellData.Plain(string.Empty));
+                CellData value = values.TryGetValue((row, column), out CellData imported) ? imported : defaultCell;
+                if (tableStyles.TryGetValue((row + 1, column + 1), out TableCellStyle tableStyle))
+                {
+                    value = value with
+                    {
+                        Background = value.Background ?? tableStyle.Background,
+                        Foreground = value.Foreground ?? tableStyle.Foreground,
+                        Bold = value.Bold || tableStyle.Bold,
+                    };
+                }
+                rowData.Add(value);
             }
             rows.Add(rowData);
         }
@@ -357,15 +371,8 @@ public static partial class XlsxFile
         (List<SheetDataBar> previewBars, List<SheetCellValueRule> previewValueRules) =
             ReadConditionalFormatting(archive, partPath, ReadThemeColors(archive), cancellationToken);
 
-        List<double> widths = Enumerable.Repeat(0d, lastColumn).ToList();
-        foreach ((int min, int max, double width) in slice.Columns)
-        {
-            double pixels = Math.Clamp(width * 7.0 + 5.0, 24.0, 400.0);
-            for (int index = Math.Max(1, min); index <= Math.Min(lastColumn, max); index++)
-            {
-                widths[index - 1] = pixels;
-            }
-        }
+        double defaultWidth = Math.Clamp(slice.DefaultColumnWidth * 7.0 + 5.0, 24.0, 400.0);
+        List<double> widths = ImportedColumnWidths(slice.Columns, lastColumn, defaultWidth);
 
         List<double> heights = Enumerable.Repeat(0d, lastRow).ToList();
         foreach ((int row, double height) in slice.RowHeights)
@@ -376,12 +383,15 @@ public static partial class XlsxFile
             }
         }
 
+        NativeSheetPresentation presentation = ReadNativePresentation(archive, partPath, rows, cancellationToken);
         return new SheetData
         {
             Cells = rows,
             ColumnWidths = widths,
+            DefaultColumnWidth = defaultWidth,
+            DefaultCell = defaultCell,
             RowHeights = heights,
-            Merges = slice.Merges,
+            Merges = presentation.Merges,
             Charts = XlsxCharts.Read(bytes, sheet: null, sheetIndex),
             DataBars = previewBars,
             CellValueRules = previewValueRules,
@@ -389,6 +399,10 @@ public static partial class XlsxFile
             Tables = tables,
             ColumnFilters = filters,
             HiddenRows = slice.HiddenRows,
+            HiddenColumns = presentation.HiddenColumns,
+            RowGroups = presentation.RowGroups,
+            ColumnGroups = presentation.ColumnGroups,
+            ProtectionXml = presentation.ProtectionXml,
             TabColor = tabColor ?? PreviewColor(slice.TabColor, ReadThemeColors(archive)),
         };
     }
@@ -404,15 +418,38 @@ public static partial class XlsxFile
         columnLimit = Math.Clamp(columnLimit, 1, 256);
         ZipArchiveEntry entry = archive.GetEntry(partPath) ?? throw new InvalidDataException(EditorText.Format(EditorString.MissingWorkbookPart, partPath));
         List<XElement> cells = new();
-        List<(int Min, int Max, double Width)> columns = new();
+        List<PreviewColumn> columns = new();
         List<(int Row, double Height)> rowHeights = new();
-        List<MergeRange> merges = new();
         List<int> hiddenRows = new();
         XElement? tabColor = null;
-        int dimensionRows = 0;
-        int dimensionColumns = 0;
         int lastLoadedRow = 0;
-        int lastLoadedColumn = 0;
+        double defaultColumnWidth = 8.43;
+        double defaultRowHeight = 15;
+        int requestedColumns = columnLimit;
+        bool columnsPrepared = false;
+
+        void PrepareColumns()
+        {
+            if (columnsPrepared) return;
+            columnsPrepared = true;
+            // A physical column count estimated from a fixed width misses visible cells when
+            // leading columns are narrow/hidden. Read enough source columns to fill the viewport.
+            const int maximum = 256;
+            double defaultPixels = Math.Clamp(defaultColumnWidth * 7.0 + 5.0, 24.0, 400.0);
+            List<double> widths = ImportedColumnWidths(columns, maximum, defaultPixels);
+            bool[] hidden = new bool[maximum];
+            foreach (PreviewColumn column in columns)
+                for (int c = Math.Max(0, column.Min - 1); c < Math.Min(maximum, column.Max); c++)
+                    hidden[c] = column.Hidden;
+            double coveredWidth = 0;
+            int count = 0;
+            while (count < maximum && (count < requestedColumns || coveredWidth < requestedColumns * 96.0))
+            {
+                if (!hidden[count]) coveredWidth += widths[count];
+                count++;
+            }
+            columnLimit = count;
+        }
 
         using Stream stream = entry.Open();
         using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
@@ -430,15 +467,6 @@ public static partial class XlsxFile
                 continue;
             }
 
-            if (reader.LocalName == "dimension" &&
-                CellRange.TryParse(reader.GetAttribute("ref"), out CellRange dimension))
-            {
-                dimensionRows = dimension.Row + dimension.RowSpan;
-                dimensionColumns = dimension.Column + dimension.ColumnSpan;
-                reader.Read();
-                continue;
-            }
-
             if (reader.LocalName == "sheetPr")
             {
                 XElement properties = (XElement)XNode.ReadFrom(reader);
@@ -446,14 +474,27 @@ public static partial class XlsxFile
                 continue;
             }
 
+            if (reader.LocalName == "sheetFormatPr")
+            {
+                if (double.TryParse(reader.GetAttribute("defaultColWidth"), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double width)) defaultColumnWidth = width;
+                if (double.TryParse(reader.GetAttribute("defaultRowHeight"), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double height)) defaultRowHeight = height;
+                reader.Read();
+                continue;
+            }
+
             if (reader.LocalName == "col")
             {
                 if (int.TryParse(reader.GetAttribute("min"), out int min) &&
-                    int.TryParse(reader.GetAttribute("max"), out int max) &&
-                    double.TryParse(reader.GetAttribute("width"), NumberStyles.Float, CultureInfo.InvariantCulture, out double width))
+                    int.TryParse(reader.GetAttribute("max"), out int max) && min >= 1 && min <= 16384 && max >= min)
                 {
-                    columns.Add((min, max, width));
-                    lastLoadedColumn = Math.Max(lastLoadedColumn, Math.Min(columnLimit, max));
+                    max = Math.Min(max, 16384);
+                    double? width = double.TryParse(reader.GetAttribute("width"), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double parsedWidth) ? parsedWidth : null;
+                    columns.Add(new PreviewColumn(min, max, width, reader.GetAttribute("hidden") is "1" or "true"));
+                    // ClosedXML treats a trailing column definition as the worksheet default.
+                    if (max == 16384 && width is { } defaultWidth) defaultColumnWidth = defaultWidth - ImportedColumnWidthOffset;
                 }
                 reader.Read();
                 continue;
@@ -461,6 +502,7 @@ public static partial class XlsxFile
 
             if (reader.LocalName == "row")
             {
+                PrepareColumns();
                 int oneBasedRow = int.TryParse(reader.GetAttribute("r"), out int parsedRow)
                     ? parsedRow
                     : lastLoadedRow + 1;
@@ -475,7 +517,8 @@ public static partial class XlsxFile
                 }
 
                 if (double.TryParse(reader.GetAttribute("ht"), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out double pointHeight) && pointHeight > 0)
+                        CultureInfo.InvariantCulture, out double pointHeight) && pointHeight > 0 &&
+                    Math.Abs(pointHeight - defaultRowHeight) > 0.01)
                 {
                     rowHeights.Add((oneBasedRow - 1, pointHeight * 4.0 / 3.0));
                 }
@@ -488,28 +531,41 @@ public static partial class XlsxFile
                         continue;
                     }
                     cells.Add(cell);
-                    lastLoadedColumn = Math.Max(lastLoadedColumn, column + 1);
                 }
                 lastLoadedRow = Math.Max(lastLoadedRow, oneBasedRow);
                 continue;
             }
 
-            // Merge definitions come after sheetData. They are available without scanning a large
-            // sheet only when the first slice already contains the full worksheet.
-            if (dimensionRows <= rowLimit && reader.LocalName == "mergeCell" &&
-                CellRange.TryParse(reader.GetAttribute("ref"), out CellRange range) &&
-                range.Row < rowLimit && range.Column < columnLimit)
-            {
-                int rowSpan = Math.Min(range.RowSpan, rowLimit - range.Row);
-                int columnSpan = Math.Min(range.ColumnSpan, columnLimit - range.Column);
-                merges.Add(new MergeRange(range.Row, range.Column, rowSpan, columnSpan));
-            }
             reader.Read();
         }
 
-        int rowCount = Math.Max(1, Math.Min(rowLimit, dimensionRows > 0 ? dimensionRows : lastLoadedRow));
-        int columnCount = Math.Max(1, Math.Min(columnLimit, dimensionColumns > 0 ? dimensionColumns : lastLoadedColumn));
-        return new PreviewWorksheetSlice(cells, columns, rowHeights, merges, hiddenRows, tabColor, rowCount, columnCount);
+        PrepareColumns();
+        // Include the blank viewport area before publication. Growing it after the first layout
+        // changes scrollbar visibility and exposes columns with temporary default settings.
+        int rowCount = rowLimit;
+        int columnCount = columnLimit;
+        return new PreviewWorksheetSlice(cells, columns, rowHeights, hiddenRows, tabColor, rowCount, columnCount, defaultColumnWidth);
+    }
+
+    // The full importer exposes ClosedXML's content width (NoC). Its OOXML column reader removes
+    // this padding offset before the editor converts to pixels; previews must do the same.
+    private const double ImportedColumnWidthOffset = 0.710625;
+    private static double ImportedColumnWidth(double width) =>
+        Math.Clamp((width - ImportedColumnWidthOffset) * 7.0 + 5.0, 24.0, 400.0);
+
+    private readonly record struct PreviewColumn(int Min, int Max, double? Width, bool Hidden);
+
+    private static List<double> ImportedColumnWidths(IReadOnlyList<PreviewColumn> columns, int minimumCount, double defaultWidth)
+    {
+        // Metadata may extend past the used cells; keep those widths without creating their cells.
+        int count = Math.Max(minimumCount, columns.Where(column => column.Max < 16384).Select(column => column.Max).DefaultIfEmpty(0).Max());
+        List<double> result = Enumerable.Repeat(defaultWidth, count).ToList();
+        foreach (PreviewColumn column in columns)
+        {
+            double pixels = column.Width is { } width ? ImportedColumnWidth(width) : defaultWidth;
+            for (int c = Math.Max(0, column.Min - 1); c < Math.Min(count, column.Max); c++) result[c] = pixels;
+        }
+        return result;
     }
 
     // AutoFilter follows sheetData in OOXML, so a limited first-screen preview would otherwise
@@ -618,9 +674,11 @@ public static partial class XlsxFile
 
     private static List<PreviewCellStyle> ReadPreviewStyles(ZipArchive archive)
     {
+        PreviewCellStyle defaultStyle = new(false, false, false, false, null, null,
+            11 * 4.0 / 3.0, "Calibri", null, TextAlignment.Left, false);
         if (archive.GetEntry("xl/styles.xml") is not { } entry)
         {
-            return new List<PreviewCellStyle> { default };
+            return new List<PreviewCellStyle> { defaultStyle };
         }
 
         XDocument document;
@@ -655,26 +713,35 @@ public static partial class XlsxFile
             string? numberFormat = numberFormats.TryGetValue(numberFormatId, out string? custom)
                 ? custom
                 : BuiltInNumberFormat(numberFormatId);
+            if (string.IsNullOrEmpty(numberFormat)) numberFormat = null;
             string horizontal = xf.Element(Ssml + "alignment")?.Attribute("horizontal")?.Value ?? string.Empty;
             bool wrapText = xf.Element(Ssml + "alignment")?.Attribute("wrapText")?.Value is "1" or "true";
             result.Add(new PreviewCellStyle(
-                font?.Element(Ssml + "b") is not null,
-                font?.Element(Ssml + "i") is not null,
-                font?.Element(Ssml + "u") is not null,
-                font?.Element(Ssml + "strike") is not null,
+                PreviewFontFlag(font?.Element(Ssml + "b")),
+                PreviewFontFlag(font?.Element(Ssml + "i")),
+                font?.Element(Ssml + "u") is { } underline && underline.Attribute("val")?.Value != "none",
+                PreviewFontFlag(font?.Element(Ssml + "strike")),
                 foreground,
                 PreviewColor(fill?.Element(Ssml + "patternFill")?.Element(Ssml + "fgColor"), theme),
                 double.TryParse(font?.Element(Ssml + "sz")?.Attribute("val")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double size)
                     ? size * 4.0 / 3.0
-                    : 0,
-                font?.Element(Ssml + "name")?.Attribute("val")?.Value,
+                    : defaultStyle.FontSize,
+                font?.Element(Ssml + "name")?.Attribute("val")?.Value ?? defaultStyle.FontFamily,
                 numberFormat,
                 horizontal is "center" or "centerContinuous" ? TextAlignment.Center : horizontal == "right" ? TextAlignment.Right : TextAlignment.Left,
                 wrapText));
         }
 
-        return result.Count == 0 ? new List<PreviewCellStyle> { default } : result;
+        return result.Count == 0 ? new List<PreviewCellStyle> { defaultStyle } : result;
     }
+
+    private static bool PreviewFontFlag(XElement? element) =>
+        element is not null && element.Attribute("val")?.Value is not ("0" or "false");
+
+    private static CellData PreviewBlankCell(PreviewCellStyle style) => new(
+        string.Empty, style.Bold, style.Italic, style.Underline, style.Foreground, style.Background,
+        style.FontSize, style.Alignment, style.NumberFormat, style.FontFamily, style.Strikethrough)
+        { WrapText = style.WrapText };
 
     private static IReadOnlyList<Color?> ReadThemeColors(ZipArchive archive)
     {
@@ -843,13 +910,13 @@ public static partial class XlsxFile
 
     private sealed record PreviewWorksheetSlice(
         List<XElement> Cells,
-        List<(int Min, int Max, double Width)> Columns,
+        List<PreviewColumn> Columns,
         List<(int Row, double Height)> RowHeights,
-        List<MergeRange> Merges,
         List<int> HiddenRows,
         XElement? TabColor,
         int RowCount,
-        int ColumnCount);
+        int ColumnCount,
+        double DefaultColumnWidth);
 
     // Reads one worksheet into a SheetData. sheetIndex is the
     // 0-based position in the workbook (used to find this sheet's drawing/charts).
@@ -897,7 +964,11 @@ public static partial class XlsxFile
         // Excel Table formatting (header / total / striped rows) comes from the table style, not from
         // per-cell styles. Resolve both custom styles embedded in styles.xml and Excel's built-in
         // TableStyleLight/Medium/Dark families.
-        Dictionary<(int Row, int Column), TableCellStyle> tableStyles = BuildTableStyles(bytes, sheet, workbook);
+        Dictionary<(int Row, int Column), TableCellStyle> tableStyles;
+        using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
+        {
+            tableStyles = BuildTableStyles(archive, tableDefinitions, lastRow, lastColumn);
+        }
         Dictionary<IXLStyle, ImportedCellStyle> styleCache = new();
 
         for (int r = 1; r <= lastRow; r++)
@@ -959,6 +1030,11 @@ public static partial class XlsxFile
                 else if (cell.DataType == XLDataType.Number)
                 {
                     text = cell.GetDouble().ToString(CultureInfo.InvariantCulture);
+                    numberFormat = format;
+                }
+                else if (cell.DataType is XLDataType.DateTime or XLDataType.TimeSpan)
+                {
+                    text = (cell.DataType == XLDataType.DateTime ? cell.GetDateTime().ToOADate() : cell.GetTimeSpan().TotalDays).ToString(CultureInfo.InvariantCulture);
                     numberFormat = format;
                 }
                 else if (cell.DataType == XLDataType.Text)
@@ -1038,18 +1114,28 @@ public static partial class XlsxFile
         // Color-scale conditional formatting is not stored in each cell's base style. Paint its
         // current result into the imported cell snapshot so it appears in the editor and survives
         // a save even though the editor does not yet expose color-scale rule editing.
+        NativeSheetPresentation presentation;
+        CellData defaultCell;
         using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
         {
             string partPath = WorksheetPartPath(archive, sheetIndex);
             IReadOnlyList<Color?> theme = ReadThemeColors(archive);
+            presentation = ReadNativePresentation(archive, partPath, rows, cancellationToken);
+            defaultCell = PreviewBlankCell(ReadPreviewStyles(archive)[0]);
             (dataBars, cellValueRules) = ReadConditionalFormatting(archive, partPath, theme, cancellationToken);
             ApplyColorScales(rows, ReadColorScales(archive, partPath, theme), cancellationToken);
         }
 
+        double defaultWidth = Math.Clamp(sheet!.ColumnWidth * 7.0 + 5.0, 24.0, 400.0);
+        List<double> allWidths = ImportedColumnWidths(presentation.Columns, widths.Count, defaultWidth);
+        for (int c = 0; c < widths.Count; c++) allWidths[c] = widths[c];
+
         return new SheetData
         {
             Cells = rows,
-            ColumnWidths = widths,
+            ColumnWidths = allWidths,
+            DefaultColumnWidth = defaultWidth,
+            DefaultCell = defaultCell,
             RowHeights = rowHeights,
             Merges = merges,
             Images = images,
@@ -1061,6 +1147,11 @@ public static partial class XlsxFile
             Tables = tableDefinitions,
             ColumnFilters = filters,
             HiddenRows = hiddenRows,
+            HiddenColumns = presentation.HiddenColumns,
+            RowGroups = presentation.RowGroups,
+            ColumnGroups = presentation.ColumnGroups,
+            ProtectionXml = presentation.ProtectionXml,
+            Visibility = sheet!.Visibility.ToString().ToLowerInvariant(),
             TabColor = sheet!.TabColor is { } tabColor && tabColor != XLColor.NoColor
                 ? ResolveColor(workbook, tabColor)
                 : null,
@@ -1176,6 +1267,7 @@ public static partial class XlsxFile
                 }
             }
         }
+        ReadAdditionalConditionalFormatting(archive, partPath, theme, valueRules, cancellationToken);
         valueRules.Sort(static (left, right) => left.Priority.CompareTo(right.Priority));
         return (bars, valueRules);
     }
@@ -1478,7 +1570,7 @@ public static partial class XlsxFile
                 case XLColorType.Color:
                     {
                         System.Drawing.Color c = color.Color;
-                        return Color.FromArgb(c.A, c.R, c.G, c.B);
+                        return Color.FromRgb(c.R, c.G, c.B);
                     }
                 case XLColorType.Theme:
                     {
@@ -1489,7 +1581,7 @@ public static partial class XlsxFile
                         }
 
                         System.Drawing.Color c = baseColor.Color;
-                        return ApplyTint(Color.FromArgb(c.A, c.R, c.G, c.B), color.ThemeTint);
+                        return ApplyTint(Color.FromRgb(c.R, c.G, c.B), color.ThemeTint);
                     }
                 default:
                     return null;
@@ -1626,10 +1718,11 @@ public static partial class XlsxFile
     // Builds a per-cell style map for the sheet's tables. Excel stores custom table styles in
     // styles.xml, but its built-in styles are referenced only by name and must be resolved from the
     // workbook theme.
-    private static Dictionary<(int Row, int Column), TableCellStyle> BuildTableStyles(byte[] bytes, IXLWorksheet? sheet, XLWorkbook workbook)
+    private static Dictionary<(int Row, int Column), TableCellStyle> BuildTableStyles(
+        ZipArchive archive, IReadOnlyList<SheetTable> tables, int rowCount, int columnCount)
     {
         Dictionary<(int, int), TableCellStyle> cells = new();
-        if (sheet is null || !sheet.Tables.Any())
+        if (tables.Count == 0)
         {
             return cells;
         }
@@ -1637,14 +1730,15 @@ public static partial class XlsxFile
         try
         {
             // Resolve the workbook's custom table-style definitions (style name → element DXFs).
-            using ZipArchive archive = new(new MemoryStream(bytes), ZipArchiveMode.Read);
+            IReadOnlyList<Color?> theme = ReadThemeColors(archive);
             ZipArchiveEntry? stylesEntry = archive.GetEntry("xl/styles.xml");
             if (stylesEntry is null)
             {
                 return cells;
             }
 
-            XDocument styles = XDocument.Load(stylesEntry.Open());
+            using Stream stylesStream = stylesEntry.Open();
+            XDocument styles = XDocument.Load(stylesStream);
             List<XElement> dxfs = styles.Descendants(Ssml + "dxfs").Elements(Ssml + "dxf").ToList();
 
             Dictionary<string, ResolvedTableStyle> tableStyles = new(StringComparer.OrdinalIgnoreCase);
@@ -1670,7 +1764,7 @@ public static partial class XlsxFile
                         size = s;
                     }
 
-                    return DxfStyle(dxfs[id], workbook);
+                    return DxfStyle(dxfs[id], theme);
                 }
 
                 TableCellStyle whole = Element("wholeTable", out _);
@@ -1678,30 +1772,38 @@ public static partial class XlsxFile
                 TableCellStyle total = Element("totalRow", out _);
                 TableCellStyle stripe1 = Element("firstRowStripe", out int size1);
                 TableCellStyle stripe2 = Element("secondRowStripe", out int size2);
-                tableStyles[name] = new ResolvedTableStyle(whole, header, total, stripe1, stripe2, size1, size2);
+                tableStyles[name] = new ResolvedTableStyle(whole, header, total, stripe1, stripe2, size1, size2)
+                {
+                    FirstColumn = Element("firstColumn", out _), LastColumn = Element("lastColumn", out _),
+                    ColumnStripe1 = Element("firstColumnStripe", out int columnSize1),
+                    ColumnStripe2 = Element("secondColumnStripe", out int columnSize2),
+                    ColumnStripe1Size = columnSize1, ColumnStripe2Size = columnSize2,
+                };
             }
 
-            foreach (IXLTable table in sheet.Tables)
+            foreach (SheetTable table in tables)
             {
-                string? styleName = table.Theme?.Name;
+                string? styleName = table.StyleName;
                 if (styleName is null ||
                     (!tableStyles.TryGetValue(styleName, out ResolvedTableStyle style) &&
-                     !TryBuiltInTableStyle(workbook, styleName, out style)))
+                     !TryBuiltInTableStyle(theme, styleName, out style)))
                 {
                     continue;
                 }
 
-                IXLRangeAddress range = table.RangeAddress;
-                int firstColumn = range.FirstAddress.ColumnNumber;
-                int lastColumn = range.LastAddress.ColumnNumber;
-                int headerRow = table.ShowHeaderRow ? table.HeadersRow().RowNumber() : -1;
-                int totalsRow = table.ShowTotalsRow ? table.TotalsRow().RowNumber() : -1;
-                int firstData = table.DataRange?.FirstRow().RowNumber() ?? range.FirstAddress.RowNumber;
-                int lastData = table.DataRange?.LastRow().RowNumber() ?? range.LastAddress.RowNumber;
+                // Keys are one-based to match the full importer. Clip painting to the loaded
+                // slice so a first-screen preview never materializes a large table's remaining rows.
+                CellRange range = table.Range;
+                int firstColumn = range.Column + 1;
+                int lastColumn = Math.Min(columnCount, range.Column + range.ColumnSpan);
+                int headerRow = table.ShowHeaderRow ? range.Row + 1 : -1;
+                int totalsRow = table.ShowTotalsRow ? range.Row + range.RowSpan : -1;
+                int firstData = range.Row + 1 + (table.ShowHeaderRow ? 1 : 0);
+                int lastData = Math.Min(rowCount, range.Row + range.RowSpan - (table.ShowTotalsRow ? 1 : 0));
 
                 void Paint(int row, TableCellStyle cellStyle)
                 {
-                    if (row < 1 || cellStyle == default)
+                    if (row < 1 || row > rowCount || cellStyle == default)
                     {
                         return;
                     }
@@ -1717,7 +1819,7 @@ public static partial class XlsxFile
                     }
                 }
 
-                for (int row = range.FirstAddress.RowNumber; row <= range.LastAddress.RowNumber; row++)
+                for (int row = range.Row + 1; row <= Math.Min(rowCount, range.Row + range.RowSpan); row++)
                 {
                     Paint(row, style.Whole);
                 }
@@ -1732,6 +1834,26 @@ public static partial class XlsxFile
                     {
                         int pos = (row - firstData) % period;
                         Paint(row, pos < Math.Max(1, style.Stripe1Size) ? style.Stripe1 : style.Stripe2);
+                    }
+                    for (int col = firstColumn; col <= lastColumn; col++)
+                    {
+                        TableCellStyle columnStyle = default;
+                        if (table.ShowColumnStripes)
+                        {
+                            int size1 = Math.Max(1, style.ColumnStripe1Size), size2 = Math.Max(1, style.ColumnStripe2Size);
+                            bool firstStripe = (col - firstColumn) % (size1 + size2) < size1;
+                            columnStyle = firstStripe ? style.ColumnStripe1 ?? style.Stripe1 : style.ColumnStripe2 ?? style.Stripe2;
+                        }
+                        bool emphasize = col == firstColumn && table.EmphasizeFirstColumn || col == lastColumn && table.EmphasizeLastColumn;
+                        if (emphasize)
+                        {
+                            TableCellStyle emphasis = (col == firstColumn ? style.FirstColumn : style.LastColumn) ?? new TableCellStyle(null, null, true);
+                            columnStyle = new TableCellStyle(emphasis.Background ?? columnStyle.Background,
+                                emphasis.Foreground ?? columnStyle.Foreground, emphasis.Bold || columnStyle.Bold);
+                        }
+                        if (columnStyle == default) continue;
+                        cells.TryGetValue((row, col), out TableCellStyle current);
+                        cells[(row, col)] = new TableCellStyle(columnStyle.Background ?? current.Background, columnStyle.Foreground ?? current.Foreground, columnStyle.Bold || current.Bold);
                     }
                 }
             }
@@ -1821,11 +1943,19 @@ public static partial class XlsxFile
         TableCellStyle Stripe1,
         TableCellStyle Stripe2,
         int Stripe1Size,
-        int Stripe2Size);
+        int Stripe2Size)
+    {
+        public TableCellStyle? FirstColumn { get; init; }
+        public TableCellStyle? LastColumn { get; init; }
+        public TableCellStyle? ColumnStripe1 { get; init; }
+        public TableCellStyle? ColumnStripe2 { get; init; }
+        public int ColumnStripe1Size { get; init; }
+        public int ColumnStripe2Size { get; init; }
+    }
 
     // Excel's 60 built-in table styles are not serialized as DXFs. Their colors follow the workbook
     // theme in groups of seven (Text1, Accent1..Accent6), with four medium and three light variants.
-    private static bool TryBuiltInTableStyle(XLWorkbook workbook, string name, out ResolvedTableStyle style)
+    private static bool TryBuiltInTableStyle(IReadOnlyList<Color?> theme, string name, out ResolvedTableStyle style)
     {
         style = default;
         string family;
@@ -1857,10 +1987,10 @@ public static partial class XlsxFile
             return false;
         }
 
-        Color black = ThemeTableColor(workbook, 0);
+        Color black = ThemeTableColor(theme, 0);
         Color white = Color.FromRgb(0xFF, 0xFF, 0xFF);
         int slot = (number - 1) % 7;
-        Color baseColor = ThemeTableColor(workbook, slot);
+        Color baseColor = ThemeTableColor(theme, slot);
         Color light = TableTint(baseColor, slot, slot == 0 ? 0.85 : 0.80);
         Color mediumLight = TableTint(baseColor, slot, slot == 0 ? 0.65 : 0.60);
         Color dark = slot == 0 ? black : TableTint(baseColor, slot, -0.25);
@@ -1906,8 +2036,8 @@ public static partial class XlsxFile
             case "Dark":
                 {
                     int accentPair = (number - 9) * 2 + 1;
-                    Color stripeBase = ThemeTableColor(workbook, accentPair);
-                    Color header = ThemeTableColor(workbook, accentPair + 1);
+                    Color stripeBase = ThemeTableColor(theme, accentPair);
+                    Color header = ThemeTableColor(theme, accentPair + 1);
                     Color stripeLight = TableTint(stripeBase, accentPair, 0.80);
                     style = new ResolvedTableStyle(default, Fill(header, white), Fill(stripeLight, black, true), Fill(TableTint(stripeBase, accentPair, 0.60), black), Fill(stripeLight, black), 1, 1);
                     return true;
@@ -1917,22 +2047,8 @@ public static partial class XlsxFile
         return false;
     }
 
-    private static Color ThemeTableColor(XLWorkbook workbook, int slot)
-    {
-        XLThemeColor theme = slot switch
-        {
-            1 => XLThemeColor.Accent1,
-            2 => XLThemeColor.Accent2,
-            3 => XLThemeColor.Accent3,
-            4 => XLThemeColor.Accent4,
-            5 => XLThemeColor.Accent5,
-            6 => XLThemeColor.Accent6,
-            _ => XLThemeColor.Text1,
-        };
-        Color fallback = DefaultTableColor(slot);
-        XLColor? themeColor = ThemeBase(workbook, theme);
-        return themeColor is null ? fallback : ResolveColor(workbook, themeColor) ?? fallback;
-    }
+    private static Color ThemeTableColor(IReadOnlyList<Color?> theme, int slot) =>
+        theme[slot is >= 1 and <= 6 ? slot + 3 : 1] ?? DefaultTableColor(slot);
 
     private static Color DefaultTableColor(int slot) => slot switch
     {
@@ -1996,70 +2112,23 @@ public static partial class XlsxFile
         return ApplyTint(color, tint);
     }
 
-    private static TableCellStyle DxfStyle(XElement dxf, XLWorkbook workbook)
+    private static TableCellStyle DxfStyle(XElement dxf, IReadOnlyList<Color?> theme)
     {
         XElement? font = dxf.Element(Ssml + "font");
         return new TableCellStyle(
-            DxfFill(dxf, workbook),
-            DxfColor(font?.Element(Ssml + "color"), workbook),
+            DxfFill(dxf, theme),
+            PreviewColor(font?.Element(Ssml + "color"), theme),
             font?.Element(Ssml + "b") is not null);
     }
 
     // Resolves a dxf fill. Solid SpreadsheetML fills use fgColor; bgColor is for the secondary
     // color of patterned fills, so it is only a fallback here.
-    private static Color? DxfFill(XElement dxf, XLWorkbook workbook)
+    private static Color? DxfFill(XElement dxf, IReadOnlyList<Color?> theme)
     {
         XElement? pattern = dxf.Element(Ssml + "fill")?.Element(Ssml + "patternFill");
         XElement? color = pattern?.Element(Ssml + "fgColor") ?? pattern?.Element(Ssml + "bgColor");
-        return DxfColor(color, workbook);
+        return PreviewColor(color, theme);
     }
-
-    private static Color? DxfColor(XElement? element, XLWorkbook workbook)
-    {
-        if (element is null)
-        {
-            return null;
-        }
-
-        string? rgb = element.Attribute("rgb")?.Value;
-        if (!string.IsNullOrEmpty(rgb) && rgb.Length >= 6)
-        {
-            string hex = rgb.Length == 8 ? rgb : "FF" + rgb;
-            return Color.FromArgb(
-                Convert.ToByte(hex[..2], 16), Convert.ToByte(hex.Substring(2, 2), 16),
-                Convert.ToByte(hex.Substring(4, 2), 16), Convert.ToByte(hex.Substring(6, 2), 16));
-        }
-
-        if (int.TryParse(element.Attribute("theme")?.Value, out int themeIndex))
-        {
-            double tint = double.TryParse(element.Attribute("tint")?.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double t) ? t : 0;
-            XLColor? baseColor = ThemeBase(workbook, DxfThemeColor(themeIndex));
-            if (baseColor is null)
-            {
-                return null;
-            }
-
-            System.Drawing.Color c = baseColor.Color;
-            return ApplyTint(Color.FromArgb(c.A, c.R, c.G, c.B), tint);
-        }
-
-        return null;
-    }
-
-    // The OOXML dxf/cell theme-color index → the workbook theme slot.
-    private static XLThemeColor DxfThemeColor(int index) => index switch
-    {
-        0 => XLThemeColor.Background1,
-        1 => XLThemeColor.Text1,
-        2 => XLThemeColor.Background2,
-        3 => XLThemeColor.Text2,
-        4 => XLThemeColor.Accent1,
-        5 => XLThemeColor.Accent2,
-        6 => XLThemeColor.Accent3,
-        7 => XLThemeColor.Accent4,
-        8 => XLThemeColor.Accent5,
-        _ => XLThemeColor.Accent6,
-    };
 
     // Compatibility helper for hosts that save one worksheet directly.
     public static void Write(
@@ -2123,6 +2192,7 @@ public static partial class XlsxFile
         workbook.SaveAs(buffer);
         RestoreTables(buffer, source);
         RestoreFormulaCaches(buffer, source);
+        RestorePresentation(buffer, source);
         byte[] bytes = buffer.ToArray();
         foreach ((int sheetIndex, IReadOnlyList<ChartWriteData> charts) in chartGroups)
         {
@@ -2342,6 +2412,7 @@ public static partial class XlsxFile
 
         foreach (SheetCellValueRule rule in valueRules.OrderBy(static rule => rule.Priority))
         {
+            if (rule.Expression is not null || rule.TextThreshold is not null || rule.IconSet is not null) continue;
             if (rule.Range.RowSpan <= 0 || rule.Range.ColumnSpan <= 0)
             {
                 continue;
@@ -2448,7 +2519,7 @@ public static partial class XlsxFile
             XLAlignmentHorizontalValues.Center or XLAlignmentHorizontalValues.CenterContinuous => TextAlignment.Center,
             XLAlignmentHorizontalValues.Right => TextAlignment.Right,
             XLAlignmentHorizontalValues.Left => TextAlignment.Left,
-            _ => dataType == XLDataType.Number ? TextAlignment.Right : TextAlignment.Left,
+            _ => dataType == XLDataType.Boolean ? TextAlignment.Center : dataType is XLDataType.Number or XLDataType.DateTime or XLDataType.TimeSpan ? TextAlignment.Right : TextAlignment.Left,
         };
     }
 
@@ -2465,8 +2536,26 @@ public static partial class XlsxFile
         4 => "#,##0.00",
         9 => "0%",
         10 => "0.00%",
-        37 or 38 => "#,##0;(#,##0)",
-        39 or 40 => "#,##0.00;(#,##0.00)",
+        11 => "0.00E+00",
+        12 => "# ?/?",
+        13 => "# ??/??",
+        14 => "mm-dd-yy",
+        15 => "d-mmm-yy",
+        16 => "d-mmm",
+        17 => "mmm-yy",
+        18 => "h:mm AM/PM",
+        19 => "h:mm:ss AM/PM",
+        20 => "h:mm",
+        21 => "h:mm:ss",
+        22 => "m/d/yy h:mm",
+        45 => "mm:ss",
+        46 => "[h]:mm:ss",
+        47 => "mmss.0",
+        48 => "##0.0E+0",
+        37 => "#,##0;(#,##0)",
+        38 => "#,##0;[Red](#,##0)",
+        39 => "#,##0.00;(#,##0.00)",
+        40 => "#,##0.00;[Red](#,##0.00)",
         _ => null,
     };
 }

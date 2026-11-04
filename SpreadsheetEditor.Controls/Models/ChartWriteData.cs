@@ -19,6 +19,13 @@ public sealed record ChartWriteData(
     double HeightPx,
     IReadOnlyList<ChartWriteSeries> Series,
     string? CategoryFormula,
-    IReadOnlyList<string> CategoryLabels);
+    IReadOnlyList<string> CategoryLabels)
+{
+    internal string? SourceXml { get; init; }
+    public bool HorizontalBars { get; init; }
+    public string? ValueAxisTitle { get; init; }
+    public string? SecondaryAxisTitle { get; init; }
+    public string? CategoryAxisTitle { get; init; }
+}
 
 public sealed record ChartWriteSeries(string Title, string ValueFormula, IReadOnlyList<double> Values);

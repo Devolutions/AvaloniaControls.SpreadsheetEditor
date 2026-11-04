@@ -220,4 +220,6 @@ Alternativt kan du använda &quot;Exportera som PDF&quot; för att spara arket o
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Spara kalkylblad</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Det gick inte att spara</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Kalkylblad</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Rulla bladflikar åt vänster</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Rulla bladflikar åt höger</value></data>
 </root>

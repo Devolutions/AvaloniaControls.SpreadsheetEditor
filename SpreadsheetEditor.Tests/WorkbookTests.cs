@@ -25,6 +25,10 @@ using EditorControl = SpreadsheetEditor.Controls.SpreadsheetEditor;
 using Xunit;
 
 [assembly: AvaloniaTestApplication(typeof(SpreadsheetEditor.Tests.TestAppBuilder))]
+// Skia's shared render loop belongs to one dispatcher. Recreating a dispatcher for each test
+// intermittently leaves the compositor associated with the previous test's UI thread.
+[assembly: AvaloniaTestIsolation(AvaloniaTestIsolationLevel.PerAssembly)]
+[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
 
 namespace SpreadsheetEditor.Tests;
 

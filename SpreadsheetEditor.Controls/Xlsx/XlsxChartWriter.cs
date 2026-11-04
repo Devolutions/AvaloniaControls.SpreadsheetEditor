@@ -74,7 +74,7 @@ internal static class XlsxChartWriter
                 string chartPart = $"xl/charts/{chartFile}";
                 parts[chartPart] = ToBytes(BuildChartXml(charts[i]));
                 drawingRels.Add((chartRelId, $"../charts/{chartFile}"));
-                wsDr.Add(BuildAnchor(charts[i], chartRelId));
+                wsDr.Add(BuildAnchor(charts[i], chartRelId, i + 2));
             }
 
             parts[drawingPart] = ToBytes(new XDocument(wsDr));
@@ -141,7 +141,7 @@ internal static class XlsxChartWriter
         return output.ToArray();
     }
 
-    private static XElement BuildAnchor(ChartWriteData chart, string chartRelId)
+    private static XElement BuildAnchor(ChartWriteData chart, string chartRelId, int drawingId)
     {
         long cx = (long)Math.Round(Math.Max(1, chart.WidthPx) * EmuPerPixel);
         long cy = (long)Math.Round(Math.Max(1, chart.HeightPx) * EmuPerPixel);
@@ -162,7 +162,7 @@ internal static class XlsxChartWriter
                 new XAttribute("macro", string.Empty),
                 new XElement(
                     Xdr + "nvGraphicFramePr",
-                    new XElement(Xdr + "cNvPr", new XAttribute("id", 2), new XAttribute("name", "Chart")),
+                    new XElement(Xdr + "cNvPr", new XAttribute("id", drawingId), new XAttribute("name", $"Chart {drawingId}")),
                     new XElement(Xdr + "cNvGraphicFramePr")),
                 new XElement(
                     Xdr + "xfrm",
@@ -179,12 +179,14 @@ internal static class XlsxChartWriter
 
     private static XDocument BuildChartXml(ChartWriteData chart)
     {
+        if (chart.SourceXml is { } sourceXml) return UpdateImportedChart(chart, XDocument.Parse(sourceXml));
         (string element, string? barDir, string? grouping, bool hasAxes) = ChartElement(chart.Kind);
 
         XElement plotType = new(C + element);
+        if (chart.Kind == ChartKind.Scatter) plotType.Add(new XElement(C + "scatterStyle", new XAttribute("val", "marker")));
         if (barDir is not null)
         {
-            plotType.Add(new XElement(C + "barDir", new XAttribute("val", barDir)));
+            plotType.Add(new XElement(C + "barDir", new XAttribute("val", chart.HorizontalBars ? "bar" : barDir)));
         }
 
         if (grouping is not null)
@@ -208,7 +210,9 @@ internal static class XlsxChartWriter
         XElement plotArea = new(C + "plotArea", new XElement(C + "layout"), plotType);
         if (hasAxes)
         {
-            plotArea.Add(BuildCategoryAxis());
+            XElement categoryAxis = BuildCategoryAxis();
+            if (chart.Kind == ChartKind.Scatter) categoryAxis.Name = C + "valAx";
+            plotArea.Add(categoryAxis);
             plotArea.Add(BuildValueAxis(chart.AxisMinimum));
         }
 
@@ -249,6 +253,49 @@ internal static class XlsxChartWriter
         return new XDocument(chartSpace);
     }
 
+    // Preserve imported plot groups, secondary axes, colours and axis titles while updating their
+    // references/caches. Rebuilding every imported chart as a single plot loses combo/scatter data.
+    private static XDocument UpdateImportedChart(ChartWriteData chart, XDocument document)
+    {
+        XElement? plot = document.Descendants(C + "plotArea").FirstOrDefault();
+        foreach (XElement scatter in plot?.Elements(C + "scatterChart") ?? Enumerable.Empty<XElement>())
+            if (scatter.Element(C + "scatterStyle") is null) scatter.AddFirst(new XElement(C + "scatterStyle", new XAttribute("val", "marker")));
+        XElement[] series = plot?.Elements().Where(e => e.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal))
+            .SelectMany(e => e.Elements(C + "ser")).ToArray() ?? Array.Empty<XElement>();
+        for (int i = 0; i < Math.Min(series.Length, chart.Series.Count); i++)
+        {
+            XElement ser = series[i];
+            ChartWriteSeries data = chart.Series[i];
+            XElement? value = ser.Element(C + "val") ?? ser.Element(C + "yVal");
+            if (value is not null) value.ReplaceNodes(new XElement(C + "numRef", new XElement(C + "f", data.ValueFormula), NumCache(data.Values)));
+            XElement? category = ser.Element(C + "cat") ?? ser.Element(C + "xVal");
+            if (category is not null)
+            {
+                if (category.Name == C + "xVal")
+                    category.ReplaceNodes(new XElement(C + "numRef", new XElement(C + "f", chart.CategoryFormula ?? string.Empty),
+                        NumCache(chart.CategoryLabels.Select(s => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out double n) ? n : 0).ToArray())));
+                else category.ReplaceNodes(new XElement(C + "strRef", new XElement(C + "f", chart.CategoryFormula ?? string.Empty), StrCache(chart.CategoryLabels)));
+            }
+        }
+        XElement chartElement = document.Descendants(C + "chart").First();
+        foreach (XElement labels in plot?.Descendants(C + "dLbls").ToArray() ?? Array.Empty<XElement>()) labels.Remove();
+        if (chart.ShowDataLabels)
+            foreach (XElement ser in series)
+            {
+                XElement labels = new(C + "dLbls", new XElement(C + "showVal", new XAttribute("val", 1)));
+                XElement? before = ser.Elements().FirstOrDefault(e => e.Name.LocalName is "cat" or "val" or "xVal" or "yVal");
+                if (before is null) ser.Add(labels); else before.AddBeforeSelf(labels);
+            }
+        chartElement.Elements(C + "title").Remove();
+        if (!string.IsNullOrWhiteSpace(chart.Title))
+            chartElement.AddFirst(new XElement(C + "title", new XElement(C + "tx", new XElement(C + "rich",
+                new XElement(A + "bodyPr"), new XElement(A + "lstStyle"), new XElement(A + "p", new XElement(A + "r", new XElement(A + "t", chart.Title)))))));
+        if (!chart.ShowLegend) chartElement.Elements(C + "legend").Remove();
+        else if (chartElement.Element(C + "legend") is null)
+            chartElement.Element(C + "plotArea")!.AddAfterSelf(new XElement(C + "legend", new XElement(C + "legendPos", new XAttribute("val", "b"))));
+        return document;
+    }
+
     private static XElement BuildSeries(ChartWriteData chart, ChartWriteSeries series, int index)
     {
         XElement ser = new(
@@ -276,7 +323,10 @@ internal static class XlsxChartWriter
 
         if (!string.IsNullOrEmpty(chart.CategoryFormula) || chart.CategoryLabels.Count > 0)
         {
-            ser.Add(new XElement(
+            if (chart.Kind == ChartKind.Scatter)
+                ser.Add(new XElement(C + "xVal", new XElement(C + "numRef", new XElement(C + "f", chart.CategoryFormula ?? string.Empty),
+                    NumCache(chart.CategoryLabels.Select((s, i) => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out double n) ? n : i + 1d).ToArray()))));
+            else ser.Add(new XElement(
                 C + "cat",
                 new XElement(
                     C + "strRef",
@@ -285,7 +335,7 @@ internal static class XlsxChartWriter
         }
 
         ser.Add(new XElement(
-            C + "val",
+            C + (chart.Kind == ChartKind.Scatter ? "yVal" : "val"),
             new XElement(
                 C + "numRef",
                 new XElement(C + "f", series.ValueFormula),
@@ -353,7 +403,7 @@ internal static class XlsxChartWriter
         ChartKind.Pie => ("pieChart", null, null, false),
         ChartKind.Donut => ("doughnutChart", null, null, false),
         ChartKind.Radar => ("radarChart", null, null, true),
-        ChartKind.Scatter => ("lineChart", null, "standard", true), // scatter approximated as a line series
+        ChartKind.Scatter => ("scatterChart", null, null, true),
         _ => ("barChart", "col", "clustered", true),
     };
 

@@ -8,12 +8,24 @@ using System.Threading.Tasks;
 // dedicated worker: changing a pooled thread's priority could affect unrelated host application work.
 internal static class BackgroundWork
 {
-    internal static Task<T> Run<T>(Func<T> work, CancellationToken cancellationToken) =>
-        Task.Factory.StartNew(() =>
+    internal static Task<T> Run<T>(Func<T> work, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return Task.FromCanceled<T>(cancellationToken);
+        // Completing a Task directly on the low-priority worker can inline its caller's await
+        // continuation on that worker. Keep the worker's thread priority confined to CPU work.
+        TaskCompletionSource<T> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = Task.Factory.StartNew(() =>
         {
-            Thread.CurrentThread.Name ??= "Spreadsheet calculation";
-            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
-            cancellationToken.ThrowIfCancellationRequested();
-            return work();
-        }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            try
+            {
+                Thread.CurrentThread.Name ??= "Spreadsheet calculation";
+                Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+                cancellationToken.ThrowIfCancellationRequested();
+                completion.TrySetResult(work());
+            }
+            catch (OperationCanceledException exception) { completion.TrySetCanceled(exception.CancellationToken); }
+            catch (Exception exception) { completion.TrySetException(exception); }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        return completion.Task;
+    }
 }

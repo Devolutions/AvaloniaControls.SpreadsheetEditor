@@ -214,4 +214,6 @@ public enum EditorString
     SaveSpreadsheetTitle,
     SaveFailed,
     SpreadsheetDocument,
+    ScrollSheetTabsLeft,
+    ScrollSheetTabsRight,
 }

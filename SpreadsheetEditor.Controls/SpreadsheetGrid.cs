@@ -81,9 +81,11 @@ public partial class SpreadsheetGrid : UserControl
     private readonly ScrollViewer rowHeaderScroller = new()
     { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
 
-    private readonly Canvas columnHeaders = new();
-    private readonly Canvas rowHeaders = new();
-    private readonly Canvas cells = new();
+    // Explicit canvas sizes describe the sheet extent. Stretch alignment centers a canvas whose
+    // extent is smaller than the viewport, then makes it jump when blank rows/columns are added.
+    private readonly Canvas columnHeaders = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    private readonly Canvas rowHeaders = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    private readonly Canvas cells = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     private readonly Border selection = new()
     {
         BorderBrush = SelectionBorder,
@@ -205,6 +207,16 @@ public partial class SpreadsheetGrid : UserControl
     private (int FirstRow, int LastRow, int FirstColumn, int LastColumn)? renderedViewport;
 
     private SpreadsheetViewModel? sheet;
+    private bool completingSheetPreview;
+
+    // The full model belongs to the same displayed worksheet. Keep its already-rendered charts
+    // while the asynchronous refresh compares data, rather than showing an empty overlay again.
+    internal void CompleteSheetPreview(SpreadsheetViewModel value)
+    {
+        this.completingSheetPreview = true;
+        try { this.Sheet = value; }
+        finally { this.completingSheetPreview = false; }
+    }
 
     // Zoom multiplier applied to column widths, row heights, header sizes, and font sizes (1.0 = 100%).
     // Stored column widths / row heights are the LOGICAL sizes × zoom, so all coordinate math and the
@@ -221,7 +233,7 @@ public partial class SpreadsheetGrid : UserControl
     private bool[,]? covered;
     private (int RowSpan, int ColumnSpan)[,]? spans;
     private readonly List<(CellViewModel Cell, PropertyChangedEventHandler Handler)> cellSubscriptions = new();
-    private readonly List<Action> calculatedCellRefreshes = new();
+    private readonly List<(CellViewModel Cell, Action Refresh)> calculatedCellRefreshes = new();
     private readonly Dictionary<Color, IBrush> gradientBarBrushes = new();
 
     public event Action<CellAddress>? CellActivated;
@@ -238,7 +250,7 @@ public partial class SpreadsheetGrid : UserControl
     // When true, the grid blocks all content mutation (editing, typing, paste/cut/clear, formatting).
     public bool ReadOnly
     {
-        get => this.readOnly;
+        get => this.readOnly || this.sheet?.CanEdit(this.SelectionRange) == false;
         set
         {
             this.readOnly = value;
@@ -410,6 +422,13 @@ public partial class SpreadsheetGrid : UserControl
         this.ApplyTheme(); // ActualThemeVariant is resolved once attached to the tree
     }
 
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        this.columnGrowthGeneration++;
+        this.adjustingColumns = false;
+        base.OnDetachedFromVisualTree(e);
+    }
+
     // Resolves the CHROME brushes (row/column headers) from the active light/dark theme and re-renders.
     // The sheet panel — surface, gridlines, cell text, charts — is deliberately theme-independent: Excel's
     // dark mode darkens the surrounding UI but keeps the cells a light page. See the brush declarations.
@@ -532,6 +551,8 @@ public partial class SpreadsheetGrid : UserControl
         CellAddress current = this.sheet.ActiveCell;
         int row = Math.Clamp(current.Row + dr, 0, this.sheet.RowCount - 1);
         int col = Math.Clamp(current.Column + dc, 0, this.sheet.ColumnCount - 1);
+        while (dc != 0 && col > 0 && col < this.sheet.ColumnCount - 1 && this.sheet.Columns[col].IsHidden) col += dc;
+        while (dr != 0 && row > 0 && row < this.sheet.RowCount - 1 && this.sheet.Rows[row].IsHidden) row += dr;
         e.Handled = true;
         if (row == current.Row && col == current.Column)
         {
@@ -680,7 +701,7 @@ public partial class SpreadsheetGrid : UserControl
     // Enters edit mode on a cell (shows + focuses the editor).
     private void BeginEdit(CellAddress address)
     {
-        if (this.ReadOnly)
+        if (this.ReadOnly || this.sheet?.CanEdit(address) == false)
         {
             this.SelectOnly(address); // read-only: select but don't edit
             return;
@@ -753,9 +774,16 @@ public partial class SpreadsheetGrid : UserControl
             this.FinishHeaderResize(cancel: true, rebuild: false);
             this.FinishChartDrag(cancel: true);
             this.CancelChartRefresh();
-            this.chartOverlay.Children.Clear();
-            this.chartCards.Clear();
-            this.renderedChartData.Clear();
+            if (this.completingSheetPreview && value is not null)
+            {
+                this.RebindPreviewCharts(value);
+            }
+            else
+            {
+                this.chartOverlay.Children.Clear();
+                this.chartCards.Clear();
+                this.renderedChartData.Clear();
+            }
             if (this.sheet is not null)
             {
                 this.sheet.PropertyChanged -= this.OnSheetPropertyChanged;
@@ -764,6 +792,8 @@ public partial class SpreadsheetGrid : UserControl
                 this.sheet.Charts.CollectionChanged -= this.OnChartsChanged;
             }
             this.sheet = value;
+            this.columnGrowthGeneration++;
+            this.adjustingColumns = false;
             if (this.sheet is not null)
             {
                 this.sheet.PropertyChanged += this.OnSheetPropertyChanged;
@@ -864,7 +894,7 @@ public partial class SpreadsheetGrid : UserControl
         for (int c = 0; c < cols; c++)
         {
             double logical = this.sheet.Columns[c].Width > 0 ? this.sheet.Columns[c].Width : this.sheet.DefaultColumnWidth;
-            this.columnWidths[c] = logical * this.zoom;
+            this.columnWidths[c] = this.sheet.Columns[c].IsHidden ? 0 : logical * this.zoom;
             this.columnOffsets[c + 1] = this.columnOffsets[c] + this.columnWidths[c];
         }
 
@@ -961,7 +991,7 @@ public partial class SpreadsheetGrid : UserControl
         // Keep the visible controls (and chart pointer capture) intact. Rebuilding a viewport here
         // used to create hundreds of controls in one dispatcher turn after the worker completed.
         int generation = this.viewportRenderGeneration;
-        Action[] refreshes = this.calculatedCellRefreshes.ToArray();
+        Action[] refreshes = this.calculatedCellRefreshes.Select(item => item.Refresh).ToArray();
         int index = 0;
         void RefreshBatch()
         {
@@ -1044,22 +1074,43 @@ public partial class SpreadsheetGrid : UserControl
             Math.Min(this.columnWidths.Length - 1, visible.LastColumn + ViewportColumnBuffer));
         this.renderedViewport = viewport;
 
-        this.ClearCellSubscriptions();
-        this.columnHeaders.Children.Clear();
-        this.rowHeaders.Children.Clear();
+        bool Keep(CellAddress address)
+        {
+            if (force) return false;
+            (int rowSpan, int columnSpan) = this.spans[address.Row, address.Column];
+            return address.Row <= viewport.LastRow && address.Row + rowSpan > viewport.FirstRow &&
+                address.Column <= viewport.LastColumn && address.Column + columnSpan > viewport.FirstColumn;
+        }
+        // Keep the overlapping viewport attached. Wheel/trackpad scrolling usually exposes only
+        // one or two new rows/columns; rebuilding hundreds of unchanged controls caused long stalls.
+        foreach (Control header in this.columnHeaders.Children.Where(h => force || h.Tag is not int col || col < viewport.FirstColumn || col > viewport.LastColumn).ToArray()) this.columnHeaders.Children.Remove(header);
+        foreach (Control header in this.rowHeaders.Children.Where(h => force || h.Tag is not int row || row < viewport.FirstRow || row > viewport.LastRow).ToArray()) this.rowHeaders.Children.Remove(header);
         // Charts and the editor must stay attached during a viewport repaint: detaching a focused
         // chart can trigger bring-into-view/layout changes and invalidate an in-flight drag.
-        foreach (Control child in this.cells.Children.Where(child => child.ZIndex < 3).ToArray())
+        foreach (Control child in this.cells.Children.Where(child => child.ZIndex < 3 && (child.Tag is not CellAddress address || !Keep(address))).ToArray())
         {
             this.cells.Children.Remove(child);
         }
+        HashSet<CellViewModel> retained = this.cells.Children.Where(child => child.ZIndex < 3 && child.Tag is CellAddress)
+            .Select(child => this.sheet.GetCell((CellAddress)child.Tag!)!).ToHashSet();
+        foreach (var subscription in this.cellSubscriptions.Where(item => !retained.Contains(item.Cell)).ToArray())
+        {
+            subscription.Cell.PropertyChanged -= subscription.Handler;
+            this.cellSubscriptions.Remove(subscription);
+        }
+        this.calculatedCellRefreshes.RemoveAll(item => !retained.Contains(item.Cell));
         int generation = ++this.viewportRenderGeneration;
+
+        HashSet<int> retainedColumns = this.columnHeaders.Children.Select(c => (int)c.Tag!).ToHashSet();
+        HashSet<int> retainedRows = this.rowHeaders.Children.Select(c => (int)c.Tag!).ToHashSet();
 
         for (int column = viewport.FirstColumn; column <= viewport.LastColumn; column++)
         {
+            if (this.columnWidths[column] == 0) continue;
+            if (retainedColumns.Contains(column)) continue;
             Border header = this.HeaderCell(CellAddress.ColumnToLetters(column));
             int selectedColumn = column;
-            header.ContextFlyout = this.BuildColumnMenu(selectedColumn);
+            header.ContextFlyout = LazyMenu(() => this.BuildColumnMenu(selectedColumn));
             header.PointerPressed += (_, e) =>
             {
                 if (e.GetCurrentPoint(header).Properties.IsRightButtonPressed)
@@ -1086,7 +1137,8 @@ public partial class SpreadsheetGrid : UserControl
         if (!this.cells.Children.Contains(this.fillHandle)) this.cells.Children.Add(this.fillHandle);
         this.UpdateSelection();
 
-        HashSet<(int Row, int Column)> renderedCells = new();
+        HashSet<(int Row, int Column)> renderedCells = this.cells.Children.Where(child => child.ZIndex < 3 && child.Tag is CellAddress)
+            .Select(child => (((CellAddress)child.Tag!).Row, ((CellAddress)child.Tag!).Column)).ToHashSet();
         bool renderedCrossingMerges = false;
         void RenderCrossingMerges()
         {
@@ -1142,25 +1194,30 @@ public partial class SpreadsheetGrid : UserControl
                     continue;
                 }
                 visibleRows++;
-                Border header = this.HeaderCell((row + 1).ToString());
-                int selectedRow = row;
-                header.ContextFlyout = this.BuildRowMenu(selectedRow);
-                header.PointerPressed += (_, e) =>
+                if (!retainedRows.Contains(row))
                 {
-                    if (e.GetCurrentPoint(header).Properties.IsRightButtonPressed)
+                    Border header = this.HeaderCell((row + 1).ToString());
+                    int selectedRow = row;
+                    header.ContextFlyout = LazyMenu(() => this.BuildRowMenu(selectedRow));
+                    header.PointerPressed += (_, e) =>
                     {
-                        this.SelectRow(selectedRow);
-                    }
-                };
-                this.PlaceRowHeader(header, row);
-                this.rowHeaders.Children.Add(header);
-                this.rowHeaders.Children.Add(this.RowResizeHandle(row));
+                        if (e.GetCurrentPoint(header).Properties.IsRightButtonPressed)
+                        {
+                            this.SelectRow(selectedRow);
+                        }
+                    };
+                    this.PlaceRowHeader(header, row);
+                    this.AddRowOutlineButton(header, row);
+                    this.rowHeaders.Children.Add(header);
+                    this.rowHeaders.Children.Add(this.RowResizeHandle(row));
+                }
 
                 Dictionary<int, (int Left, int Right)> spillMap = new();
                 HashSet<int> noRightBorder = new();
                 int lastCellColumn = Math.Min(viewport.LastColumn, this.sheet.Rows[row].Cells.Count - 1);
                 for (int column = viewport.FirstColumn; column <= lastCellColumn; column++)
                 {
+                    if (this.columnWidths[column] == 0) continue;
                     if (this.covered[row, column] || this.spans[row, column].ColumnSpan != 1)
                     {
                         continue;
@@ -1178,9 +1235,13 @@ public partial class SpreadsheetGrid : UserControl
                         noRightBorder.Add(hiddenBorder);
                     }
                 }
+                if (noRightBorder.Count > 0)
+                    foreach (Border retainedBorder in this.cells.Children.OfType<Border>().Where(b => b.Tag is CellAddress address && address.Row == row))
+                        retainedBorder.BorderThickness = new Thickness(0, 0, noRightBorder.Contains(((CellAddress)retainedBorder.Tag!).Column) ? 0 : 1, 1);
 
                 for (int column = viewport.FirstColumn; column <= lastCellColumn; column++)
                 {
+                    if (this.columnWidths[column] == 0) continue;
                     if (this.covered[row, column] || renderedCells.Contains((row, column)))
                     {
                         continue;
@@ -1199,6 +1260,7 @@ public partial class SpreadsheetGrid : UserControl
                         (int spillLeft, int spillRight) = spillMap[column];
                         Control overlay = this.BuildSpillText(cell, row, column - spillLeft, spillLeft + 1 + spillRight);
                         overlay.ZIndex = 2;
+                        overlay.Tag = new CellAddress(row, column);
                         this.cells.Children.Add(overlay);
                     }
                 }
@@ -1377,16 +1439,31 @@ public partial class SpreadsheetGrid : UserControl
         }
 
         this.adjustingColumns = true;
-        try
+        SpreadsheetViewModel model = this.sheet;
+        int generation = ++this.columnGrowthGeneration;
+        target = Math.Min(16384, target);
+        void Grow()
         {
-            this.sheet.SetColumnCount(target);
-            this.Rebuild();
+            if (generation != this.columnGrowthGeneration || !ReferenceEquals(model, this.sheet)) return;
+            if (this.resizing || this.chartDragging)
+            {
+                DispatcherTimer.RunOnce(Grow, TimeSpan.FromMilliseconds(20), DispatcherPriority.Background);
+                return;
+            }
+            // A blank column needs a cell in every row. Adding the entire scroll buffer at once
+            // allocated tens of thousands of cells in one input callback on a tall worksheet.
+            model.EnsureSize(model.RowCount, Math.Min(target, model.ColumnCount + 1));
+            if (model.ColumnCount < target) Dispatcher.UIThread.Post(Grow, DispatcherPriority.Background);
+            else
+            {
+                this.adjustingColumns = false;
+                this.Rebuild();
+            }
         }
-        finally
-        {
-            this.adjustingColumns = false;
-        }
+        Dispatcher.UIThread.Post(Grow, DispatcherPriority.Background);
     }
+
+    private int columnGrowthGeneration;
 
     // Chart data is prepared separately; only control creation/layout runs on the UI thread.
     private void BuildChartCard(SheetChart chart, ChartData data, bool unchanged)
@@ -1436,29 +1513,46 @@ public partial class SpreadsheetGrid : UserControl
         }
 
         Control? control = ChartFactory.Build(chart.Kind, cats, ser, width, height, chart.ShowDataLabels,
-            chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep, chart.LegendPosition);
+            chart.Title, chart.ShowLegend, chart.ValueAxisFormat, chart.AxisMinimum, chart.AxisMaximum, chart.AxisMajorStep, chart.LegendPosition, chart);
         if (control is null) return;
 
         // A small settings button (top-right) re-opens the builder for this chart.
         Button settings = new()
         {
+            Tag = chart,
             Name = "EditChartButton",
             IsEnabled = !this.ReadOnly,
-            Content = "⚙",
+            Content = new PathIcon
+            {
+                Data = Geometry.Parse("M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.21-.37-.28-.59-.21l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.42-.48-.42h-3.84c-.24 0-.44.18-.47.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.21L2.74 8.88c-.12.21-.08.47.12.61l2.03 1.58c-.05.31-.09.65-.09.94s.02.63.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.21.37.28.59.21l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.24.42.48.42h3.84c.24 0 .44-.18.47-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.21l1.92-3.32c.12-.21.07-.47-.12-.61ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"),
+                Width = 14, Height = 14, Foreground = CellText,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            },
             Width = 22,
             Height = 22,
+            MinWidth = 0,
+            MinHeight = 0,
             Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(4),
+            BorderThickness = new Thickness(0),
+            Focusable = true,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 3, 3, 0),
             Background = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
         };
+        this.ApplyCompactButtonTheme(settings);
+        // Chart cards stay white in both themes, including their settings button's hover surface.
+        settings.Resources["CompactButtonHover"] = new SolidColorBrush(Color.Parse("#E2E6EB"));
+        settings.Resources["CompactButtonPressed"] = new SolidColorBrush(Color.Parse("#D2D9E2"));
         ToolTip.SetTip(settings, Get(S.EditChart));
-        SheetChart captured = chart;
         settings.Click += (_, _) =>
         {
-            if (!this.ReadOnly && this.sheet?.Charts.Contains(captured) == true)
-                this.ChartEditRequested?.Invoke(captured);
+            if (!this.ReadOnly && settings.Tag is SheetChart current && this.sheet?.Charts.Contains(current) == true)
+                this.ChartEditRequested?.Invoke(current);
         };
 
         Grid content = new();
@@ -1483,19 +1577,19 @@ public partial class SpreadsheetGrid : UserControl
         Canvas.SetLeft(card, left);
         Canvas.SetTop(card, top);
 
-        card.Tag = captured;
+        card.Tag = chart;
         card.Name = "ChartCard";
         card.PointerPressed += (_, e) =>
         {
-            if (!IsWithin(e.Source as Visual, settings))
-                this.BeginChartDrag(e, captured, card, control, resize: false);
+            if (!IsWithin(e.Source as Visual, settings) && card.Tag is SheetChart current)
+                this.BeginChartDrag(e, current, card, control, resize: false);
         };
 
         // Right-click menu with a Delete item (acts on this chart directly).
         MenuItem deleteItem = new() { Header = Get(S.DeleteChart) };
         deleteItem.Click += (_, _) =>
         {
-            if (!this.ReadOnly) this.sheet?.RemoveChart(captured);
+            if (!this.ReadOnly && card.Tag is SheetChart current) this.sheet?.RemoveChart(current);
         };
         MenuFlyout menu = new();
         menu.Items.Add(deleteItem);
@@ -1519,7 +1613,10 @@ public partial class SpreadsheetGrid : UserControl
         content.Children.Add(grip);
 
         grip.Name = "ChartResizeGrip";
-        grip.PointerPressed += (_, e) => this.BeginChartDrag(e, captured, card, control, resize: true);
+        grip.PointerPressed += (_, e) =>
+        {
+            if (card.Tag is SheetChart current) this.BeginChartDrag(e, current, card, control, resize: true);
+        };
 
         if (existing.Card is not null)
         {
@@ -1655,18 +1752,22 @@ public partial class SpreadsheetGrid : UserControl
             result.Add(new ChartWriteData(
                 chart.Kind, chart.Title, chart.ShowLegend, chart.ShowDataLabels, chart.AxisMinimum,
                 chart.AnchorRow, chart.AnchorColumn, chart.OffsetX, chart.OffsetY, width, height,
-                written, categoryFormula, categories));
+                written, categoryFormula, categories)
+            {
+                SourceXml = chart.SourceXml, HorizontalBars = chart.HorizontalBars,
+                ValueAxisTitle = chart.ValueAxisTitle, SecondaryAxisTitle = chart.SecondaryAxisTitle, CategoryAxisTitle = chart.CategoryAxisTitle,
+            });
         }
 
         return result;
     }
 
     private static double LogicalColumnOffset(SpreadsheetViewModel sheet, int column) =>
-        sheet.Columns.Take(Math.Clamp(column, 0, sheet.ColumnCount)).Sum(static item => item.Width);
+        sheet.Columns.Take(Math.Clamp(column, 0, sheet.ColumnCount)).Sum(static item => item.IsHidden ? 0 : item.Width);
 
     private static double LogicalRowOffset(SpreadsheetViewModel sheet, int row) =>
         sheet.Rows.Take(Math.Clamp(row, 0, sheet.RowCount)).Sum(static item =>
-            item.Height ?? Math.Max(DefaultRowHeight, item.Cells.DefaultIfEmpty().Max(static cell => cell?.FontSize ?? CellViewModel.DefaultFontSize) + 8));
+            item.IsHidden ? 0 : item.Height ?? Math.Max(DefaultRowHeight, item.Cells.DefaultIfEmpty().Max(static cell => cell?.FontSize ?? CellViewModel.DefaultFontSize) + 8));
 
     // Builds the OOXML value reference for a series: one sheet-qualified range, or a parenthesised
     // multi-area reference (e.g. ('Budget'!$C$7,'Budget'!$C$10)) when the series spans several ranges.
@@ -1723,7 +1824,7 @@ public partial class SpreadsheetGrid : UserControl
             List<double> values = spec.Ranges.Any(RangeHasData)
                 ? spec.Ranges.SelectMany(range => EnumerateRange(rows, columns, range)).Select(a => ParseNumber(Display(a)) ?? double.NaN).ToList()
                 : spec.CachedValues?.ToList() ?? new List<double>();
-            series.Add(new ChartSeriesData(spec.Title, values));
+            series.Add(new ChartSeriesData(spec.Title, values) { Kind = spec.Kind, SecondaryAxis = spec.SecondaryAxis, Color = spec.Color });
         }
 
         int maxLen = series.Count == 0 ? 0 : series.Max(s => s.Values.Count);
@@ -1859,6 +1960,7 @@ public partial class SpreadsheetGrid : UserControl
 
     private void PlaceColumnHeader(Control control, int column)
     {
+        control.Tag = column;
         Canvas.SetLeft(control, this.OffsetToColumn(column));
         Canvas.SetTop(control, 0);
         control.Width = this.columnWidths[column];
@@ -1867,6 +1969,7 @@ public partial class SpreadsheetGrid : UserControl
 
     private void PlaceRowHeader(Control control, int row)
     {
+        control.Tag = row;
         Canvas.SetLeft(control, 0);
         Canvas.SetTop(control, this.OffsetToRow(row));
         control.Width = RowHeaderWidth * this.zoom;
@@ -1885,12 +1988,13 @@ public partial class SpreadsheetGrid : UserControl
         Border handle = new()
         {
             Name = "ColumnResizeHandle",
+            Tag = column,
             ZIndex = 1, // Keep both halves of the grab strip above its neighboring headers.
             Background = Brushes.Transparent,
             Width = 6,
             Height = ColumnHeaderHeight * this.zoom,
             Cursor = new Cursor(StandardCursorType.SizeWestEast),
-            ContextFlyout = this.BuildColumnMenu(column),
+            ContextFlyout = LazyMenu(() => this.BuildColumnMenu(column)),
         };
         Canvas.SetLeft(handle, this.OffsetToColumn(column + 1) - 3);
         Canvas.SetTop(handle, 0);
@@ -1915,12 +2019,13 @@ public partial class SpreadsheetGrid : UserControl
         Border handle = new()
         {
             Name = "RowResizeHandle",
+            Tag = row,
             ZIndex = 1,
             Background = Brushes.Transparent,
             Width = RowHeaderWidth * this.zoom,
             Height = 6,
             Cursor = new Cursor(StandardCursorType.SizeNorthSouth),
-            ContextFlyout = this.BuildRowMenu(row),
+            ContextFlyout = LazyMenu(() => this.BuildRowMenu(row)),
         };
         Canvas.SetLeft(handle, 0);
         Canvas.SetTop(handle, this.OffsetToRow(row + 1) - 3);
@@ -1988,7 +2093,7 @@ public partial class SpreadsheetGrid : UserControl
     // (left→right, right→left, center→both).
     private (int Left, int Right) ComputeSpill(int row, int column, CellViewModel cell)
     {
-        if (this.sheet is null || cell.WrapText || cell.NumberFormat is not null)
+        if (this.sheet is null || cell.WrapText || cell.NumberFormat is not null || cell.Appearance is { ShrinkToFit: true } or { Rotation: not 0 } or { Indent: > 0 })
         {
             return (0, 0); // number-formatted (e.g. currency) cells don't spill — Excel shows ####
         }
@@ -2037,7 +2142,8 @@ public partial class SpreadsheetGrid : UserControl
         for (int column = 0; column < this.sheet!.Rows[row].Cells.Count && column < this.columnWidths.Length; column++)
         {
             CellViewModel cell = this.sheet.Rows[row].Cells[column];
-            if (!cell.WrapText || string.IsNullOrEmpty(cell.DisplayText) || this.covered![row, column])
+            bool doubleUnderline = cell.Underline && cell.Appearance?.DoubleUnderline == true;
+            if ((!cell.WrapText && !doubleUnderline) || string.IsNullOrEmpty(cell.DisplayText) || this.covered![row, column])
             {
                 continue;
             }
@@ -2054,11 +2160,10 @@ public partial class SpreadsheetGrid : UserControl
             Typeface typeface = new(family, cell.Italic ? FontStyle.Italic : FontStyle.Normal,
                 cell.Bold ? FontWeight.Bold : FontWeight.Normal);
             FormattedText formatted = new(cell.DisplayText, CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, typeface, cell.FontSize * this.zoom, null)
-            {
-                MaxTextWidth = Math.Max(1, width),
-            };
-            height = Math.Max(height, Math.Ceiling(formatted.Height + 5));
+                FlowDirection.LeftToRight, typeface, cell.FontSize * this.zoom, null);
+            if (cell.WrapText) formatted.MaxTextWidth = Math.Max(1, width);
+            double underlinePadding = doubleUnderline ? Math.Ceiling(cell.FontSize * this.zoom * 0.12) : 0;
+            height = Math.Max(height, Math.Ceiling(formatted.Height + underlinePadding + 5));
         }
 
         return Math.Min(height, 546 * this.zoom);
@@ -2118,7 +2223,7 @@ public partial class SpreadsheetGrid : UserControl
     private int EmptyRun(int row, int column, int direction)
     {
         int count = 0;
-        for (int c = column + direction; c >= 0 && c < this.sheet!.ColumnCount && c < this.sheet.Rows[row].Cells.Count; c += direction)
+        for (int c = column + direction; c >= 0 && c < this.columnWidths.Length && c < this.sheet!.ColumnCount && c < this.sheet.Rows[row].Cells.Count; c += direction)
         {
             if (this.covered![row, c] || this.FindDataBar(row, c) is not null)
             {
@@ -2154,7 +2259,7 @@ public partial class SpreadsheetGrid : UserControl
             text.FontFamily = new FontFamily(cell.FontFamily);
         }
         RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell));
-        this.calculatedCellRefreshes.Add(() => RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell)));
+        this.calculatedCellRefreshes.Add((cell, () => RenderInlines(text, cell, this.FindCellValueRule(row, startColumn, cell))));
         this.PlaceSheetControl(text, row, startColumn, 1, span);
         return text;
     }
@@ -2163,7 +2268,8 @@ public partial class SpreadsheetGrid : UserControl
     {
         TextBlock text = new()
         {
-            VerticalAlignment = VerticalAlignment.Center,
+            VerticalAlignment = cell.Appearance?.VerticalAlignment ?? VerticalAlignment.Center,
+            Name = "CellText", Tag = new CellAddress(row, column),
             // Excel's wrapped rows are sized for the text lines themselves. Extra vertical margins
             // can leave too little height for the final line, which TextBlock then drops entirely.
             Margin = new Thickness(4, cell.WrapText ? 0 : 2),
@@ -2180,6 +2286,26 @@ public partial class SpreadsheetGrid : UserControl
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))
         {
             text.FontFamily = new FontFamily(cell.FontFamily);
+        }
+        if (cell.Appearance is { } appearance)
+        {
+            double indent = appearance.Indent * cell.FontSize * 0.75 * this.zoom;
+            text.Margin = cell.TextAlignment == TextAlignment.Right ? new Thickness(4, 0, 4 + indent, 0) : new Thickness(4 + indent, 0, 4, 0);
+            if (appearance.ShrinkToFit && !cell.WrapText)
+            {
+                double available = this.columnOffsets[column + columnSpan] - this.columnOffsets[column] - CellTextPadding - indent;
+                double measured = this.MeasureTextWidth(cell);
+                if (measured > available && available > 0) text.FontSize *= Math.Max(0.05, available / measured) * 0.98;
+                text.TextTrimming = TextTrimming.None;
+            }
+            if (appearance.Rotation is > 0 and < 255)
+            {
+                int angle = appearance.Rotation <= 90 ? -appearance.Rotation : appearance.Rotation - 90;
+                text.RenderTransform = new RotateTransform(angle);
+                text.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                text.HorizontalAlignment = HorizontalAlignment.Center;
+                text.VerticalAlignment = VerticalAlignment.Center;
+            }
         }
         // A spilling cell's text is drawn entirely by the overlay; keep the in-cell one empty so the
         // two don't render on top of each other.
@@ -2205,6 +2331,18 @@ public partial class SpreadsheetGrid : UserControl
         }
 
         Control cellContent = barGrid is null ? text : Layered(barGrid, text);
+        if (Formulas.NumberFormatter.AccountingPrefix(cell.NumberFormat) is { } accountingSymbol)
+        {
+            text.TextAlignment = TextAlignment.Right;
+            cellContent = Layered(new TextBlock
+            {
+                Text = accountingSymbol, Foreground = CellText, FontSize = text.FontSize,
+                Margin = new Thickness(4, 0), VerticalAlignment = text.VerticalAlignment,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            }, cellContent);
+        }
+        if (cell.Appearance is { } decoration && (decoration.Fill is not null || decoration.Left is not null || decoration.Right is not null || decoration.Top is not null || decoration.Bottom is not null))
+            cellContent = Layered(Layered(new CellDecoration(decoration, this.zoom, fill: true) { IsHitTestVisible = false }, cellContent), new CellDecoration(decoration, this.zoom, fill: false) { IsHitTestVisible = false });
         Border? filterButton = null;
         if (this.sheet?.FilterHeaderRange(row, column) is not null)
         {
@@ -2234,7 +2372,7 @@ public partial class SpreadsheetGrid : UserControl
                 },
             };
             Border button = filterButton;
-            MenuFlyout headerMenu = this.BuildColumnMenu(column, row);
+            MenuFlyout headerMenu = LazyMenu(() => this.BuildColumnMenu(column, row));
             button.ContextFlyout = headerMenu;
             button.PointerPressed += (_, e) =>
             {
@@ -2257,12 +2395,14 @@ public partial class SpreadsheetGrid : UserControl
         }
         Border border = new()
         {
+            Tag = new CellAddress(row, column),
             BorderBrush = SheetGridLine,
             // A spilling cell drops the gridline between it and the empty neighbour it overflows into,
             // so the overlaid text reads as continuous. The cell keeps its own hit-testable box.
             BorderThickness = new Thickness(0, 0, omitRightBorder ? 0 : 1, 1),
-            Background = cell.Background ?? Brushes.Transparent,
+            Background = this.FindCellValueRule(row, column, cell)?.Background is { } conditionalBackground ? new SolidColorBrush(conditionalBackground) : cell.Background ?? Brushes.Transparent,
             Child = cellContent,
+            ClipToBounds = cell.Appearance is { Rotation: not 0 } or { ShrinkToFit: true },
         };
         if (filterButton is not null)
         {
@@ -2369,12 +2509,13 @@ public partial class SpreadsheetGrid : UserControl
 
         // Re-render live as the active cell is edited via the formula bar / toolbar. A font-size
         // change can alter the row height, so that triggers a full rebuild instead.
-        this.calculatedCellRefreshes.Add(() =>
+        this.calculatedCellRefreshes.Add((cell, () =>
         {
+            border.Background = this.FindCellValueRule(row, column, cell)?.Background is { } conditionalBackground ? new SolidColorBrush(conditionalBackground) : cell.Background ?? Brushes.Transparent;
             if (spilling || dataBar is { ShowValue: false }) text.Inlines?.Clear();
             else RenderInlines(text, cell, this.FindCellValueRule(row, column, cell));
             if (barGrid is not null && dataBar is { } bar) SetBarFraction(barGrid, bar, cell);
-        });
+        }));
         PropertyChangedEventHandler handler = (_, e) =>
         {
             switch (e.PropertyName)
@@ -2471,8 +2612,7 @@ public partial class SpreadsheetGrid : UserControl
 
     private SheetCellValueRule? FindCellValueRule(int row, int column, CellViewModel cell)
     {
-        double? value = cell.NumericValue ?? ParseNumber(cell.DisplayText);
-        if (value is null || this.sheet is null)
+        if (this.sheet is null)
         {
             return null;
         }
@@ -2481,7 +2621,7 @@ public partial class SpreadsheetGrid : UserControl
             CellRange range = rule.Range;
             if (row >= range.Row && row < range.Row + range.RowSpan &&
                 column >= range.Column && column < range.Column + range.ColumnSpan &&
-                rule.Matches(value.Value))
+                this.sheet.MatchesRule(rule, row, column))
             {
                 return rule;
             }
@@ -2557,23 +2697,61 @@ public partial class SpreadsheetGrid : UserControl
     {
         target.Inlines ??= new InlineCollection();
         target.Inlines.Clear();
+        // Font metrics reserve room for one underline. Reserve descent for the lower stroke too,
+        // otherwise TextBlock can clip it even though both decorations are present.
+        target.Padding = cell.Underline && cell.Appearance?.DoubleUnderline == true
+            ? new Thickness(0, 0, 0, Math.Ceiling(target.FontSize * 0.12)) : default;
+        if (valueRule?.IconSet is not null && cell.NumericValue is { } iconNumber)
+        {
+            double[] thresholds = valueRule.IconThresholds;
+            int icon = thresholds.Length >= 3 ? iconNumber >= thresholds[2] ? 2 : iconNumber >= thresholds[1] ? 1 : 0 : 1;
+            if (valueRule.ReverseIcons) icon = 2 - icon;
+            target.Inlines.Add(new Run(icon == 2 ? "↑ " : icon == 1 ? "→ " : "↓ ") { Foreground = icon == 2 ? Brushes.Green : icon == 1 ? Brushes.Goldenrod : Brushes.Red, FontWeight = FontWeight.Bold });
+            if (!valueRule.ShowValue) return;
+        }
         foreach (CellRun r in cell.EffectiveRuns)
         {
             if (string.IsNullOrEmpty(r.Text))
             {
                 continue;
             }
-            Run run = new(r.Text)
+            string display = r.Text;
+            if (Formulas.NumberFormatter.AccountingPrefix(cell.NumberFormat) is { } symbol)
+            {
+                int index = display.IndexOf(symbol, StringComparison.Ordinal);
+                if (index >= 0) display = display.Remove(index, symbol.Length).Trim();
+            }
+            if (cell.Appearance?.Rotation == 255) display = string.Join("\n", display.EnumerateRunes().Select(rune => rune.ToString()));
+            Run run = new(display)
             {
                 FontWeight = (valueRule?.Bold ?? r.Bold) ? FontWeight.Bold : FontWeight.Normal,
                 FontStyle = r.Italic ? FontStyle.Italic : FontStyle.Normal,
             };
+            if (cell.Appearance?.Script is "superscript" or "subscript")
+            {
+                run.FontSize = target.FontSize * 0.7;
+                run.BaselineAlignment = cell.Appearance.Script == "superscript" ? BaselineAlignment.Superscript : BaselineAlignment.Subscript;
+            }
             if (r.Underline || r.Strikethrough || !string.IsNullOrWhiteSpace(cell.Hyperlink))
             {
                 TextDecorationCollection decorations = new();
                 if (r.Underline || !string.IsNullOrWhiteSpace(cell.Hyperlink))
                 {
-                    decorations.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
+                    if (cell.Appearance?.DoubleUnderline == true)
+                    {
+                        // A fixed second offset can coincide with the font's recommended underline,
+                        // especially after zooming. Position both strokes explicitly in font units.
+                        for (int line = 0; line < 2; line++)
+                            decorations.Add(new TextDecoration
+                            {
+                                Location = TextDecorationLocation.Underline,
+                                StrokeOffset = 0.08 + line * 0.16,
+                                StrokeOffsetUnit = TextDecorationUnit.FontRenderingEmSize,
+                                StrokeThickness = 0.05,
+                                StrokeThicknessUnit = TextDecorationUnit.FontRenderingEmSize,
+                            });
+                    }
+                    else decorations.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
                 }
 
                 if (r.Strikethrough)
@@ -2587,6 +2765,10 @@ public partial class SpreadsheetGrid : UserControl
             if (valueRule?.Foreground is { } conditionalColor)
             {
                 run.Foreground = new SolidColorBrush(conditionalColor);
+            }
+            else if (cell.NumericValue is { } number && Formulas.NumberFormatter.Foreground(number, cell.NumberFormat) is { } formatColor)
+            {
+                run.Foreground = new SolidColorBrush(formatColor);
             }
             else if (r.Foreground is { } fg)
             {
@@ -2640,6 +2822,12 @@ public partial class SpreadsheetGrid : UserControl
         if (addr.Row < 0 || addr.Column < 0 || addr.Row >= this.sheet.RowCount || addr.Column >= this.sheet.ColumnCount)
         {
             this.HideSelectionVisuals();
+            return;
+        }
+        if (addr.Row >= this.rowHeights.Length || addr.Column >= this.columnWidths.Length)
+        {
+            // A user can navigate into a blank column between incremental growth slices.
+            this.Rebuild();
             return;
         }
 
@@ -2904,6 +3092,56 @@ public partial class SpreadsheetGrid : UserControl
         menu.Items.Add(delete);
         this.ConfigureReadOnlyMenu(menu);
         return menu;
+    }
+
+    // Value lists can contain thousands of rows. Build them only when a menu is opened, never
+    // while materializing headers during scrolling.
+    private static MenuFlyout LazyMenu(Func<MenuFlyout> create)
+    {
+        MenuFlyout menu = new();
+        menu.Opening += (_, _) =>
+        {
+            menu.Items.Clear();
+            MenuFlyout populated = create();
+            object?[] items = populated.Items.Cast<object?>().ToArray();
+            populated.Items.Clear();
+            foreach (object? item in items) menu.Items.Add(item);
+        };
+        return menu;
+    }
+
+    private void AddRowOutlineButton(Border header, int row)
+    {
+        if (this.sheet is not { } sheet) return;
+        SheetOutlineGroup? group = sheet.RowGroups.FirstOrDefault(g => (g.SummaryAfter ? g.Start + g.Count : Math.Max(0, g.Start - 1)) == row);
+        if (group is null) return;
+        Button toggle = new()
+        {
+            Name = "RowOutlineToggle", Tag = group,
+            Content = new PathIcon
+            {
+                Data = Geometry.Parse(group.Collapsed ? "M11 5H13V11H19V13H13V19H11V13H5V11H11Z" : "M5 11H19V13H5Z"),
+                Width = 8 * this.zoom, Height = 8 * this.zoom, Foreground = this.headerText,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            },
+            Width = 16 * this.zoom, Height = 16 * this.zoom, Padding = new Thickness(0),
+            MinWidth = 0, MinHeight = 0, CornerRadius = new CornerRadius(2),
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+            Focusable = false,
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+        };
+        this.ApplyCompactButtonTheme(toggle);
+        toggle.Click += (_, e) => { sheet.ToggleRowGroup(group); this.Rebuild(); e.Handled = true; };
+        Control? label = header.Child;
+        header.Child = null;
+        header.Child = label is null ? toggle : Layered(label, toggle);
+    }
+
+    private void ApplyCompactButtonTheme(Button button)
+    {
+        if (this.TryFindResource("CompactButtonTheme", this.ActualThemeVariant, out object? resource) && resource is ControlTheme theme)
+            button.Theme = theme;
     }
 
     private MenuFlyout BuildColumnMenu(int column, int? tableHeaderRow = null)
@@ -3407,6 +3645,8 @@ public partial class SpreadsheetGrid : UserControl
             return;
         }
 
+        if (!this.sheet.CanEdit(new CellRange(range.Row, range.Column, block.Length, block.Max(row => row.Length)))) return;
+
         this.sheet.Checkpoint();
         this.sheet.RunBatch(() =>
         {
@@ -3416,7 +3656,11 @@ public partial class SpreadsheetGrid : UserControl
                 {
                     CellAddress addr = new(range.Row + i, range.Column + j);
                     this.sheet.EnsureSize(addr.Row + 1, addr.Column + 1);
-                    this.sheet.GetCell(addr)?.ApplyData(block[i][j]);
+                    if (this.sheet.GetCell(addr) is { } target)
+                    {
+                        if (this.sheet.IsProtected) target.Text = block[i][j].Text;
+                        else target.ApplyData(block[i][j]);
+                    }
                 }
             }
         });

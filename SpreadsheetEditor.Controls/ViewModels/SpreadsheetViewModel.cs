@@ -41,6 +41,7 @@ public partial class SpreadsheetViewModel : ObservableObject
     public int ColumnCount => this.Columns.Count;
 
     public double DefaultColumnWidth { get; set; } = 90;
+    public CellData DefaultCell { get; set; } = CellData.Plain(string.Empty);
 
     // Merged cell regions (from an imported sheet). Rendered by the grid that supports spanning.
     public IReadOnlyList<MergeRange> Merges { get; private set; } = new List<MergeRange>();
@@ -422,7 +423,12 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Charts[index] = new SheetChart
         {
             Kind = kind,
-            Series = existing.Series,
+            Series = kind == existing.Kind ? existing.Series : existing.Series.Select(spec => new ChartSeriesSpec(spec.Title, spec.Ranges, spec.CachedValues) { Color = spec.Color }).ToArray(),
+            SourceXml = kind == existing.Kind ? existing.SourceXml : null,
+            HorizontalBars = existing.HorizontalBars,
+            ValueAxisTitle = existing.ValueAxisTitle,
+            SecondaryAxisTitle = existing.SecondaryAxisTitle,
+            CategoryAxisTitle = existing.CategoryAxisTitle,
             Categories = existing.Categories,
             CachedCategories = existing.CachedCategories,
             Title = string.IsNullOrWhiteSpace(title) ? null : title,
@@ -471,11 +477,11 @@ public partial class SpreadsheetViewModel : ObservableObject
                 : new List<CellRange>();
             if (parsed.Count > 0)
             {
-                series.Add(new ChartSeriesSpec(spec.Title, parsed)); // retargeted (may be several cells) → read live
+                series.Add(new ChartSeriesSpec(spec.Title, parsed) { Kind = spec.Kind, SecondaryAxis = spec.SecondaryAxis, Color = spec.Color });
             }
             else
             {
-                series.Add(new ChartSeriesSpec(spec.Title, spec.Ranges, spec.CachedValues)); // unchanged → keep
+                series.Add(spec);
             }
         }
 
@@ -506,9 +512,14 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Charts[index] = new SheetChart
         {
             Kind = kind,
-            Series = series,
+            Series = kind == existing.Kind ? series : series.Select(spec => new ChartSeriesSpec(spec.Title, spec.Ranges, spec.CachedValues) { Color = spec.Color }).ToArray(),
             Categories = categories,
             CachedCategories = cachedCategories,
+            SourceXml = kind == existing.Kind ? existing.SourceXml : null,
+            HorizontalBars = existing.HorizontalBars,
+            ValueAxisTitle = existing.ValueAxisTitle,
+            SecondaryAxisTitle = existing.SecondaryAxisTitle,
+            CategoryAxisTitle = existing.CategoryAxisTitle,
             Title = string.IsNullOrWhiteSpace(title) ? null : title,
             ShowLegend = showLegend,
             ShowDataLabels = showDataLabels,
@@ -662,10 +673,17 @@ public partial class SpreadsheetViewModel : ObservableObject
         this.Images = new List<SheetImage>();
         this.DataBars = new List<SheetDataBar>();
         this.CellValueRules = new List<SheetCellValueRule>();
+        this.Visibility = "visible";
+        this.ProtectionXml = null;
+        this.RowGroups = Array.Empty<SheetOutlineGroup>();
+        this.ColumnGroups = Array.Empty<SheetOutlineGroup>();
         this.AutoFilterRange = null;
         this.Tables = Array.Empty<SheetTable>();
         this.sourceHiddenRows.Clear();
         this.columnFilters.Clear();
+        this.sourceHiddenColumns.Clear();
+        this.sourceColumnWidths = Array.Empty<double>();
+        this.DefaultCell = CellData.Plain(string.Empty);
 
         ColumnViewModel[] newColumns = new ColumnViewModel[columns];
         for (int c = 0; c < columns; c++)
@@ -699,6 +717,7 @@ public partial class SpreadsheetViewModel : ObservableObject
 
     public void SetCell(CellAddress a, string text)
     {
+        if (!this.CanEdit(a)) return;
         this.EnsureSize(a.Row + 1, a.Column + 1);
         this.Rows[a.Row].Cells[a.Column].Text = text;
     }
@@ -793,10 +812,14 @@ public partial class SpreadsheetViewModel : ObservableObject
         while (this.ColumnCount < columns)
         {
             int index = this.ColumnCount;
-            this.Columns.Add(new ColumnViewModel(index, this.DefaultColumnWidth));
+            double width = index < this.sourceColumnWidths.Count && this.sourceColumnWidths[index] > 0
+                ? this.sourceColumnWidths[index] : this.DefaultColumnWidth;
+            this.Columns.Add(new ColumnViewModel(index, width)
+                { IsHidden = this.sourceHiddenColumns.Contains(index) });
             for (int rowIndex = 0; rowIndex < this.Rows.Count; rowIndex++)
             {
                 CellViewModel cell = new();
+                cell.ApplyData(this.DefaultCell);
                 this.HookCell(cell, this.Rows[rowIndex], index);
                 this.Rows[rowIndex].Cells.Add(cell);
             }
@@ -807,6 +830,7 @@ public partial class SpreadsheetViewModel : ObservableObject
             RowViewModel row = new(this.RowCount + 1, this.ColumnCount);
             for (int column = 0; column < row.Cells.Count; column++)
             {
+                row.Cells[column].ApplyData(this.DefaultCell);
                 this.HookCell(row.Cells[column], row, column);
             }
 
@@ -1147,6 +1171,13 @@ public partial class SpreadsheetViewModel : ObservableObject
                 Foreground = item.Rule.Foreground,
                 Bold = item.Rule.Bold,
                 Priority = item.Rule.Priority,
+                Expression = item.Rule.Expression,
+                TextThreshold = item.Rule.TextThreshold,
+                Background = item.Rule.Background,
+                IconSet = item.Rule.IconSet,
+                IconThresholds = item.Rule.IconThresholds,
+                ShowValue = item.Rule.ShowValue,
+                ReverseIcons = item.Rule.ReverseIcons,
             }).ToList();
         this.Images = this.Images.Select(image => new SheetImage
         {

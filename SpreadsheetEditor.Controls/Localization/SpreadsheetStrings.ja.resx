@@ -220,4 +220,6 @@
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>スプレッドシートの保存</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>保存に失敗しました</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>スプレッドシート</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>シート見出しを左にスクロール</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>シート見出しを右にスクロール</value></data>
 </root>

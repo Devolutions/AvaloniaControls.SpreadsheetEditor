@@ -220,4 +220,6 @@ Případně použijte &quot;Exportovat jako PDF&quot; k uložení listu a vytiš
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Uložit tabulku</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Uložení se nezdařilo</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tabulka</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Posunout karty listů doleva</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Posunout karty listů doprava</value></data>
 </root>

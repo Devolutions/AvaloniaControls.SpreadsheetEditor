@@ -220,4 +220,6 @@ Alternativ können Sie „Exportieren als PDF“ verwenden, um das Blatt zu spei
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Tabellenkalkulation speichern</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Speichern fehlgeschlagen</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tabelle</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Blattregister nach links scrollen</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Blattregister nach rechts scrollen</value></data>
 </root>

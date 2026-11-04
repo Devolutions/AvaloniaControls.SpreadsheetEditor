@@ -220,4 +220,6 @@ Alternativamente, use &quot;Exportar como PDF&quot; para guardar la hoja e impri
   <data name="SaveSpreadsheetTitle" xml:space="preserve"><value>Guardar hoja de cálculo</value></data>
   <data name="SaveFailed" xml:space="preserve"><value>Error al guardar</value></data>
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Hoja de cálculo</value></data>
+  <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Desplazar las pestañas de hojas a la izquierda</value></data>
+  <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Desplazar las pestañas de hojas a la derecha</value></data>
 </root>
