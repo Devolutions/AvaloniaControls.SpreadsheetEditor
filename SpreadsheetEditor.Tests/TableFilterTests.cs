@@ -109,6 +109,8 @@ public sealed class TableFilterTests
             await Frame(window);
             Assert.DoesNotContain(filter.Items.OfType<MenuItem>(), item => Equals(item.Header, "Charlie"));
             MenuItem sales = filter.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Sales"));
+            Assert.Contains(filter.ItemsPanelRoot!.Children.OfType<MenuItem>(), item =>
+                Equals(item.Header, "Sales") && item.Bounds.Height > 0);
             sales.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             menu.Hide();
             Assert.True(editor.ViewModel.Rows[13].IsHidden);
@@ -301,16 +303,26 @@ public sealed class TableFilterTests
             Assert.Equal(8, buttons.Length);
             Border button = buttons.Single(button => Equals(button.Tag, new CellAddress(12, 1)));
             MenuFlyout menu = Assert.IsType<MenuFlyout>(button.ContextFlyout);
-            editor.IsReadOnly = readOnly;
             Point point = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
-            window.MouseDown(point, MouseButton.Left);
-            window.MouseUp(point, MouseButton.Left);
-            await Frame(window);
-            Assert.True(menu.IsOpen);
-            MenuItem ascending = menu.Items.OfType<MenuItem>().First();
-            Assert.Equal(!readOnly, ascending.IsEnabled);
-            ascending.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            menu.Hide();
+            for (int opening = 0; opening < 3; opening++)
+            {
+                bool currentReadOnly = opening == 1 ? !readOnly : readOnly;
+                editor.IsReadOnly = currentReadOnly;
+                window.MouseDown(point, MouseButton.Left);
+                window.MouseUp(point, MouseButton.Left);
+                await Frame(window);
+                Assert.True(menu.IsOpen);
+                MenuFlyoutPresenter presenter = Assert.IsType<MenuFlyoutPresenter>(menu.Popup.Child);
+                presenter.UpdateLayout();
+                Assert.Equal(menu.Items.Count, presenter.ItemCount);
+                MenuItem[] visibleItems = presenter.GetVisualDescendants().OfType<MenuItem>().ToArray();
+                Assert.NotEmpty(visibleItems);
+                Assert.All(visibleItems, item => Assert.True(item.Bounds.Height > 0, $"{item.Header} has no rendered height"));
+                MenuItem ascending = menu.Items.OfType<MenuItem>().First();
+                Assert.Equal(!currentReadOnly, ascending.IsEnabled);
+                if (opening == 2) ascending.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                menu.Hide();
+            }
             Assert.Equal(readOnly ? "Zebra" : "Wolf", editor.ViewModel.Rows[13].Cells[1].Text);
             Assert.Equal("Charlie", editor.ViewModel.Rows[3].Cells[1].Text);
         }

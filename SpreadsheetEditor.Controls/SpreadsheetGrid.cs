@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
@@ -3098,14 +3099,17 @@ public partial class SpreadsheetGrid : UserControl
     // while materializing headers during scrolling.
     private static MenuFlyout LazyMenu(Func<MenuFlyout> create)
     {
-        MenuFlyout menu = new();
+        // The presenter captures the backing source before Opening. Give it a stable observable
+        // collection now; an uninitialized Items collection leaves the popup permanently empty.
+        AvaloniaList<object?> source = new();
+        MenuFlyout menu = new() { ItemsSource = source };
         menu.Opening += (_, _) =>
         {
-            menu.Items.Clear();
+            source.Clear();
             MenuFlyout populated = create();
             object?[] items = populated.Items.Cast<object?>().ToArray();
             populated.Items.Clear();
-            foreach (object? item in items) menu.Items.Add(item);
+            source.AddRange(items);
         };
         return menu;
     }
