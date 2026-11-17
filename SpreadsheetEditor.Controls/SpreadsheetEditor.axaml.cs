@@ -2040,7 +2040,7 @@ public partial class SpreadsheetEditor : UserControl
 
         CellAddress active = this.vm.ActiveCell;
         this.DetachActiveCell();
-        this.vm.Undo();
+        this.Grid.ApplyCellUpdates(this.vm.Undo);
         this.Grid.Rebuild();
         this.SetActiveCell(this.vm.IsValid(active) ? active : new CellAddress(0, 0));
         this.RefreshUndoButtons();
@@ -2055,7 +2055,7 @@ public partial class SpreadsheetEditor : UserControl
 
         CellAddress active = this.vm.ActiveCell;
         this.DetachActiveCell();
-        this.vm.Redo();
+        this.Grid.ApplyCellUpdates(this.vm.Redo);
         this.Grid.Rebuild();
         this.SetActiveCell(this.vm.IsValid(active) ? active : new CellAddress(0, 0));
         this.RefreshUndoButtons();

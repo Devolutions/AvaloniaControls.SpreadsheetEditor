@@ -124,8 +124,8 @@ public partial class SpreadsheetGrid : UserControl
     private bool chartDragging;
     private SheetChart? selectedChart;   // the chart targeted by the Delete key (null = none)
 
-    // Internal clipboard (rich CellData block) + the TSV we last wrote to the OS clipboard, so an
-    // internal paste keeps formatting/formulas while an external (Excel) copy still pastes as values.
+    // Internal copies retain formulas and formatting. External Excel HTML takes priority over this
+    // cache; the text identifies our own copy when only the plain-text clipboard format is present.
     private CellData[][]? clipboard;
     private string? clipboardText;
 
@@ -972,8 +972,8 @@ public partial class SpreadsheetGrid : UserControl
         this.calculatedCellRefreshes.Clear();
     }
 
-    // Publishing a calculation must not rebuild the whole grid once per changed formula cell.
-    internal void ApplyCalculatedCells(Action apply)
+    // Bulk changes repaint once after publication, rather than once per cell/property notification.
+    internal void ApplyCellUpdates(Action apply)
     {
         bool wasApplying = this.applyingCellFormat;
         this.applyingCellFormat = true;
@@ -3222,7 +3222,7 @@ public partial class SpreadsheetGrid : UserControl
         {
             return;
         }
-        this.ApplyCalculatedCells(() => this.sheet.SortRows(column, headerRow, descending));
+        this.ApplyCellUpdates(() => this.sheet.SortRows(column, headerRow, descending));
         this.Rebuild();
         this.SelectCell(this.sheet.ActiveCell);
     }
@@ -3625,52 +3625,6 @@ public partial class SpreadsheetGrid : UserControl
         });
     }
 
-    // Pastes the clipboard at the selection's top-left, growing the sheet as needed. Uses the rich
-    // internal block unless the OS clipboard changed (e.g. copied from Excel), then TSV values.
-    public async void PasteSelection()
-    {
-        if (this.sheet is null || this.ReadOnly)
-        {
-            return;
-        }
-        CellRange range = this.SelectionRange;
-        string? osText = null;
-        IClipboard? clip = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clip is not null)
-        {
-            try { osText = await clip.TryGetTextAsync(); } catch { }
-        }
-
-        CellData[][]? block = this.clipboard is not null && (osText is null || osText == this.clipboardText)
-            ? this.clipboard
-            : ParseTsv(osText);
-        if (block is null || block.Length == 0)
-        {
-            return;
-        }
-
-        if (!this.sheet.CanEdit(new CellRange(range.Row, range.Column, block.Length, block.Max(row => row.Length)))) return;
-
-        this.sheet.Checkpoint();
-        this.sheet.RunBatch(() =>
-        {
-            for (int i = 0; i < block.Length; i++)
-            {
-                for (int j = 0; j < block[i].Length; j++)
-                {
-                    CellAddress addr = new(range.Row + i, range.Column + j);
-                    this.sheet.EnsureSize(addr.Row + 1, addr.Column + 1);
-                    if (this.sheet.GetCell(addr) is { } target)
-                    {
-                        if (this.sheet.IsProtected) target.Text = block[i][j].Text;
-                        else target.ApplyData(block[i][j]);
-                    }
-                }
-            }
-        });
-        this.Rebuild();
-    }
-
     // Selects the whole sheet (Ctrl+A).
     public void SelectAll()
     {
@@ -3695,20 +3649,6 @@ public partial class SpreadsheetGrid : UserControl
         {
             try { await clip.SetTextAsync(text); } catch { }
         }
-    }
-
-    private static CellData[][]? ParseTsv(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return null;
-        }
-        List<string> lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
-        if (lines.Count > 0 && lines[^1].Length == 0)
-        {
-            lines.RemoveAt(lines.Count - 1); // trailing newline
-        }
-        return lines.Select(line => line.Split('\t').Select(CellData.Plain).ToArray()).ToArray();
     }
 
     // Every cell in the current selection range (at least the active cell).

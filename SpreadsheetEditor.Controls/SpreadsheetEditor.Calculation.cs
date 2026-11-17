@@ -137,7 +137,7 @@ public partial class SpreadsheetEditor
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         this.ValidateCalculation(snapshots, token);
-                        this.Grid.ApplyCalculatedCells(() =>
+                        this.Grid.ApplyCellUpdates(() =>
                         {
                             Stopwatch budget = Stopwatch.StartNew();
                             do

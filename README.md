@@ -24,6 +24,9 @@ It uses a custom rendering grid (not the Avalonia `DataGrid`) so cells can merge
 - A hand-rolled `=` formula engine (arithmetic, ranges, `SUM/AVERAGE/IF/…`, named ranges, live recalc).
 - Charts, multi-sheet tabs, undo/redo, clipboard, a symbol picker, and printing (cross-platform PDF
   export, a native Windows print dialog, and `lpr`/CUPS on Linux/macOS).
+- Pasting tables from Excel preserves cell fonts, colors, borders, number formats, alignment,
+  wrapping, and merged cells using the HTML clipboard format. Plain-text clipboard data remains
+  supported, including quoted cells containing tabs or line breaks.
 - An integration API modeled on Avalonia's `RichTextEditor` (`IsReadOnly`, `Undo`/`Redo`, `CanUndo`/`CanRedo`,
   `SelectAll`, `SelectedRange`, and `ContentChanged` / `SelectionChanged` / `IsReadOnlyChanged` events).
 

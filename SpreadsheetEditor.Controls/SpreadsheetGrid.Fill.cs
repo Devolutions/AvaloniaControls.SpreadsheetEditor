@@ -101,7 +101,7 @@ public partial class SpreadsheetGrid
             this.CancelFillDrag();
             if (apply && this.sheet is { } sheet)
             {
-                this.ApplyCalculatedCells(() =>
+                this.ApplyCellUpdates(() =>
                 {
                     if (!sheet.FillCells(source, target)) return;
                     this.rangeAnchor = new CellAddress(target.Row, target.Column);

@@ -40,6 +40,7 @@
         <!-- Excel (.xlsx) read/write. Ships with the package so consumers get Excel I/O out of the box. -->
         <PackageReference Include="ClosedXML" Version="$(ClosedXmlVersion)" />
         <PackageReference Include="ExcelNumberFormat" Version="$(ExcelNumberFormatVersion)" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
         <!-- Cross-platform PDF export (SkiaSharp SKDocument). Already flows in transitively via
              Avalonia.Controls.Charts; referenced explicitly so the printing code can use it directly. -->
         <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />

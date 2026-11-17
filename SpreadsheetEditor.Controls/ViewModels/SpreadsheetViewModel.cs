@@ -1372,11 +1372,15 @@ public partial class SpreadsheetViewModel : ObservableObject
     public List<List<CellData>> ToCellData() =>
         this.Rows.Select(r => r.Cells.Select(c => c.ToData()).ToList()).ToList();
 
-    // ----- Undo / redo (snapshot-based; covers cell values + formatting, not charts/merges) -----
+    // ----- Undo / redo (snapshot-based; covers cells and merges, not charts) -----
 
     private const int MaxUndoDepth = 100;
-    private readonly List<List<List<CellData>>> undoStack = new();
-    private readonly List<List<List<CellData>>> redoStack = new();
+    private readonly List<CellSnapshot> undoStack = new();
+    private readonly List<CellSnapshot> redoStack = new();
+
+    private sealed record CellSnapshot(List<List<CellData>> Cells, MergeRange[] Merges);
+
+    private CellSnapshot CaptureCells() => new(this.ToCellData(), this.Merges.ToArray());
 
     public bool CanUndo => this.undoStack.Count > 0;
 
@@ -1389,8 +1393,9 @@ public partial class SpreadsheetViewModel : ObservableObject
     // unchanged from the most recent checkpoint, so repeated calls don't pile up identical entries.
     public void Checkpoint()
     {
-        List<List<CellData>> snapshot = this.ToCellData();
-        if (this.undoStack.Count > 0 && SameCells(this.undoStack[^1], snapshot))
+        CellSnapshot snapshot = this.CaptureCells();
+        if (this.undoStack.Count > 0 && SameCells(this.undoStack[^1].Cells, snapshot.Cells) &&
+            this.undoStack[^1].Merges.SequenceEqual(snapshot.Merges))
         {
             return;
         }
@@ -1412,10 +1417,11 @@ public partial class SpreadsheetViewModel : ObservableObject
             return;
         }
 
-        this.redoStack.Add(this.ToCellData());
-        List<List<CellData>> snapshot = this.undoStack[^1];
+        this.redoStack.Add(this.CaptureCells());
+        CellSnapshot snapshot = this.undoStack[^1];
         this.undoStack.RemoveAt(this.undoStack.Count - 1);
-        this.RestoreCells(snapshot);
+        this.SetMerges(snapshot.Merges);
+        this.RestoreCells(snapshot.Cells);
         this.UndoStateChanged?.Invoke();
     }
 
@@ -1426,10 +1432,11 @@ public partial class SpreadsheetViewModel : ObservableObject
             return;
         }
 
-        this.undoStack.Add(this.ToCellData());
-        List<List<CellData>> snapshot = this.redoStack[^1];
+        this.undoStack.Add(this.CaptureCells());
+        CellSnapshot snapshot = this.redoStack[^1];
         this.redoStack.RemoveAt(this.redoStack.Count - 1);
-        this.RestoreCells(snapshot);
+        this.SetMerges(snapshot.Merges);
+        this.RestoreCells(snapshot.Cells);
         this.UndoStateChanged?.Invoke();
     }
 
