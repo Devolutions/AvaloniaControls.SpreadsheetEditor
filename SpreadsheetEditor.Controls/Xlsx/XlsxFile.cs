@@ -2172,6 +2172,7 @@ public static partial class XlsxFile
             };
 
         List<(int SheetIndex, IReadOnlyList<ChartWriteData> Charts)> chartGroups = new();
+        Dictionary<int, Dictionary<CellAddress, string>> hyperlinkTargets = new();
         for (int index = 0; index < source.Count; index++)
         {
             XlsxSheetWriteData input = source[index];
@@ -2181,7 +2182,12 @@ public static partial class XlsxFile
                 sheet.TabColor = ToXl(tabColor);
             }
 
-            WriteSheet(workbook, sheet, input.Data);
+            Dictionary<CellAddress, string> sheetHyperlinks = new();
+            WriteSheet(workbook, sheet, input.Data, sheetHyperlinks);
+            if (sheetHyperlinks.Count > 0)
+            {
+                hyperlinkTargets.Add(index, sheetHyperlinks);
+            }
             if (input.Charts.Count > 0)
             {
                 chartGroups.Add((index, input.Charts));
@@ -2193,6 +2199,7 @@ public static partial class XlsxFile
         RestoreTables(buffer, source);
         RestoreFormulaCaches(buffer, source);
         RestorePresentation(buffer, source);
+        RestoreHyperlinks(buffer, hyperlinkTargets);
         byte[] bytes = buffer.ToArray();
         foreach ((int sheetIndex, IReadOnlyList<ChartWriteData> charts) in chartGroups)
         {
@@ -2202,7 +2209,8 @@ public static partial class XlsxFile
         stream.Write(bytes, 0, bytes.Length);
     }
 
-    private static void WriteSheet(XLWorkbook workbook, IXLWorksheet sheet, SheetData data)
+    private static void WriteSheet(XLWorkbook workbook, IXLWorksheet sheet, SheetData data,
+        Dictionary<CellAddress, string> hyperlinkTargets)
     {
         IReadOnlyList<IReadOnlyList<CellData>> rows = data.Cells;
         IReadOnlyList<double> columnWidths = data.ColumnWidths;
@@ -2248,7 +2256,13 @@ public static partial class XlsxFile
                     string target = cellData.Hyperlink;
                     cell.SetHyperlink(target.StartsWith('#')
                         ? new XLHyperlink(target[1..])
-                        : new XLHyperlink(new Uri(target, UriKind.Absolute)));
+                        : new XLHyperlink(new Uri($"https://spreadsheet-editor.invalid/{r}/{c}")));
+                    if (!target.StartsWith('#'))
+                    {
+                        // Unique transport URIs retain ClosedXML's link styling and relationship IDs.
+                        // RestoreHyperlinks replaces them with the exact targets after serialization.
+                        hyperlinkTargets.Add(new CellAddress(r, c), target);
+                    }
                 }
 
                 if (cellData.NumberFormat is { } nf)

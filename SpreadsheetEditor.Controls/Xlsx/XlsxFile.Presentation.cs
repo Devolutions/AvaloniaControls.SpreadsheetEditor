@@ -77,6 +77,7 @@ public static partial class XlsxFile
         List<int> hiddenColumns = new();
         List<PreviewColumn> columns = new();
         List<MergeRange> merges = new();
+        IReadOnlyDictionary<string, string> hyperlinkTargets = ReadHyperlinkRelationships(archive, part);
         Dictionary<int, (int Level, bool Hidden)> rowLevels = new(), columnLevels = new();
         bool summaryBelow = true, summaryRight = true;
         string? protection = null;
@@ -98,6 +99,21 @@ public static partial class XlsxFile
                 case "mergeCell":
                     if (CellRange.TryParse(reader.GetAttribute("ref"), out CellRange range))
                         merges.Add(new MergeRange(range.Row, range.Column, range.RowSpan, range.ColumnSpan));
+                    break;
+                case "hyperlink":
+                    if (CellRange.TryParse(reader.GetAttribute("ref"), out CellRange linkRange))
+                    {
+                        string? id = reader.GetAttribute("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships");
+                        string? target = id is not null && hyperlinkTargets.TryGetValue(id, out string? external) ? external : null;
+                        if (reader.GetAttribute("location") is { Length: > 0 } location)
+                            target = target is null ? "#" + location : target + "#" + location;
+                        if (target is not null)
+                        {
+                            for (int linkRow = linkRange.Row; linkRow < rows.Count && linkRow < linkRange.Row + linkRange.RowSpan; linkRow++)
+                                for (int linkColumn = linkRange.Column; linkColumn < rows[linkRow].Count && linkColumn < linkRange.Column + linkRange.ColumnSpan; linkColumn++)
+                                    rows[linkRow][linkColumn] = rows[linkRow][linkColumn] with { Hyperlink = target };
+                        }
+                    }
                     break;
                 case "col":
                     int min = int.TryParse(reader.GetAttribute("min"), out int a) ? a - 1 : 0;
