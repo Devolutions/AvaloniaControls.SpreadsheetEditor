@@ -300,8 +300,7 @@
                      VerticalContentAlignment="Center" />
             <TextBlock Grid.Column="1" Text="{loc:Loc FormulaGlyph}" FontStyle="Italic"
                        VerticalAlignment="Center" Opacity="0.7" />
-            <Border x:Name="EditorHost" Grid.Column="2" MinHeight="30"
-                    BorderThickness="1" BorderBrush="{DynamicResource ChromeBorder}" CornerRadius="3" />
+            <Border x:Name="EditorHost" Grid.Column="2" MinHeight="30" />
         </Grid>
 
         <!-- Find and replace stays inside the editor so Ctrl+F is handled here instead of bubbling to

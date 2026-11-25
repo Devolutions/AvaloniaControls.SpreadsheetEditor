@@ -79,8 +79,11 @@ public partial class MainWindow : Window
 
     private void SyncThemeMenu()
     {
+        bool dark = this.ActualThemeVariant == ThemeVariant.Dark;
         this.LightThemeMenuItem.IsChecked = this.ActualThemeVariant == ThemeVariant.Light;
-        this.DarkThemeMenuItem.IsChecked = this.ActualThemeVariant == ThemeVariant.Dark;
+        this.DarkThemeMenuItem.IsChecked = dark;
+        this.WorksheetThemeMenuItem.IsVisible = dark;
+        this.WorksheetThemeSeparator.IsVisible = dark;
     }
 
     private async void OnExportPdf(object? sender, RoutedEventArgs e)

@@ -27,8 +27,8 @@
                 <Separator />
                 <MenuItem x:Name="LightThemeMenuItem" Header="{loc:Loc LightTheme}" ToggleType="Radio" GroupName="SampleTheme" />
                 <MenuItem x:Name="DarkThemeMenuItem" Header="{loc:Loc DarkTheme}" ToggleType="Radio" GroupName="SampleTheme" />
-                <Separator />
-                <MenuItem Header="{loc:Loc MatchWorksheetThemeToUI}" ToggleType="CheckBox"
+                <Separator x:Name="WorksheetThemeSeparator" />
+                <MenuItem x:Name="WorksheetThemeMenuItem" Header="{loc:Loc MatchWorksheetThemeToUI}" ToggleType="CheckBox"
                           IsChecked="{Binding #Editor.MatchWorksheetThemeToUI, Mode=TwoWay}" />
             </MenuItem>
         </Menu>

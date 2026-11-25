@@ -47,6 +47,9 @@ public sealed class WorksheetThemeTests
         {
             await Frame(window);
             SpreadsheetGrid grid = editor.FindControl<SpreadsheetGrid>("Grid")!;
+            MenuFlyout menu = Assert.IsType<MenuFlyout>(editor.FindControl<Button>("OverflowButton")!.Flyout);
+            MenuItem option = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, EditorText.Get(EditorString.MatchWorksheetThemeToUI)));
+            Assert.Equal(dark, option.IsVisible);
             bool darkSheet = enabled && dark;
             Assert.Equal(darkSheet ? LightInk : DarkInk, Ink(CellText(grid, 0, 0).Foreground));
             Assert.Equal(darkSheet ? DarkSurface : Colors.White, Surface(grid));
@@ -82,6 +85,11 @@ public sealed class WorksheetThemeTests
         {
             await Frame(window);
             SpreadsheetGrid grid = editor.FindControl<SpreadsheetGrid>("Grid")!;
+            MenuFlyout menu = Assert.IsType<MenuFlyout>(editor.FindControl<Button>("OverflowButton")!.Flyout);
+            MenuItem option = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, EditorText.Get(EditorString.MatchWorksheetThemeToUI)));
+            Separator separator = Assert.IsType<Separator>(menu.Items[menu.Items.IndexOf(option) - 1]);
+            Assert.True(option.IsVisible);
+            Assert.True(separator.IsVisible);
             TextBlock retained = CellText(grid, 2, 1);
             CellEditor input = grid.GetVisualDescendants().OfType<CellEditor>().Single();
             input.Load(editor.ViewModel.Rows[0].Cells[0]);
@@ -114,8 +122,15 @@ public sealed class WorksheetThemeTests
             await Frame(window);
             Assert.Equal(Colors.White, Surface(grid));
             Assert.Equal(DarkInk, Ink(CellText(grid, 0, 0).Foreground));
+            Assert.False(option.IsVisible);
+            Assert.False(separator.IsVisible);
+            Assert.True(editor.MatchWorksheetThemeToUI);
+            Assert.True(option.IsChecked);
             window.RequestedThemeVariant = ThemeVariant.Dark;
             await Frame(window);
+            Assert.True(option.IsVisible);
+            Assert.True(separator.IsVisible);
+            Assert.True(option.IsChecked);
             Assert.Equal(DarkSurface, Surface(grid));
             Assert.Null(editor.ViewModel.Rows[0].Cells[0].ForegroundColor);
             if (rich is not null)

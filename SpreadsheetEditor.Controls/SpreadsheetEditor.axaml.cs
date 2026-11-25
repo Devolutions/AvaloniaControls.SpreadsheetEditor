@@ -1652,9 +1652,18 @@ public partial class SpreadsheetEditor : UserControl
 
         this.editingControls.AddRange(new Control[] { chart, autoSum, functions, addRow, addColumn });
 
-        menu.Items.Add(new Separator());
+        Separator sheetThemeSeparator = new();
         MenuItem sheetTheme = new() { Header = Get(S.MatchWorksheetThemeToUI), ToggleType = MenuItemToggleType.CheckBox };
         sheetTheme.Bind(MenuItem.IsCheckedProperty, new Binding(nameof(this.MatchWorksheetThemeToUI)) { Source = this, Mode = BindingMode.TwoWay });
+        void UpdateThemeVisibility()
+        {
+            bool dark = this.ActualThemeVariant == ThemeVariant.Dark;
+            sheetTheme.IsVisible = dark;
+            sheetThemeSeparator.IsVisible = dark;
+        }
+        this.ActualThemeVariantChanged += (_, _) => UpdateThemeVisibility();
+        UpdateThemeVisibility();
+        menu.Items.Add(sheetThemeSeparator);
         menu.Items.Add(sheetTheme);
 
         return menu;
