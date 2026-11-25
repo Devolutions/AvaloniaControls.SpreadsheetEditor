@@ -222,4 +222,27 @@ U kunt ook &quot;Exporteren als PDF&quot; gebruiken om het blad op te slaan en a
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Rekenblad</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Werkbladtabbladen naar links schuiven</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Werkbladtabbladen naar rechts schuiven</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Cellen samenvoegen</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Samenvoegen en centreren</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Per rij samenvoegen</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Samenvoeging opheffen</value></data>
+  <data name="Borders" xml:space="preserve"><value>Randen</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Bestaande randen behouden</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Geen randen</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Buitenranden</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Alle randen</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Binnenranden</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Bovenrand</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Onderrand</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Linkerrand</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Rechterrand</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Lijnkleur</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Lijnstijl</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Dun</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Gemiddeld</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Dik</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Dubbel</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Gestreept</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Gestippeld</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Bij samenvoegen blijft alleen de inhoud van de cel linksboven behouden (één per rij bij samenvoegen per rij). Andere inhoud wordt verwijderd. Doorgaan?</value></data>
 </root>

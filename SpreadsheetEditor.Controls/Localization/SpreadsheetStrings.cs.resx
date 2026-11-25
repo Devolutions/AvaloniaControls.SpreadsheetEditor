@@ -222,4 +222,27 @@ Případně použijte &quot;Exportovat jako PDF&quot; k uložení listu a vytiš
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tabulka</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Posunout karty listů doleva</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Posunout karty listů doprava</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Sloučit buňky</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Sloučit a zarovnat na střed</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Sloučit po řádcích</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Oddělit buňky</value></data>
+  <data name="Borders" xml:space="preserve"><value>Ohraničení</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Zachovat stávající ohraničení</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Bez ohraničení</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Vnější ohraničení</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Všechna ohraničení</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Vnitřní ohraničení</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Horní ohraničení</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Dolní ohraničení</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Levé ohraničení</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Pravé ohraničení</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Barva čáry</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Styl čáry</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Tenká</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Střední</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Silná</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Dvojitá</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Čárkovaná</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Tečkovaná</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Sloučení zachová pouze obsah levé horní buňky (jedné v každém řádku při sloučení po řádcích). Ostatní obsah bude odstraněn. Pokračovat?</value></data>
 </root>

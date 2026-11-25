@@ -2342,8 +2342,31 @@ public partial class SpreadsheetGrid : UserControl
                 HorizontalAlignment = HorizontalAlignment.Left,
             }, cellContent);
         }
-        if (cell.Appearance is { } decoration && (decoration.Fill is not null || decoration.Left is not null || decoration.Right is not null || decoration.Top is not null || decoration.Bottom is not null))
-            cellContent = Layered(Layered(new CellDecoration(decoration, this.zoom, fill: true) { IsHitTestVisible = false }, cellContent), new CellDecoration(decoration, this.zoom, fill: false) { IsHitTestVisible = false });
+        CellAppearance? decoration = cell.Appearance;
+        if (this.sheet is { } borderSheet && (rowSpan > 1 || columnSpan > 1))
+        {
+            decoration = (decoration ?? new CellAppearance()) with
+            {
+                Right = borderSheet.GetCell(new CellAddress(row, column + columnSpan - 1))?.Appearance?.Right ?? decoration?.Right,
+                Bottom = borderSheet.GetCell(new CellAddress(row + rowSpan - 1, column))?.Appearance?.Bottom ?? decoration?.Bottom,
+            };
+        }
+        if (decoration is not null && (decoration.Fill is not null || decoration.Left is not null || decoration.Right is not null || decoration.Top is not null || decoration.Bottom is not null))
+        {
+            CellAppearance borderAppearance = decoration with
+            {
+                Left = decoration.Left is { } left && Equals(this.AdjacentAppearance(row, column - 1)?.Right, left) ? null : decoration.Left,
+                Top = decoration.Top is { } top && Equals(this.AdjacentAppearance(row - 1, column)?.Bottom, top) ? null : decoration.Top,
+            };
+            cellContent = Layered(Layered(new CellDecoration(decoration, this.zoom, fill: true) { IsHitTestVisible = false }, cellContent),
+                new CellDecoration(borderAppearance, this.zoom, fill: false)
+                {
+                    IsHitTestVisible = false,
+                    // The Border's child is inset by the default gridline. Paint over that line,
+                    // rather than adding a second parallel stroke one pixel inside the cell.
+                    Margin = new Thickness(0, 0, omitRightBorder ? 0 : -1, -1),
+                });
+        }
         Border? filterButton = null;
         if (this.sheet?.FilterHeaderRange(row, column) is not null)
         {
@@ -3390,6 +3413,16 @@ public partial class SpreadsheetGrid : UserControl
         AddField(Get(S.TextColorHex), foreground);
         TextBox background = Field(Hex(active.BackgroundColor));
         AddField(Get(S.FillColorHex), background);
+        ComboBox borders = new() { ItemsSource = new[] { Get(S.KeepExistingBorders) }.Concat(BorderLabels.Select(Get)).ToArray(), SelectedIndex = 0, IsEnabled = !sheet.IsProtected };
+        AddField(Get(S.Borders), borders);
+        this.SyncSelectionBorderSettings();
+        Color originalBorderColor = this.BorderColor;
+        string originalBorderStyle = this.BorderLineStyle;
+        ColorPicker borderColor = EditorColorPicker.CreateDropDown(this.BorderColor);
+        AddField(Get(S.BorderColor), borderColor);
+        ComboBox borderStyle = new() { ItemsSource = BorderStyles.Select(item => Get(item.Label)).ToArray(),
+            SelectedIndex = Array.FindIndex(BorderStyles, item => item.Style == this.BorderLineStyle) };
+        AddField(Get(S.BorderStyle), borderStyle);
         TextBlock error = new() { Foreground = Brushes.Firebrick, IsVisible = false };
         fields.Children.Add(error);
         Button save = new() { Content = Get(S.Apply), IsDefault = true, MinWidth = 80 };
@@ -3426,10 +3459,12 @@ public partial class SpreadsheetGrid : UserControl
             }
             Color? textColor;
             Color? fillColor;
+            Color lineColor;
             try
             {
                 textColor = string.IsNullOrWhiteSpace(foreground.Text) ? null : Color.Parse(foreground.Text.Trim());
                 fillColor = string.IsNullOrWhiteSpace(background.Text) ? null : Color.Parse(background.Text.Trim());
+                lineColor = borderColor.Color;
             }
             catch (FormatException)
             {
@@ -3461,6 +3496,14 @@ public partial class SpreadsheetGrid : UserControl
                     cell.SetWholeForeground(textColor);
                     cell.BackgroundColor = fillColor;
                 }
+                this.BorderColor = lineColor;
+                this.BorderLineStyle = borderStyle.SelectedIndex >= 0 ? BorderStyles[borderStyle.SelectedIndex].Style : originalBorderStyle;
+                if (borders.SelectedIndex > 0 && !sheet.IsProtected)
+                    sheet.SetBorders(this.SelectionRange, (CellBorderPreset)(borders.SelectedIndex - 1), new CellEdge(this.BorderLineStyle, lineColor));
+                else if (!sheet.IsProtected)
+                    sheet.SetExistingBorderFormatting(this.SelectionRange,
+                        lineColor != originalBorderColor ? lineColor : null,
+                        this.BorderLineStyle != originalBorderStyle ? this.BorderLineStyle : null, checkpoint: false);
             }
             finally
             {
@@ -3549,6 +3592,8 @@ public partial class SpreadsheetGrid : UserControl
         menu.Items.Add(new Separator());
         Add(Get(S.InsertComment), () => _ = this.EditCommentAsync());
         Add(Get(S.FormatCellsMenu), () => _ = this.FormatCellsAsync());
+        menu.Items.Add(this.CreateMergeMenu());
+        menu.Items.Add(this.CreateBordersMenu());
         Add(Get(S.HyperlinkMenu), () => _ = this.EditHyperlinkAsync());
         menu.Items.Add(new Separator());
         Add(Get(S.InsertRowAbove), () => this.InsertSelectedRows(this.SelectionRange.Row, this.SelectionRange.RowSpan));

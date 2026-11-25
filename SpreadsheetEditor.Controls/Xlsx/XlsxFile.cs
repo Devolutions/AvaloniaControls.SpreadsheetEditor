@@ -933,6 +933,11 @@ public static partial class XlsxFile
         List<int> hiddenRows = new();
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 0;
         int lastColumn = sheet.LastColumnUsed()?.ColumnNumber() ?? 0;
+        foreach (IXLRange merged in sheet.MergedRanges)
+        {
+            lastRow = Math.Max(lastRow, merged.RangeAddress.LastAddress.RowNumber);
+            lastColumn = Math.Max(lastColumn, merged.RangeAddress.LastAddress.ColumnNumber);
+        }
         CellRange? autoFilterRange;
         List<SheetColumnFilter> filters = new();
         List<SheetTable> tableDefinitions;
@@ -941,6 +946,9 @@ public static partial class XlsxFile
             string partPath = WorksheetPartPath(archive, sheetIndex);
             autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken, filters);
             tableDefinitions = ReadTableDefinitions(archive, partPath, cancellationToken, filters);
+            (int borderRows, int borderColumns) = ReadBorderExtent(archive, partPath, cancellationToken);
+            lastRow = Math.Max(lastRow, borderRows);
+            lastColumn = Math.Max(lastColumn, borderColumns);
         }
         if (autoFilterRange is { } filterRange)
         {

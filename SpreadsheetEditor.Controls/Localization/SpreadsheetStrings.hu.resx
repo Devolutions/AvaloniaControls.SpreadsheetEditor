@@ -222,4 +222,27 @@ Alternatív megoldásként használja az „Exportálás mint PDF” parancsot a
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Táblázat</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Munkalapfülek görgetése balra</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Munkalapfülek görgetése jobbra</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Cellák egyesítése</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Egyesítés és középre igazítás</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Egyesítés soronként</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Cellaegyesítés megszüntetése</value></data>
+  <data name="Borders" xml:space="preserve"><value>Szegélyek</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Meglévő szegélyek megtartása</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Nincs szegély</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Külső szegélyek</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Minden szegély</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Belső szegélyek</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Felső szegély</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Alsó szegély</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Bal oldali szegély</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Jobb oldali szegély</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Vonal színe</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Vonal stílusa</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Vékony</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Közepes</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Vastag</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Dupla</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Szaggatott</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Pontozott</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Az egyesítés csak a bal felső cella tartalmát őrzi meg (soronkénti egyesítésnél soronként egyet). A többi tartalom törlődik. Folytatja?</value></data>
 </root>

@@ -222,4 +222,27 @@ Alternatif olarak, sayfayı kaydetmek ve PDF görüntüleyiciden yazdırmak içi
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Elektronik tablo</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Sayfa sekmelerini sola kaydır</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Sayfa sekmelerini sağa kaydır</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Hücreleri birleştir</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Birleştir ve ortala</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Satırlar boyunca birleştir</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Hücreleri ayır</value></data>
+  <data name="Borders" xml:space="preserve"><value>Kenarlıklar</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Mevcut kenarlıkları koru</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Kenarlık yok</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Dış kenarlıklar</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Tüm kenarlıklar</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>İç kenarlıklar</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Üst kenarlık</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Alt kenarlık</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Sol kenarlık</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Sağ kenarlık</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Çizgi rengi</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Çizgi stili</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>İnce</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Orta</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Kalın</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Çift</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Kesikli</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Noktalı</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Birleştirme yalnızca sol üst hücrenin içeriğini korur (satırlar boyunca birleştirmede her satırda bir hücre). Diğer içerikler kaldırılacak. Devam edilsin mi?</value></data>
 </root>

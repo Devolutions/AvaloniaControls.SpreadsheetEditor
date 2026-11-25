@@ -222,4 +222,27 @@
   <data name="SpreadsheetDocument" xml:space="preserve"><value>电子表格</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>向左滚动工作表标签</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>向右滚动工作表标签</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>合并单元格</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>合并后居中</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>跨列合并</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>取消合并单元格</value></data>
+  <data name="Borders" xml:space="preserve"><value>边框</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>保留现有边框</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>无边框</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>外侧框线</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>所有框线</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>内部框线</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>上框线</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>下框线</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>左框线</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>右框线</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>线条颜色</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>线条样式</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>细线</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>中等线</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>粗线</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>双线</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>虚线</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>点线</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>合并仅保留左上角单元格的内容（跨列合并时，每行保留一个单元格）。其他内容将被删除。是否继续？</value></data>
 </root>

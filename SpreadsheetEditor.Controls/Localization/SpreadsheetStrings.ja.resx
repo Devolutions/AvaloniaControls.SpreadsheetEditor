@@ -222,4 +222,27 @@
   <data name="SpreadsheetDocument" xml:space="preserve"><value>スプレッドシート</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>シート見出しを左にスクロール</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>シート見出しを右にスクロール</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>セルの結合</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>結合して中央揃え</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>行ごとに結合</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>セル結合の解除</value></data>
+  <data name="Borders" xml:space="preserve"><value>罫線</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>既存の罫線を保持</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>枠なし</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>外枠</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>格子</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>内側の罫線</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>上罫線</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>下罫線</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>左罫線</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>右罫線</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>線の色</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>線のスタイル</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>細線</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>中太線</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>太線</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>二重線</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>破線</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>点線</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>結合すると、左上のセルの内容のみが保持されます（行ごとの結合では各行の左端のセル）。その他の内容は削除されます。続行しますか？</value></data>
 </root>

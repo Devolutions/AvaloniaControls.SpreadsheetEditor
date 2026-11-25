@@ -228,8 +228,8 @@
                 <ToggleButton x:Name="BoldButton" Classes="tool" ToolTip.Tip="{loc:Loc Bold}">
                     <TextBlock Text="{loc:Loc BoldGlyph}" FontWeight="Bold" />
                 </ToggleButton>
-                <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="{loc:Loc Italic}">
-                    <TextBlock Text="{loc:Loc ItalicGlyph}" FontStyle="Italic" />
+                <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="{loc:Loc Italic}" AutomationProperties.Name="{loc:Loc Italic}">
+                    <PathIcon Data="M10 4V7H12.21L8.79 15H6V18H14V15H11.79L15.21 7H18V4Z" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="UnderlineButton" Classes="tool" ToolTip.Tip="{loc:Loc Underline}">
                     <TextBlock Text="{loc:Loc UnderlineGlyph}" TextDecorations="Underline" />
@@ -252,6 +252,13 @@
                 </ToggleButton>
 
                 <Border Classes="divider" />
+
+                <Button x:Name="MergeCellsButton" Classes="tool" ToolTip.Tip="{loc:Loc MergeCells}" AutomationProperties.Name="{loc:Loc MergeCells}">
+                    <PathIcon Data="M3 3H9V5H5V9H3ZM15 3H21V9H19V5H15ZM3 15H5V19H9V21H3ZM19 15H21V21H15V19H19ZM4 11H9V8L13 12L9 16V13H4ZM20 11V13H15V16L11 12L15 8V11Z" Width="18" Height="18" />
+                </Button>
+                <Button x:Name="BordersButton" Classes="tool" ToolTip.Tip="{loc:Loc Borders}" AutomationProperties.Name="{loc:Loc Borders}">
+                    <PathIcon Data="M3 3H21V21H3ZM5 5V11H11V5ZM13 5V11H19V5ZM5 13V19H11V13ZM13 13V19H19V13Z" Width="18" Height="18" />
+                </Button>
 
                 <!-- Insert symbol (currency &amp; math). Flyout built in code-behind. -->
                 <Button x:Name="SymbolButton" Classes="tool" Content="&#x3A9;" FontSize="15" ToolTip.Tip="{loc:Loc InsertSymbol}" />

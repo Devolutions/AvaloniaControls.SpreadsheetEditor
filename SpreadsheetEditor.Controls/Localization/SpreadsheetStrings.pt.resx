@@ -222,4 +222,27 @@ Alternativamente, use &quot;Exportar como PDF&quot; para salvar a planilha e imp
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Planilha</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Deslocar os separadores das folhas para a esquerda</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Deslocar os separadores das folhas para a direita</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Mesclar células</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Mesclar e centralizar</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Mesclar por linha</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Desfazer mesclagem</value></data>
+  <data name="Borders" xml:space="preserve"><value>Bordas</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Manter bordas existentes</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Sem bordas</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Bordas externas</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Todas as bordas</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Bordas internas</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Borda superior</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Borda inferior</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Borda esquerda</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Borda direita</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Cor da linha</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Estilo da linha</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Fina</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Média</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Grossa</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Dupla</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Tracejada</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Pontilhada</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>A mesclagem mantém apenas o conteúdo da célula superior esquerda (uma por linha ao mesclar por linha). Os outros conteúdos serão removidos. Continuar?</value></data>
 </root>

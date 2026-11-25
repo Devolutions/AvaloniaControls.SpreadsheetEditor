@@ -222,4 +222,27 @@ In alternativa, utilizza &quot;Esporta come PDF&quot; per salvare il foglio e st
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Foglio di calcolo</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Scorri le schede dei fogli a sinistra</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Scorri le schede dei fogli a destra</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Unisci celle</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Unisci e centra</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Unisci per riga</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Dividi celle</value></data>
+  <data name="Borders" xml:space="preserve"><value>Bordi</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Mantieni i bordi esistenti</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Nessun bordo</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Bordi esterni</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Tutti i bordi</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Bordi interni</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Bordo superiore</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Bordo inferiore</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Bordo sinistro</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Bordo destro</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Colore linea</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Stile linea</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Sottile</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Medio</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Spesso</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Doppio</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Tratteggiato</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Punteggiato</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>L’unione conserva solo il contenuto della cella in alto a sinistra (una per riga per l’unione per riga). Gli altri contenuti verranno eliminati. Continuare?</value></data>
 </root>

@@ -222,4 +222,27 @@ Alternativt kan du bruke &quot;Eksporter som PDF&quot; for å lagre arket og skr
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Regneark</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Rull arkfaner mot venstre</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Rull arkfaner mot høyre</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Slå sammen celler</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Slå sammen og midtstill</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Slå sammen radvis</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Opphev sammenslåing</value></data>
+  <data name="Borders" xml:space="preserve"><value>Kantlinjer</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Behold eksisterende kantlinjer</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Ingen kantlinjer</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Ytre kantlinjer</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Alle kantlinjer</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Indre kantlinjer</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Øvre kantlinje</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Nedre kantlinje</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Venstre kantlinje</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Høyre kantlinje</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Linjefarge</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Linjestil</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Tynn</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Middels</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Tykk</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Dobbel</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Stiplet</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Prikket</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Sammenslåing beholder bare innholdet i cellen øverst til venstre (én per rad ved radvis sammenslåing). Annet innhold fjernes. Vil du fortsette?</value></data>
 </root>

@@ -57,7 +57,7 @@ public sealed class ToolbarAppearanceTests
             await Frame(window);
             if (customButtonTheme) Assert.Equal(0.8, hostButton.Opacity);
             Button italic = editor.FindControl<Button>("ItalicButton")!;
-            TextBlock italicText = Assert.IsType<TextBlock>(italic.Content);
+            PathIcon italicText = Assert.IsType<PathIcon>(italic.Content);
             Color enabledText = Ink(italicText);
             editor.IsReadOnly = true;
             await Frame(window);

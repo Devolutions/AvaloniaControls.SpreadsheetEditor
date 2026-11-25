@@ -222,4 +222,27 @@ Alternativamente, use &quot;Exportar como PDF&quot; para guardar la hoja e impri
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Hoja de cálculo</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Desplazar las pestañas de hojas a la izquierda</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Desplazar las pestañas de hojas a la derecha</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Combinar celdas</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Combinar y centrar</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Combinar por filas</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Separar celdas</value></data>
+  <data name="Borders" xml:space="preserve"><value>Bordes</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Conservar los bordes existentes</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Sin bordes</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Bordes exteriores</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Todos los bordes</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Bordes interiores</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Borde superior</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Borde inferior</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Borde izquierdo</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Borde derecho</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Color de línea</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Estilo de línea</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Fino</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Medio</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Grueso</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Doble</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Discontinuo</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Punteado</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Al combinar solo se conserva el contenido de la celda superior izquierda (una por fila al combinar por filas). Los demás contenidos se eliminarán. ¿Continuar?</value></data>
 </root>

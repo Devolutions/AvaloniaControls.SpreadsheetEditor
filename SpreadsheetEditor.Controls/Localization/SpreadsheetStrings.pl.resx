@@ -222,4 +222,27 @@ Alternatywnie użyj opcji „Eksportuj jako PDF”, aby zapisać arkusz i wydruk
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Arkusz kalkulacyjny</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Przewiń karty arkuszy w lewo</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Przewiń karty arkuszy w prawo</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Scal komórki</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Scal i wyśrodkuj</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Scal wierszami</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Rozdziel komórki</value></data>
+  <data name="Borders" xml:space="preserve"><value>Obramowanie</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Zachowaj istniejące obramowanie</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Brak obramowania</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Obramowanie zewnętrzne</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Wszystkie krawędzie</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Obramowanie wewnętrzne</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Górna krawędź</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Dolna krawędź</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Lewa krawędź</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Prawa krawędź</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Kolor linii</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Styl linii</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Cienka</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Średnia</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Gruba</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Podwójna</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Kreskowana</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Kropkowana</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Scalanie zachowuje tylko zawartość lewej górnej komórki (jednej na wiersz przy scalaniu wierszami). Pozostała zawartość zostanie usunięta. Kontynuować?</value></data>
 </root>

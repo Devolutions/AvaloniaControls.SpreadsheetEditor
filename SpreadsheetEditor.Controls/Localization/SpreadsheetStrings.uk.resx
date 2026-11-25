@@ -222,4 +222,27 @@
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Таблиця</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Прокрутити вкладки аркушів ліворуч</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Прокрутити вкладки аркушів праворуч</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Об’єднати клітинки</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Об’єднати та розмістити в центрі</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Об’єднати за рядками</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Скасувати об’єднання клітинок</value></data>
+  <data name="Borders" xml:space="preserve"><value>Межі</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Зберегти наявні межі</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Без меж</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Зовнішні межі</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Усі межі</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Внутрішні межі</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Верхня межа</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Нижня межа</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Ліва межа</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Права межа</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Колір лінії</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Стиль лінії</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Тонка</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Середня</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Товста</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Подвійна</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Штрихова</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Пунктирна</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Об’єднання зберігає лише вміст верхньої лівої клітинки (по одній у кожному рядку при об’єднанні за рядками). Решту вмісту буде видалено. Продовжити?</value></data>
 </root>

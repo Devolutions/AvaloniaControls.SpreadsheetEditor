@@ -222,4 +222,27 @@
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Таблица</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Прокрутить вкладки листов влево</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Прокрутить вкладки листов вправо</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Объединить ячейки</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Объединить и поместить в центре</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Объединить по строкам</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Отменить объединение ячеек</value></data>
+  <data name="Borders" xml:space="preserve"><value>Границы</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Сохранить существующие границы</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Нет границ</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Внешние границы</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Все границы</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Внутренние границы</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Верхняя граница</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Нижняя граница</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Левая граница</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Правая граница</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Цвет линии</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Стиль линии</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Тонкая</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Средняя</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Толстая</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Двойная</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Штриховая</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Пунктирная</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>При объединении сохраняется только содержимое верхней левой ячейки (по одной в каждой строке при объединении по строкам). Остальное содержимое будет удалено. Продолжить?</value></data>
 </root>

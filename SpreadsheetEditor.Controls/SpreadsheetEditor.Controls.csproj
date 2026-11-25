@@ -34,6 +34,7 @@
 
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Controls.ColorPicker" Version="$(AvaloniaVersion)" />
         <PackageReference Include="Avalonia.Controls.RichTextEditor" Version="12.2.0" />
         <PackageReference Include="Avalonia.Controls.Charts" Version="$(AvaloniaChartsVersion)" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="$(CommunityToolkitMvvmVersion)" />

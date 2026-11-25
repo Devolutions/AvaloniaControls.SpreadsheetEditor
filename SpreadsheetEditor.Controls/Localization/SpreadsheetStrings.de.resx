@@ -222,4 +222,27 @@ Alternativ können Sie „Exportieren als PDF“ verwenden, um das Blatt zu spei
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tabelle</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Blattregister nach links scrollen</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Blattregister nach rechts scrollen</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Zellen verbinden</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Verbinden und zentrieren</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Zeilenweise verbinden</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Zellverbund aufheben</value></data>
+  <data name="Borders" xml:space="preserve"><value>Rahmen</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Vorhandene Rahmen beibehalten</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Kein Rahmen</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Außenrahmen</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Alle Rahmenlinien</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Innere Rahmenlinien</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Rahmenlinie oben</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Rahmenlinie unten</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Rahmenlinie links</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Rahmenlinie rechts</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Linienfarbe</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Linienart</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Dünn</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Mittel</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Dick</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Doppelt</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Gestrichelt</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Gepunktet</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Beim Verbinden bleibt nur der Inhalt der Zelle oben links erhalten (beim zeilenweisen Verbinden je eine pro Zeile). Andere Inhalte werden gelöscht. Fortfahren?</value></data>
 </root>

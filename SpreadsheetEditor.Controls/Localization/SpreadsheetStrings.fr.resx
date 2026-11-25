@@ -222,4 +222,27 @@ Vous pouvez également utiliser « Exporter sous PDF » pour enregistrer la fe
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Tableur</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Faire défiler les onglets de feuille vers la gauche</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Faire défiler les onglets de feuille vers la droite</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Fusionner les cellules</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Fusionner et centrer</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Fusionner par ligne</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Annuler la fusion</value></data>
+  <data name="Borders" xml:space="preserve"><value>Bordures</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Conserver les bordures</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>Aucune bordure</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Bordures extérieures</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>Toutes les bordures</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Bordures intérieures</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Bordure supérieure</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Bordure inférieure</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Bordure gauche</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Bordure droite</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Couleur du trait</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Style du trait</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Fin</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Moyen</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Épais</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Double</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Tirets</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Pointillés</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>La fusion conserve uniquement le contenu de la cellule supérieure gauche (une par ligne pour la fusion par ligne). Les autres contenus seront supprimés. Continuer ?</value></data>
 </root>

@@ -69,6 +69,36 @@ public static partial class XlsxFile
         return result.Count > 0 ? result : Defaults();
     }
 
+    // Content-only used ranges omit blank cells carrying borders. Scan explicit cell records so
+    // formatting an entire row/column does not materialize Excel's whole worksheet on import.
+    private static (int Rows, int Columns) ReadBorderExtent(ZipArchive archive, string part, CancellationToken cancellationToken)
+    {
+        List<(CellAppearance Appearance, string? Horizontal)> styles = ReadAppearanceStyles(archive);
+        bool[] bordered = styles.Select(style => style.Appearance.Left is not null || style.Appearance.Right is not null
+            || style.Appearance.Top is not null || style.Appearance.Bottom is not null).ToArray();
+        if (!bordered.Any(static value => value)) return (0, 0);
+        int rows = 0, columns = 0;
+        using Stream input = archive.GetEntry(part)!.Open();
+        using XmlReader reader = XmlReader.Create(input, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "c")
+            {
+                if (int.TryParse(reader.GetAttribute("s"), out int style) && style >= 0 && style < bordered.Length && bordered[style]
+                    && CellRange.TryParse(reader.GetAttribute("r"), out CellRange range))
+                {
+                    rows = Math.Max(rows, range.Row + range.RowSpan);
+                    columns = Math.Max(columns, range.Column + range.ColumnSpan);
+                }
+                reader.Skip();
+                continue;
+            }
+            reader.Read();
+        }
+        return (rows, columns);
+    }
+
     // Only cell attributes and outline metadata are read; large cell contents never become a DOM.
     private static NativeSheetPresentation ReadNativePresentation(ZipArchive archive, string part,
         List<List<CellData>> rows, CancellationToken cancellationToken)

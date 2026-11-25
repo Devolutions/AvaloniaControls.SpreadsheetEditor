@@ -222,4 +222,27 @@ Alternatively, use "Export as PDF" to save the sheet and print it from a PDF vie
   <data name="SpreadsheetDocument" xml:space="preserve"><value>Spreadsheet</value></data>
   <data name="ScrollSheetTabsLeft" xml:space="preserve"><value>Scroll sheet tabs left</value></data>
   <data name="ScrollSheetTabsRight" xml:space="preserve"><value>Scroll sheet tabs right</value></data>
+  <data name="MergeCells" xml:space="preserve"><value>Merge Cells</value></data>
+  <data name="MergeCenter" xml:space="preserve"><value>Merge &amp; Center</value></data>
+  <data name="MergeAcross" xml:space="preserve"><value>Merge Across</value></data>
+  <data name="UnmergeCells" xml:space="preserve"><value>Unmerge Cells</value></data>
+  <data name="Borders" xml:space="preserve"><value>Borders</value></data>
+  <data name="KeepExistingBorders" xml:space="preserve"><value>Keep existing borders</value></data>
+  <data name="NoBorders" xml:space="preserve"><value>No Borders</value></data>
+  <data name="OutsideBorders" xml:space="preserve"><value>Outside Borders</value></data>
+  <data name="AllBorders" xml:space="preserve"><value>All Borders</value></data>
+  <data name="InsideBorders" xml:space="preserve"><value>Inside Borders</value></data>
+  <data name="TopBorder" xml:space="preserve"><value>Top Border</value></data>
+  <data name="BottomBorder" xml:space="preserve"><value>Bottom Border</value></data>
+  <data name="LeftBorder" xml:space="preserve"><value>Left Border</value></data>
+  <data name="RightBorder" xml:space="preserve"><value>Right Border</value></data>
+  <data name="BorderColor" xml:space="preserve"><value>Line color</value></data>
+  <data name="BorderStyle" xml:space="preserve"><value>Line style</value></data>
+  <data name="BorderThin" xml:space="preserve"><value>Thin</value></data>
+  <data name="BorderMedium" xml:space="preserve"><value>Medium</value></data>
+  <data name="BorderThick" xml:space="preserve"><value>Thick</value></data>
+  <data name="BorderDouble" xml:space="preserve"><value>Double</value></data>
+  <data name="BorderDashed" xml:space="preserve"><value>Dashed</value></data>
+  <data name="BorderDotted" xml:space="preserve"><value>Dotted</value></data>
+  <data name="MergeContentsWarning" xml:space="preserve"><value>Merging keeps only the upper-left cell’s contents (one per row for Merge Across). Other contents will be removed. Continue?</value></data>
 </root>

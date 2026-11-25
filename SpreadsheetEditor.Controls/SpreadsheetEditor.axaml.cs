@@ -148,6 +148,7 @@ public partial class SpreadsheetEditor : UserControl
             this.ForegroundButton, this.BackgroundButton, this.BoldButton, this.ItalicButton,
             this.UnderlineButton, this.StrikethroughButton, this.AlignLeftButton,
             this.AlignCenterButton, this.AlignRightButton, this.SymbolButton,
+            this.MergeCellsButton, this.BordersButton,
             this.ReplaceButton, this.ReplaceAllButton,
         });
 
@@ -158,6 +159,8 @@ public partial class SpreadsheetEditor : UserControl
         this.DataContext = this.vm;
 
         this.Grid.Sheet = this.vm;
+        this.MergeCellsButton.Flyout = new MenuFlyout { ItemsSource = this.Grid.CreateMergeItems() };
+        this.BordersButton.Flyout = this.Grid.CreateBorderFlyout();
         this.Grid.CellActivated += address => this.SetActiveCell(address);
         this.Grid.WorksheetLinkRequested += this.NavigateWorksheetLink;
         this.Grid.EditCompleted += this.CompleteDeferredEditRecalculation;
