@@ -245,4 +245,10 @@
   <data name="BorderDashed" xml:space="preserve"><value>Штрихова</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Пунктирна</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Об’єднання зберігає лише вміст верхньої лівої клітинки (по одній у кожному рядку при об’єднанні за рядками). Решту вмісту буде видалено. Продовжити?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Автоматично</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Інші кольори…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Вигляд</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Світла тема</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Темна тема</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Узгодити аркуш із темою інтерфейсу</value></data>
 </root>

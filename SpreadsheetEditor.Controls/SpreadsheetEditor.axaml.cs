@@ -15,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
@@ -47,6 +48,9 @@ public partial class SpreadsheetEditor : UserControl
 
     public static readonly StyledProperty<bool> IsReadOnlyProperty =
         AvaloniaProperty.Register<SpreadsheetEditor, bool>(nameof(IsReadOnly));
+
+    public static readonly StyledProperty<bool> MatchWorksheetThemeToUIProperty =
+        AvaloniaProperty.Register<SpreadsheetEditor, bool>(nameof(MatchWorksheetThemeToUI), false);
 
     private static readonly Color[] Palette =
     {
@@ -145,7 +149,8 @@ public partial class SpreadsheetEditor : UserControl
         this.editingControls.AddRange(new Control[]
         {
             this.CutButton, this.PasteButton, this.FontFamilyBox, this.FontSizeBox,
-            this.ForegroundButton, this.BackgroundButton, this.BoldButton, this.ItalicButton,
+            this.ForegroundButton, this.AutomaticTextColorButton, this.BackgroundButton, this.BoldButton, this.ItalicButton,
+            this.MoreTextColorsButton, this.MoreFillColorsButton,
             this.UnderlineButton, this.StrikethroughButton, this.AlignLeftButton,
             this.AlignCenterButton, this.AlignRightButton, this.SymbolButton,
             this.MergeCellsButton, this.BordersButton,
@@ -159,6 +164,8 @@ public partial class SpreadsheetEditor : UserControl
         this.DataContext = this.vm;
 
         this.Grid.Sheet = this.vm;
+        this.Grid.SetMatchWorksheetThemeToUI(this.MatchWorksheetThemeToUI);
+        this.AutomaticTextColorSwatch.Background = this.Grid.AutomaticForeground;
         this.MergeCellsButton.Flyout = new MenuFlyout { ItemsSource = this.Grid.CreateMergeItems() };
         this.BordersButton.Flyout = this.Grid.CreateBorderFlyout();
         this.Grid.CellActivated += address => this.SetActiveCell(address);
@@ -188,8 +195,17 @@ public partial class SpreadsheetEditor : UserControl
 
         this.CreateFormulaBar();
 
-        this.BuildPalette(this.ForegroundPalette, this.ApplyForeground);
+        this.BuildPalette(this.ForegroundPalette, color => this.ApplyForeground(color));
+        this.AutomaticTextColorButton.Click += (_, _) =>
+        {
+            this.ApplyForeground(null);
+            this.ForegroundButton.Flyout?.Hide();
+        };
         this.BuildPalette(this.BackgroundPalette, this.ApplyBackground);
+        this.MoreTextColorsButton.Click += (_, _) => this.ShowMoreColors(this.ForegroundButton,
+            (this.ForegroundSwatch.Background as ISolidColorBrush)?.Color ?? Colors.Black, color => this.ApplyForeground(color));
+        this.MoreFillColorsButton.Click += (_, _) => this.ShowMoreColors(this.BackgroundButton,
+            (this.BackgroundSwatch.Background as ISolidColorBrush)?.Color ?? Colors.White, this.ApplyBackground);
 
         // B/I/U + text color route to the in-cell editor (per-character when the rich editor is
         // active; whole-cell otherwise). Guarded so SyncToolbar setting IsChecked doesn't re-toggle.
@@ -286,6 +302,13 @@ public partial class SpreadsheetEditor : UserControl
         set => this.SetValue(IsReadOnlyProperty, value);
     }
 
+    /// <summary>Follows the UI theme for the worksheet surface and Automatic text. Disabled by default; never changes saved formatting.</summary>
+    public bool MatchWorksheetThemeToUI
+    {
+        get => this.GetValue(MatchWorksheetThemeToUIProperty);
+        set => this.SetValue(MatchWorksheetThemeToUIProperty, value);
+    }
+
     // The selected cell range (anchor↔focus), mirroring RichTextEditor's selection surface.
     public CellRange SelectedRange => this.Grid.SelectionRange;
 
@@ -311,6 +334,10 @@ public partial class SpreadsheetEditor : UserControl
         {
             this.ApplyReadOnly();
             this.RebuildTabs();
+        }
+        else if (change.Property == MatchWorksheetThemeToUIProperty && this.Grid is not null)
+        {
+            this.Grid.SetMatchWorksheetThemeToUI(this.MatchWorksheetThemeToUI);
         }
     }
 
@@ -1625,6 +1652,11 @@ public partial class SpreadsheetEditor : UserControl
 
         this.editingControls.AddRange(new Control[] { chart, autoSum, functions, addRow, addColumn });
 
+        menu.Items.Add(new Separator());
+        MenuItem sheetTheme = new() { Header = Get(S.MatchWorksheetThemeToUI), ToggleType = MenuItemToggleType.CheckBox };
+        sheetTheme.Bind(MenuItem.IsCheckedProperty, new Binding(nameof(this.MatchWorksheetThemeToUI)) { Source = this, Mode = BindingMode.TwoWay });
+        menu.Items.Add(sheetTheme);
+
         return menu;
     }
 
@@ -2727,14 +2759,14 @@ public partial class SpreadsheetEditor : UserControl
         }
     }
 
-    private void ApplyForeground(Color color)
+    private void ApplyForeground(Color? color)
     {
-        this.ForegroundSwatch.Background = new SolidColorBrush(color);
-        if (this.suppressToolbar)
+        if (this.suppressToolbar || this.IsReadOnly)
         {
             return;
         }
 
+        this.ForegroundSwatch.Background = color is { } selected ? new SolidColorBrush(selected) : this.Grid.AutomaticForeground;
         // Route through the editor: per-character when editing, else whole-selection.
         this.Grid.ApplyForegroundToCell(color);
     }
@@ -2754,7 +2786,7 @@ public partial class SpreadsheetEditor : UserControl
             this.ItalicButton.IsChecked = cell.Italic;
             this.UnderlineButton.IsChecked = cell.Underline;
             this.StrikethroughButton.IsChecked = cell.Strikethrough;
-            this.ForegroundSwatch.Background = cell.Foreground ?? Brushes.Black;
+            this.ForegroundSwatch.Background = cell.Foreground ?? this.Grid.AutomaticForeground;
             this.BackgroundSwatch.Background = cell.Background ?? Brushes.Transparent;
 
             this.FontFamilyBox.SelectedItem = cell.FontFamily ?? DefaultFontName;
@@ -2815,6 +2847,47 @@ public partial class SpreadsheetEditor : UserControl
         this.AlignCenterButton.IsChecked = alignment == TextAlignment.Center;
         this.AlignRightButton.IsChecked = alignment == TextAlignment.Right;
         this.suppressToolbar = false;
+    }
+
+    private void ShowMoreColors(Button owner, Color initial, Action<Color> apply)
+    {
+        if (this.IsReadOnly || owner.Flyout is not Flyout palette)
+        {
+            return;
+        }
+        SpreadsheetViewModel sheet = this.vm;
+        CellRange selection = this.Grid.SelectionRange;
+        ColorView picker = EditorColorPicker.CreateView(initial.A == 0 ? Colors.White : initial);
+        picker.Width = 320;
+        AutomationProperties.SetName(picker, Get(S.MoreColors));
+        Button confirm = new() { Content = Get(S.OK), MinWidth = 80 };
+        Button cancel = new() { Content = Get(S.Cancel), MinWidth = 80 };
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(confirm);
+        StackPanel content = new() { Spacing = 8 };
+        content.Children.Add(picker);
+        content.Children.Add(buttons);
+        Flyout more = new() { Content = content };
+        confirm.Click += (_, _) =>
+        {
+            if (!this.IsReadOnly && ReferenceEquals(this.vm, sheet) && this.Grid.SelectionRange == selection)
+            {
+                apply(picker.Color);
+            }
+            more.Hide();
+        };
+        cancel.Click += (_, _) => more.Hide();
+        more.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(owner.Flyout, more))
+            {
+                owner.Flyout = palette;
+            }
+        };
+        palette.Hide();
+        owner.Flyout = more;
+        more.ShowAt(owner);
     }
 
     private void BuildPalette(WrapPanel panel, Action<Color> apply)

@@ -245,4 +245,10 @@ Alternativt kan du bruke &quot;Eksporter som PDF&quot; for å lagre arket og skr
   <data name="BorderDashed" xml:space="preserve"><value>Stiplet</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Prikket</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Sammenslåing beholder bare innholdet i cellen øverst til venstre (én per rad ved radvis sammenslåing). Annet innhold fjernes. Vil du fortsette?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatisk</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Flere farger…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Vis</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Lyst tema</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Mørkt tema</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Tilpass regnearket til grensesnittets tema</value></data>
 </root>

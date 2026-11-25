@@ -10,6 +10,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using SpreadsheetEditor.Controls.Localization;
 
 public partial class MainWindow : Window
@@ -49,13 +50,17 @@ public partial class MainWindow : Window
         this.ExportPdfItem.Click += this.OnExportPdf;
         this.PrintItem.Click += this.OnPrint;
         this.CloseItem.Click += this.OnClose;
-        this.ReadOnlyCheckBox.IsCheckedChanged += (_, _) =>
+        this.ReadOnlyMenuItem.Click += (_, _) =>
         {
-            bool readOnly = this.ReadOnlyCheckBox.IsChecked == true;
+            bool readOnly = this.ReadOnlyMenuItem.IsChecked;
             this.Editor.IsReadOnly = readOnly;
             this.SaveItem.IsEnabled = !readOnly;
             this.SaveAsItem.IsEnabled = !readOnly;
         };
+        this.LightThemeMenuItem.Click += (_, _) => this.RequestedThemeVariant = ThemeVariant.Light;
+        this.DarkThemeMenuItem.Click += (_, _) => this.RequestedThemeVariant = ThemeVariant.Dark;
+        this.ActualThemeVariantChanged += (_, _) => this.SyncThemeMenu();
+        this.SyncThemeMenu();
 
         // Ctrl+P prints (the grid's key handler ignores it, so it bubbles up to here).
         this.KeyDown += (_, e) =>
@@ -71,6 +76,12 @@ public partial class MainWindow : Window
     }
 
     private void OnPrint(object? sender, RoutedEventArgs e) => this.Editor.PrintPdf();
+
+    private void SyncThemeMenu()
+    {
+        this.LightThemeMenuItem.IsChecked = this.ActualThemeVariant == ThemeVariant.Light;
+        this.DarkThemeMenuItem.IsChecked = this.ActualThemeVariant == ThemeVariant.Dark;
+    }
 
     private async void OnExportPdf(object? sender, RoutedEventArgs e)
     {

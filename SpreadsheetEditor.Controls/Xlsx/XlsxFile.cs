@@ -307,6 +307,7 @@ public static partial class XlsxFile
         Dictionary<(int Row, int Column), TableCellStyle> tableStyles =
             BuildTableStyles(archive, tables, slice.RowCount, slice.ColumnCount);
         Dictionary<(int Row, int Column), CellData> values = new();
+        HashSet<(int Row, int Column)> automaticTableFonts = new();
         int lastRow = slice.RowCount;
         int lastColumn = slice.ColumnCount;
         foreach (XElement cell in cells)
@@ -319,6 +320,10 @@ public static partial class XlsxFile
 
             int styleIndex = int.TryParse(cell.Attribute("s")?.Value, out int parsedStyle) ? parsedStyle : 0;
             PreviewCellStyle style = styleIndex >= 0 && styleIndex < styles.Count ? styles[styleIndex] : default;
+            if (style.AutomaticForeground && tableStyles.ContainsKey((row + 1, column + 1)))
+            {
+                automaticTableFonts.Add((row, column));
+            }
             (string text, string? formulaResult) = PreviewCellText(cell, sharedStrings, style.NumberFormat);
             CellValue? formulaValue = ReadPreviewFormulaValue(cell, sharedStrings);
             double? formulaNumber = formulaValue is { Kind: CellValueKind.Number } cachedNumber
@@ -354,7 +359,7 @@ public static partial class XlsxFile
                     value = value with
                     {
                         Background = value.Background ?? tableStyle.Background,
-                        Foreground = value.Foreground ?? tableStyle.Foreground,
+                        Foreground = automaticTableFonts.Contains((row, column)) ? value.Foreground : value.Foreground ?? tableStyle.Foreground,
                         Bold = value.Bold || tableStyle.Bold,
                     };
                 }
@@ -729,7 +734,9 @@ public static partial class XlsxFile
                 font?.Element(Ssml + "name")?.Attribute("val")?.Value ?? defaultStyle.FontFamily,
                 numberFormat,
                 horizontal is "center" or "centerContinuous" ? TextAlignment.Center : horizontal == "right" ? TextAlignment.Right : TextAlignment.Left,
-                wrapText));
+                wrapText,
+                font?.Element(Ssml + "color")?.Attribute("auto")?.Value is "1" or "true"
+                    || font?.Element(Ssml + "color")?.Attribute("indexed")?.Value == "64"));
         }
 
         return result.Count == 0 ? new List<PreviewCellStyle> { defaultStyle } : result;
@@ -906,7 +913,8 @@ public static partial class XlsxFile
         string? FontFamily,
         string? NumberFormat,
         TextAlignment Alignment,
-        bool WrapText);
+        bool WrapText,
+        bool AutomaticForeground = false);
 
     private sealed record PreviewWorksheetSlice(
         List<XElement> Cells,
@@ -941,11 +949,13 @@ public static partial class XlsxFile
         CellRange? autoFilterRange;
         List<SheetColumnFilter> filters = new();
         List<SheetTable> tableDefinitions;
+        HashSet<(int Row, int Column)> automaticTableFonts;
         using (ZipArchive archive = new(new MemoryStream(bytes, writable: false), ZipArchiveMode.Read))
         {
             string partPath = WorksheetPartPath(archive, sheetIndex);
             autoFilterRange = ReadAutoFilterRange(archive, partPath, cancellationToken, filters);
             tableDefinitions = ReadTableDefinitions(archive, partPath, cancellationToken, filters);
+            automaticTableFonts = ReadAutomaticTableFonts(archive, partPath, tableDefinitions, cancellationToken);
             (int borderRows, int borderColumns) = ReadBorderExtent(archive, partPath, cancellationToken);
             lastRow = Math.Max(lastRow, borderRows);
             lastColumn = Math.Max(lastColumn, borderColumns);
@@ -1005,14 +1015,18 @@ public static partial class XlsxFile
                     styleCache[xlStyle] = importedStyle;
                 }
 
-                Color? foreground = importedStyle.Foreground;
+                bool automaticFont = automaticTableFonts.Contains((r - 1, c - 1));
+                Color? foreground = automaticFont ? null : importedStyle.Foreground;
                 Color? background = importedStyle.Background;
                 bool bold = importedStyle.Bold;
                 if (tableStyles.TryGetValue((r, c), out TableCellStyle tableStyle))
                 {
                     // Direct cell formatting wins; table formatting supplies only missing values.
                     background ??= tableStyle.Background;
-                    foreground ??= tableStyle.Foreground;
+                    if (!automaticFont)
+                    {
+                        foreground ??= tableStyle.Foreground;
+                    }
                     bold |= tableStyle.Bold;
                 }
 
@@ -2303,10 +2317,7 @@ public static partial class XlsxFile
                     cell.Style.Font.Strikethrough = true;
                 }
 
-                if (cellData.Foreground is { } fg)
-                {
-                    cell.Style.Font.FontColor = ToXl(fg);
-                }
+                cell.Style.Font.FontColor = cellData.Foreground is { } fg ? ToXl(fg) : XLColor.FromIndex(64);
 
                 if (cellData.Background is { } bg)
                 {

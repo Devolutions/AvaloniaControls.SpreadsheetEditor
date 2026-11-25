@@ -52,20 +52,34 @@ public partial class SpreadsheetGrid : UserControl
     private static readonly IBrush AnchorBorder = new SolidColorBrush(Color.FromRgb(0x7F, 0xB0, 0xEE)); // lighter than SelectionBorder
     private static readonly IBrush SelectionFillBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x1A, 0x73, 0xE8));
 
-    // Excel-style dark mode: the CHROME (row/column headers, and the host's toolbar/formula bar/tabs)
-    // follows the light/dark theme, but the SHEET PANEL does not — cells, gridlines, cell text and
-    // charts stay light in both themes, exactly like Excel, which keeps the sheet a white page.
-    // These are fixed rather than theme-resolved for that reason.
-    private static readonly IBrush SheetGridLine = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0));
-    private static readonly IBrush SheetSurface = Brushes.White;
+    // Mutable per-grid brushes update retained cells without changing document colours or rebuilding the grid.
+    private readonly SolidColorBrush sheetGridLine = new(Color.FromArgb(0x30, 0, 0, 0));
+    private readonly SolidColorBrush sheetSurface = new(Colors.White);
+    private readonly SolidColorBrush cellText = new(Color.FromRgb(0x20, 0x20, 0x20));
+    private readonly SolidColorBrush linkText = new(Color.FromRgb(0x05, 0x63, 0xC1));
+    private readonly SolidColorBrush filterHighlight = new(Color.FromRgb(0xDE, 0xEB, 0xFF));
+    private bool matchWorksheetThemeToUI;
 
-    // Cell text is set explicitly because the sheet stays light: the inherited dark-theme foreground
-    // would be near-white and invisible against the white cells. Per-run colors still override it.
-    private static readonly IBrush CellText = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
-    private static readonly IBrush LinkText = new SolidColorBrush(Color.FromRgb(0x05, 0x63, 0xC1));
+    internal IBrush AutomaticForeground => this.cellText;
 
-    // Chrome brushes, re-resolved from the active ThemeVariant in ApplyTheme() (on attach + on theme
-    // change) so the headers darken while the sheet panel stays light.
+    internal void SetMatchWorksheetThemeToUI(bool enabled)
+    {
+        this.matchWorksheetThemeToUI = enabled;
+        this.ApplySheetTheme();
+    }
+
+    private void ApplySheetTheme()
+    {
+        bool dark = this.matchWorksheetThemeToUI && this.ActualThemeVariant == ThemeVariant.Dark;
+        this.sheetSurface.Color = dark ? Color.FromRgb(0x20, 0x20, 0x20) : Colors.White;
+        this.cellText.Color = dark ? Color.FromRgb(0xF3, 0xF3, 0xF3) : Color.FromRgb(0x20, 0x20, 0x20);
+        this.sheetGridLine.Color = dark ? Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x30, 0, 0, 0);
+        this.linkText.Color = dark ? Color.FromRgb(0x6C, 0xB6, 0xFF) : Color.FromRgb(0x05, 0x63, 0xC1);
+        this.filterHighlight.Color = dark ? Color.FromRgb(0x26, 0x45, 0x6C) : Color.FromRgb(0xDE, 0xEB, 0xFF);
+        this.editor.SetAutomaticForeground(this.cellText.Color);
+    }
+
+    // Chrome follows the UI theme independently of the worksheet preference.
     private IBrush headerBackground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF3, 0xF3));
     private IBrush headerText = new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
     private IBrush headerLine = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0));
@@ -411,8 +425,12 @@ public partial class SpreadsheetGrid : UserControl
         this.AddHandler(KeyDownEvent, this.OnNavigationKey, RoutingStrategies.Tunnel);
         this.AddHandler(TextInputEvent, this.OnTextInput, RoutingStrategies.Tunnel);
 
-        this.cells.Background = SheetSurface;
-        this.cellScroller.Background = SheetSurface;
+        this.cells.Background = this.sheetSurface;
+        this.cellScroller.Background = this.sheetSurface;
+        if (this.fillHandle.Child is Border handle)
+        {
+            handle.BorderBrush = this.sheetSurface;
+        }
         // Re-resolve the palette whenever the light/dark theme changes at runtime.
         this.ActualThemeVariantChanged += (_, _) => this.ApplyTheme();
     }
@@ -430,11 +448,10 @@ public partial class SpreadsheetGrid : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
-    // Resolves the CHROME brushes (row/column headers) from the active light/dark theme and re-renders.
-    // The sheet panel — surface, gridlines, cell text, charts — is deliberately theme-independent: Excel's
-    // dark mode darkens the surrounding UI but keeps the cells a light page. See the brush declarations.
+    // Chrome always follows the UI; the worksheet follows it only when explicitly enabled.
     private void ApplyTheme()
     {
+        this.ApplySheetTheme();
         bool dark = this.ActualThemeVariant == ThemeVariant.Dark;
         this.headerBackground = new SolidColorBrush(dark ? Color.FromRgb(0x2D, 0x2D, 0x30) : Color.FromRgb(0xF3, 0xF3, 0xF3));
         this.headerText = new SolidColorBrush(dark ? Color.FromRgb(0xC8, 0xC8, 0xC8) : Color.FromRgb(0x60, 0x60, 0x60));
@@ -1526,7 +1543,7 @@ public partial class SpreadsheetGrid : UserControl
             Content = new PathIcon
             {
                 Data = Geometry.Parse("M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.21-.37-.28-.59-.21l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.42-.48-.42h-3.84c-.24 0-.44.18-.47.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.21L2.74 8.88c-.12.21-.08.47.12.61l2.03 1.58c-.05.31-.09.65-.09.94s.02.63.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.21.37.28.59.21l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.24.42.48.42h3.84c.24 0 .44-.18.47-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.21l1.92-3.32c.12-.21.07-.47-.12-.61ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"),
-                Width = 14, Height = 14, Foreground = CellText,
+                Width = 14, Height = 14, Foreground = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20)),
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
             },
@@ -1564,7 +1581,7 @@ public partial class SpreadsheetGrid : UserControl
         Border card = new()
         {
             Background = Brushes.White,
-            BorderBrush = selected ? SelectionBorder : SheetGridLine,
+            BorderBrush = selected ? SelectionBorder : this.sheetGridLine,
             BorderThickness = new Thickness(selected ? 2 : 1),
             Child = content,
             Width = width,
@@ -1671,7 +1688,7 @@ public partial class SpreadsheetGrid : UserControl
             // gridline look so the snapshot (and the print/PDF) never shows the selection highlight.
             IBrush? borderBrush = card.BorderBrush;
             Thickness borderThickness = card.BorderThickness;
-            card.BorderBrush = SheetGridLine;
+            card.BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0));
             card.BorderThickness = new Thickness(1);
             ITransform? transform = card.RenderTransform;
             card.RenderTransform = null; // snapshot at the card's logical size, not the zoomed size
@@ -2250,9 +2267,8 @@ public partial class SpreadsheetGrid : UserControl
             TextTrimming = TextTrimming.CharacterEllipsis,
             FontSize = cell.FontSize * this.zoom,
             TextAlignment = cell.TextAlignment,
-            // The sheet stays light in dark mode, so cell text must be explicitly dark — the
-            // inherited theme foreground would be near-white. Per-run colors still override this.
-            Foreground = CellText,
+            // Automatic text follows the sheet palette; explicit run colours take precedence.
+            Foreground = this.cellText,
             IsHitTestVisible = false,
         };
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))
@@ -2280,9 +2296,8 @@ public partial class SpreadsheetGrid : UserControl
             TextWrapping = cell.WrapText ? TextWrapping.Wrap : TextWrapping.NoWrap,
             FontSize = cell.FontSize * this.zoom,
             TextAlignment = cell.TextAlignment,
-            // The sheet stays light in dark mode, so cell text must be explicitly dark — the
-            // inherited theme foreground would be near-white. Per-run colors still override this.
-            Foreground = CellText,
+            // Explicit run colours override the worksheet's Automatic foreground.
+            Foreground = this.cellText,
         };
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))
         {
@@ -2337,7 +2352,7 @@ public partial class SpreadsheetGrid : UserControl
             text.TextAlignment = TextAlignment.Right;
             cellContent = Layered(new TextBlock
             {
-                Text = accountingSymbol, Foreground = CellText, FontSize = text.FontSize,
+                Text = accountingSymbol, Foreground = this.cellText, FontSize = text.FontSize,
                 Margin = new Thickness(4, 0), VerticalAlignment = text.VerticalAlignment,
                 HorizontalAlignment = HorizontalAlignment.Left,
             }, cellContent);
@@ -2380,15 +2395,15 @@ public partial class SpreadsheetGrid : UserControl
                 Margin = new Thickness(0, 0, 2 * this.zoom, 0),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
-                Background = this.sheet.HasColumnFilter(column, row) ? new SolidColorBrush(Color.FromRgb(0xDE, 0xEB, 0xFF)) : Brushes.White,
-                BorderBrush = SheetGridLine,
+                Background = this.sheet.HasColumnFilter(column, row) ? this.filterHighlight : this.sheetSurface,
+                BorderBrush = this.sheetGridLine,
                 BorderThickness = new Thickness(1),
                 Focusable = true,
                 Cursor = new Cursor(StandardCursorType.Hand),
                 Child = new TextBlock
                 {
                     Text = "▼",
-                    Foreground = CellText,
+                    Foreground = this.cellText,
                     FontSize = 9 * this.zoom,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -2420,7 +2435,7 @@ public partial class SpreadsheetGrid : UserControl
         Border border = new()
         {
             Tag = new CellAddress(row, column),
-            BorderBrush = SheetGridLine,
+            BorderBrush = this.sheetGridLine,
             // A spilling cell drops the gridline between it and the empty neighbour it overflows into,
             // so the overlaid text reads as continuous. The cell keeps its own hit-testable box.
             BorderThickness = new Thickness(0, 0, omitRightBorder ? 0 : 1, 1),
@@ -2717,7 +2732,7 @@ public partial class SpreadsheetGrid : UserControl
         return grid;
     }
 
-    private static void RenderInlines(TextBlock target, CellViewModel cell, SheetCellValueRule? valueRule = null)
+    private void RenderInlines(TextBlock target, CellViewModel cell, SheetCellValueRule? valueRule = null)
     {
         target.Inlines ??= new InlineCollection();
         target.Inlines.Clear();
@@ -2800,7 +2815,7 @@ public partial class SpreadsheetGrid : UserControl
             }
             else if (!string.IsNullOrWhiteSpace(cell.Hyperlink))
             {
-                run.Foreground = LinkText;
+                run.Foreground = this.linkText;
             }
             target.Inlines.Add(run);
         }
@@ -2911,8 +2926,8 @@ public partial class SpreadsheetGrid : UserControl
         // Position the shared editor over the anchor cell and load that cell's content.
         this.PlaceSheetControl(this.editorHost, row, col, rowSpan, colSpan);
         CellViewModel? cell = this.sheet.GetCell(new CellAddress(row, col));
-        // Opaque background (cell fill, else white) so the editor covers the display text beneath it.
-        this.editorHost.Background = cell?.Background ?? SheetSurface;
+        // Opaque background (explicit fill or sheet surface) covers the display text beneath the editor.
+        this.editorHost.Background = cell?.Background ?? this.sheetSurface;
         if (cell is not null && editing)
         {
             this.editor.Load(cell);
@@ -3035,7 +3050,9 @@ public partial class SpreadsheetGrid : UserControl
         }
     }
 
-    public void ApplyForegroundToCell(Color color)
+    public void ApplyForegroundToCell(Color color) => this.ApplyForegroundToCell((Color?)color);
+
+    public void ApplyForegroundToCell(Color? color)
     {
         if (this.ReadOnly)
         {

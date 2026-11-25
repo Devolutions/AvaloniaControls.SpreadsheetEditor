@@ -239,4 +239,10 @@ public enum EditorString
     BorderDashed,
     BorderDotted,
     MergeContentsWarning,
+    Automatic,
+    MoreColors,
+    SampleViewMenu,
+    LightTheme,
+    DarkTheme,
+    MatchWorksheetThemeToUI,
 }

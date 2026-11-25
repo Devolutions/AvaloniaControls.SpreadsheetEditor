@@ -245,4 +245,10 @@
   <data name="BorderDashed" xml:space="preserve"><value>Штриховая</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Пунктирная</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>При объединении сохраняется только содержимое верхней левой ячейки (по одной в каждой строке при объединении по строкам). Остальное содержимое будет удалено. Продолжить?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Автоматически</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Другие цвета…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Вид</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Светлая тема</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Тёмная тема</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Использовать тему интерфейса для листа</value></data>
 </root>

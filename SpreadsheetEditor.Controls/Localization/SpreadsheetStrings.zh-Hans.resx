@@ -245,4 +245,10 @@
   <data name="BorderDashed" xml:space="preserve"><value>虚线</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>点线</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>合并仅保留左上角单元格的内容（跨列合并时，每行保留一个单元格）。其他内容将被删除。是否继续？</value></data>
+  <data name="Automatic" xml:space="preserve"><value>自动</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>其他颜色…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>视图(_V)</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>浅色主题</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>深色主题</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>工作表与界面主题保持一致</value></data>
 </root>

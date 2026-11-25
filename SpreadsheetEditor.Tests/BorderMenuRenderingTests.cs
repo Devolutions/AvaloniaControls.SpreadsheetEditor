@@ -139,6 +139,21 @@ public sealed class BorderMenuRenderingTests
             })).ToArray();
             Assert.NotEmpty(inkColumns);
             Assert.True(inkColumns[0] > 0 && inkColumns[^1] < pixels.Width - 1);
+            bool IsInk(SKBitmap bitmap, int x, int y)
+            {
+                SKColor pixel = bitmap.GetPixel(x, y);
+                return pixel.Alpha > 60 && pixel.Red < 180 && pixel.Green < 180 && pixel.Blue < 180;
+            }
+            int[] inkRows = Enumerable.Range(0, pixels.Height)
+                .Where(y => Enumerable.Range(0, pixels.Width).Any(x => IsInk(pixels, x, y))).ToArray();
+            int RowWidth(int y) => Enumerable.Range(0, pixels.Width).Count(x => IsInk(pixels, x, y));
+            int middleWidth = RowWidth(inkRows[inkRows.Length / 2]);
+            Assert.True(RowWidth(inkRows[0]) > middleWidth, "The italic I needs a top stroke.");
+            Assert.True(RowWidth(inkRows[^1]) > middleWidth, "The italic I needs a bottom stroke.");
+            using SKBitmap bold = Render(editor.FindControl<Button>("BoldButton")!);
+            int boldHeight = Enumerable.Range(0, bold.Height)
+                .Count(y => Enumerable.Range(0, bold.Width).Any(x => IsInk(bold, x, y)));
+            Assert.InRange(inkRows.Length, boldHeight - 2, boldHeight + 2);
         }
         finally { await Close(editor, window); }
     }

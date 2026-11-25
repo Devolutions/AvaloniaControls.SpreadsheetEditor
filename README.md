@@ -122,6 +122,10 @@ xmlns:se="clr-namespace:SpreadsheetEditor.Controls;assembly=SpreadsheetEditor.Co
 <se:SpreadsheetEditor x:Name="Editor" />
 ```
 
+The worksheet stays light by default. Enable `Editor.MatchWorksheetThemeToUI` to make the
+worksheet and Automatic text follow the surrounding UI theme. Explicit cell colours and saved
+formatting are preserved. The editor's More menu and SampleApp's View menu expose the same toggle.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

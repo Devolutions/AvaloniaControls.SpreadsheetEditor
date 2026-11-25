@@ -168,7 +168,7 @@ public partial class SpreadsheetGrid
         foreach (var entry in this.chartCards)
         {
             bool selected = ReferenceEquals(entry.Card.Tag, this.selectedChart);
-            entry.Card.BorderBrush = selected ? SelectionBorder : SheetGridLine;
+            entry.Card.BorderBrush = selected ? SelectionBorder : this.sheetGridLine;
             entry.Card.BorderThickness = new Thickness(selected ? 2 : 1);
         }
     }

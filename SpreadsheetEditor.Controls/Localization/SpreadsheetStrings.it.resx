@@ -245,4 +245,10 @@ In alternativa, utilizza &quot;Esporta come PDF&quot; per salvare il foglio e st
   <data name="BorderDashed" xml:space="preserve"><value>Tratteggiato</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Punteggiato</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>L’unione conserva solo il contenuto della cella in alto a sinistra (una per riga per l’unione per riga). Gli altri contenuti verranno eliminati. Continuare?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatico</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Altri colori…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Visualizza</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Tema chiaro</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Tema scuro</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Adatta il foglio al tema dell’interfaccia</value></data>
 </root>

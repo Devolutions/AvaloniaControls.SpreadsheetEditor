@@ -99,6 +99,43 @@ public static partial class XlsxFile
         return (rows, columns);
     }
 
+    private static HashSet<(int Row, int Column)> ReadAutomaticTableFonts(ZipArchive archive, string part,
+        IReadOnlyList<SheetTable> tables, CancellationToken cancellationToken)
+    {
+        HashSet<(int Row, int Column)> result = new();
+        if (tables.Count == 0)
+        {
+            return result;
+        }
+        bool[] automaticStyles = ReadPreviewStyles(archive).Select(static style => style.AutomaticForeground).ToArray();
+        if (!automaticStyles.Any(static automatic => automatic))
+        {
+            return result;
+        }
+        // ClosedXML resolves table fonts before returning cell.Style, so retain explicit Automatic separately.
+        using Stream input = archive.GetEntry(part)!.Open();
+        using XmlReader reader = XmlReader.Create(input, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+        while (!reader.EOF)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "c")
+            {
+                int style = int.TryParse(reader.GetAttribute("s"), out int parsed) ? parsed : 0;
+                if (style >= 0 && style < automaticStyles.Length && automaticStyles[style]
+                    && TryParseCellAddress(reader.GetAttribute("r"), out int row, out int column)
+                    && tables.Any(table => row >= table.Range.Row && row < table.Range.Row + table.Range.RowSpan
+                        && column >= table.Range.Column && column < table.Range.Column + table.Range.ColumnSpan))
+                {
+                    result.Add((row, column));
+                }
+                reader.Skip();
+                continue;
+            }
+            reader.Read();
+        }
+        return result;
+    }
+
     // Only cell attributes and outline metadata are read; large cell contents never become a DOM.
     private static NativeSheetPresentation ReadNativePresentation(ZipArchive archive, string part,
         List<List<CellData>> rows, CancellationToken cancellationToken)
@@ -227,6 +264,14 @@ public static partial class XlsxFile
         XDocument styles = ReadXmlPart(archive, "xl/styles.xml");
         XElement fonts = styles.Root!.Element(Ssml + "fonts")!, fills = styles.Root.Element(Ssml + "fills")!,
             borders = styles.Root.Element(Ssml + "borders")!, xfs = styles.Root.Element(Ssml + "cellXfs")!;
+        // Indexed 64 is ClosedXML's automatic colour; use Excel's explicit automatic font marker.
+        foreach (XElement color in fonts.Elements().Elements(Ssml + "color"))
+        {
+            if (color.Attribute("indexed")?.Value == "64")
+            {
+                color.ReplaceWith(new XElement(Ssml + "color", new XAttribute("auto", 1)));
+            }
+        }
         List<XElement> originalFonts = fonts.Elements().ToList(), originalXfs = xfs.Elements().ToList();
         Dictionary<(int Base, CellAppearance Appearance), int> styleIds = new();
         Dictionary<string, int> fillIds = new(), borderIds = new(), fontIds = new();

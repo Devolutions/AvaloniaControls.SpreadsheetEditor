@@ -245,4 +245,10 @@ Případně použijte &quot;Exportovat jako PDF&quot; k uložení listu a vytiš
   <data name="BorderDashed" xml:space="preserve"><value>Čárkovaná</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Tečkovaná</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Sloučení zachová pouze obsah levé horní buňky (jedné v každém řádku při sloučení po řádcích). Ostatní obsah bude odstraněn. Pokračovat?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatická</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Další barvy…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Zobrazení</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Světlý motiv</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Tmavý motiv</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Přizpůsobit list motivu rozhraní</value></data>
 </root>

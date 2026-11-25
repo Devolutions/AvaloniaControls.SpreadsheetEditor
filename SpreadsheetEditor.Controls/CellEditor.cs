@@ -22,9 +22,8 @@ using global::SpreadsheetEditor.Controls.ViewModels;
 // which route to the rich selection or the whole-cell flags accordingly.
 public class CellEditor : Decorator
 {
-    // Cell text/caret color. Fixed rather than theme-resolved because the sheet panel stays a light
-    // page in both themes, matching Excel's dark mode — see SpreadsheetGrid's CellText.
-    private static readonly IBrush CellForeground = new SolidColorBrush(Avalonia.Media.Color.FromRgb(0x20, 0x20, 0x20));
+    // This brush is also the marker for Automatic in the rich document, so theme changes never become saved font colours.
+    private readonly SolidColorBrush automaticForeground = new(Avalonia.Media.Color.FromRgb(0x20, 0x20, 0x20));
 
     private readonly RichTextEditor? rich;
     private readonly TextBox? plain;
@@ -59,11 +58,9 @@ public class CellEditor : Decorator
                 // Stripping the chrome also drops the default selection/caret brushes — set them so
                 // click-drag text selection shows a blue highlight and the caret is visible.
                 SelectionBrush = new SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0x1A, 0x73, 0xE8)),
-                // The cell canvas stays light in both themes (Excel-style dark mode), so the edited
-                // text and caret must be dark — the inherited dark-theme foreground would be
-                // near-white and invisible. Per-run colors still override the foreground.
-                Foreground = CellForeground,
-                CaretBrush = CellForeground,
+                // The grid supplies the worksheet's Automatic colour; explicit run colours remain independent.
+                Foreground = this.automaticForeground,
+                CaretBrush = this.automaticForeground,
             };
 
             // A cell is a single line, but the document's vertical-centering padding can make the
@@ -85,8 +82,8 @@ public class CellEditor : Decorator
             {
                 BorderThickness = new(0),
                 Background = Brushes.Transparent,
-                Foreground = CellForeground, // light cell canvas in both themes
-                CaretBrush = CellForeground,
+                Foreground = this.automaticForeground,
+                CaretBrush = this.automaticForeground,
                 Padding = new(4, 2),
                 AcceptsReturn = false,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -104,6 +101,13 @@ public class CellEditor : Decorator
 
     // True when the rich editor is active (per-character formatting available).
     public bool IsRich => this.rich is not null;
+
+    internal void SetAutomaticForeground(Color color)
+    {
+        this.automaticForeground.Color = color;
+        this.rich?.InvalidateVisual();
+        this.plain?.InvalidateVisual();
+    }
 
     // Raised when the rich editor's caret/selection changes (so the toolbar can re-sync).
     public event EventHandler? SelectionFormatChanged;
@@ -126,7 +130,7 @@ public class CellEditor : Decorator
                 this.plain.FontStyle = cell.FontStyle;
                 this.plain.FontSize = cell.FontSize;
                 this.plain.TextAlignment = cell.TextAlignment;
-                this.plain.Foreground = cell.Foreground ?? CellForeground;
+                this.plain.Foreground = cell.Foreground ?? this.automaticForeground;
                 if (!string.IsNullOrWhiteSpace(cell.FontFamily))
                 {
                     this.plain.FontFamily = new FontFamily(cell.FontFamily);
@@ -241,20 +245,22 @@ public class CellEditor : Decorator
         this.ApplyToSelection(RichInline.TextDecorationsProperty, BuildDecorations(underline, !strike));
     }
 
-    public void ApplyForeground(Color color)
+    public void ApplyForeground(Color color) => this.ApplyForeground((Color?)color);
+
+    public void ApplyForeground(Color? color)
     {
         if (this.rich is null)
         {
             if (this.cell is not null)
             {
-                this.cell.ForegroundColor = color;
+                this.cell.SetWholeForeground(color);
             }
 
             this.SyncPlain();
             return;
         }
 
-        this.ApplyToSelection(RichTextElement.ForegroundProperty, (IBrush)new SolidColorBrush(color));
+        this.ApplyToSelection(RichTextElement.ForegroundProperty, color is { } selected ? new SolidColorBrush(selected) : this.automaticForeground);
     }
 
     // The current B/I/U/strikethrough state of the selection (for keeping the toolbar in sync).
@@ -320,12 +326,12 @@ public class CellEditor : Decorator
 
         this.plain.FontWeight = this.cell.FontWeight;
         this.plain.FontStyle = this.cell.FontStyle;
-        this.plain.Foreground = this.cell.Foreground ?? CellForeground;
+        this.plain.Foreground = this.cell.Foreground ?? this.automaticForeground;
     }
 
     // ----- Rich document <-> CellRun conversion -----
 
-    private static FlowDocument BuildDocument(CellViewModel cell)
+    private FlowDocument BuildDocument(CellViewModel cell)
     {
         Paragraph paragraph = new() { TextAlignment = cell.TextAlignment };
         foreach (CellRun r in cell.EditRuns)
@@ -369,6 +375,7 @@ public class CellEditor : Decorator
         double hostHeight = Math.Max(22.0, cell.FontSize + 8) - 4; // cell row height minus the 2px insets
         double topPad = Math.Max(0, (hostHeight - cell.FontSize * 1.3) / 2);
         FlowDocument document = new() { FontSize = cell.FontSize, PagePadding = new(2, topPad, 0, 0) };
+        document.SetValue(RichTextElement.ForegroundProperty, this.automaticForeground);
         if (!string.IsNullOrWhiteSpace(cell.FontFamily))
         {
             document.FontFamily = new FontFamily(cell.FontFamily);
@@ -440,15 +447,14 @@ public class CellEditor : Decorator
         }
     }
 
-    private static Color? ColorOf(IBrush? brush)
+    private Color? ColorOf(IBrush? brush)
     {
-        if (brush is not SolidColorBrush s)
+        if (ReferenceEquals(brush, this.automaticForeground) || brush is not ISolidColorBrush solid)
         {
             return null;
         }
 
-        // Treat default black as "unset" so plain text stays unstyled.
-        return s.Color == Colors.Black ? null : s.Color;
+        return solid.Color;
     }
 
     // Merges adjacent single-character drafts with identical formatting into runs.

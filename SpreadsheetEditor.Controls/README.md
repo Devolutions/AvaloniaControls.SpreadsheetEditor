@@ -42,6 +42,11 @@ The control exposes an integration API similar to Avalonia's `RichTextEditor`: `
 `SelectionChanged`, and `IsReadOnlyChanged` events. Load data via `LoadSheet`, `LoadWorkbook`,
 `LoadCellData`, or `LoadRows`; read it back with `GetCellData`/`GetRows`.
 
+The worksheet stays light by default, independently of the surrounding UI. Set
+`Editor.MatchWorksheetThemeToUI = true` to make its surface, gridlines, and Automatic text
+follow the UI's light/dark theme. This display setting preserves explicit cell colours and is
+not written to the workbook. Users can also toggle it in the editor's More menu.
+
 ## Excel (.xlsx) files — included
 
 Excel read/write is built in (backed by [ClosedXML](https://github.com/ClosedXML/ClosedXML) plus

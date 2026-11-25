@@ -245,4 +245,10 @@ Alternatif olarak, sayfayı kaydetmek ve PDF görüntüleyiciden yazdırmak içi
   <data name="BorderDashed" xml:space="preserve"><value>Kesikli</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Noktalı</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Birleştirme yalnızca sol üst hücrenin içeriğini korur (satırlar boyunca birleştirmede her satırda bir hücre). Diğer içerikler kaldırılacak. Devam edilsin mi?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Otomatik</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Diğer Renkler…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Görünüm</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Açık tema</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Koyu tema</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Çalışma sayfasını arayüz temasıyla eşleştir</value></data>
 </root>

@@ -22,9 +22,16 @@
                 <Separator />
                 <MenuItem x:Name="CloseItem" Header="{loc:Loc SampleCloseMenu}" />
             </MenuItem>
+            <MenuItem Header="{loc:Loc SampleViewMenu}">
+                <MenuItem x:Name="ReadOnlyMenuItem" Header="{loc:Loc ReadOnly}" ToggleType="CheckBox" />
+                <Separator />
+                <MenuItem x:Name="LightThemeMenuItem" Header="{loc:Loc LightTheme}" ToggleType="Radio" GroupName="SampleTheme" />
+                <MenuItem x:Name="DarkThemeMenuItem" Header="{loc:Loc DarkTheme}" ToggleType="Radio" GroupName="SampleTheme" />
+                <Separator />
+                <MenuItem Header="{loc:Loc MatchWorksheetThemeToUI}" ToggleType="CheckBox"
+                          IsChecked="{Binding #Editor.MatchWorksheetThemeToUI, Mode=TwoWay}" />
+            </MenuItem>
         </Menu>
-        <CheckBox x:Name="ReadOnlyCheckBox" DockPanel.Dock="Top" Margin="8,4"
-                  Content="{loc:Loc ReadOnly}" />
         <se:SpreadsheetEditor x:Name="Editor" />
     </DockPanel>
 </Window>

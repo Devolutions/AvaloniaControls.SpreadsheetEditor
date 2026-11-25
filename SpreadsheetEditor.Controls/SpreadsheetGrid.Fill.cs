@@ -28,7 +28,7 @@ public partial class SpreadsheetGrid
             Width = 7,
             Height = 7,
             Background = SelectionBorder,
-            BorderBrush = SheetSurface,
+            BorderBrush = Brushes.White,
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,

@@ -245,4 +245,10 @@ Alternatywnie użyj opcji „Eksportuj jako PDF”, aby zapisać arkusz i wydruk
   <data name="BorderDashed" xml:space="preserve"><value>Kreskowana</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Kropkowana</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Scalanie zachowuje tylko zawartość lewej górnej komórki (jednej na wiersz przy scalaniu wierszami). Pozostała zawartość zostanie usunięta. Kontynuować?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatyczny</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Więcej kolorów…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Widok</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Jasny motyw</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Ciemny motyw</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Dopasuj arkusz do motywu interfejsu</value></data>
 </root>

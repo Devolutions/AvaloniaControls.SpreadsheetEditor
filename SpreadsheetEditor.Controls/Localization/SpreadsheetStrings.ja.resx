@@ -245,4 +245,10 @@
   <data name="BorderDashed" xml:space="preserve"><value>破線</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>点線</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>結合すると、左上のセルの内容のみが保持されます（行ごとの結合では各行の左端のセル）。その他の内容は削除されます。続行しますか？</value></data>
+  <data name="Automatic" xml:space="preserve"><value>自動</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>その他の色…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>表示(_V)</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>ライトテーマ</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>ダークテーマ</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>ワークシートをUIテーマに合わせる</value></data>
 </root>

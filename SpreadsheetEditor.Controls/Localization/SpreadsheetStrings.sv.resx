@@ -245,4 +245,10 @@ Alternativt kan du använda &quot;Exportera som PDF&quot; för att spara arket o
   <data name="BorderDashed" xml:space="preserve"><value>Streckad</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Prickad</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Sammanfogning behåller bara innehållet i cellen överst till vänster (en per rad vid radvis sammanfogning). Övrigt innehåll tas bort. Vill du fortsätta?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatisk</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Fler färger…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Visa</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Ljust tema</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Mörkt tema</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Anpassa kalkylbladet till gränssnittets tema</value></data>
 </root>

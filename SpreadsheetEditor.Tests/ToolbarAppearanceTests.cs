@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -59,11 +60,14 @@ public sealed class ToolbarAppearanceTests
             Button italic = editor.FindControl<Button>("ItalicButton")!;
             PathIcon italicText = Assert.IsType<PathIcon>(italic.Content);
             Color enabledText = Ink(italicText);
+            PathIcon fillIcon = Assert.Single(editor.FindControl<Button>("BackgroundButton")!.GetVisualDescendants().OfType<PathIcon>());
+            Assert.Equal(enabledText, Ink(fillIcon));
             editor.IsReadOnly = true;
             await Frame(window);
             Button bold = editor.FindControl<Button>("BoldButton")!;
             TextBlock boldText = Assert.IsType<TextBlock>(bold.Content);
             Color disabledText = Ink(boldText);
+            Assert.Equal(disabledText, Ink(fillIcon));
             Assert.NotEqual(enabledText, Ink(italicText));
             foreach (string name in new[]
             {
@@ -92,6 +96,7 @@ public sealed class ToolbarAppearanceTests
                 Assert.True(button.IsEnabled, name);
             }
             Assert.Equal(enabledText, Ink(italicText));
+            Assert.Equal(enabledText, Ink(fillIcon));
             Assert.Equal(enabledText, Ink(Assert.IsType<PathIcon>(editor.FindControl<Button>("PasteButton")!.Content)));
             Assert.True(editor.FindControl<Avalonia.Controls.Primitives.ToggleButton>("BoldButton")!.IsChecked);
             PathIcon alignment = Assert.IsType<PathIcon>(editor.FindControl<Button>("AlignLeftButton")!.Content);

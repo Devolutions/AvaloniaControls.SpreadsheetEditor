@@ -245,4 +245,10 @@ Alternativ können Sie „Exportieren als PDF“ verwenden, um das Blatt zu spei
   <data name="BorderDashed" xml:space="preserve"><value>Gestrichelt</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Gepunktet</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Beim Verbinden bleibt nur der Inhalt der Zelle oben links erhalten (beim zeilenweisen Verbinden je eine pro Zeile). Andere Inhalte werden gelöscht. Fortfahren?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatisch</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Weitere Farben…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Ansicht</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Helles Design</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Dunkles Design</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Arbeitsblatt an das Oberflächendesign anpassen</value></data>
 </root>

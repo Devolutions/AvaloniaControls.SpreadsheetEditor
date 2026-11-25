@@ -245,4 +245,10 @@ Alternativamente, use &quot;Exportar como PDF&quot; para salvar a planilha e imp
   <data name="BorderDashed" xml:space="preserve"><value>Tracejada</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Pontilhada</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>A mesclagem mantém apenas o conteúdo da célula superior esquerda (uma por linha ao mesclar por linha). Os outros conteúdos serão removidos. Continuar?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automático</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Mais cores…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Ver</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Tema claro</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Tema escuro</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Usar o tema da interface na folha</value></data>
 </root>

@@ -245,4 +245,10 @@ Alternativamente, use &quot;Exportar como PDF&quot; para guardar la hoja e impri
   <data name="BorderDashed" xml:space="preserve"><value>Discontinuo</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Punteado</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Al combinar solo se conserva el contenido de la celda superior izquierda (una por fila al combinar por filas). Los demás contenidos se eliminarán. ¿Continuar?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automático</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Más colores…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Ver</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Tema claro</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Tema oscuro</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Usar el tema de la interfaz en la hoja</value></data>
 </root>

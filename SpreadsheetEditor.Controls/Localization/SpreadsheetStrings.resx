@@ -245,4 +245,10 @@ Alternatively, use "Export as PDF" to save the sheet and print it from a PDF vie
   <data name="BorderDashed" xml:space="preserve"><value>Dashed</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Dotted</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>Merging keeps only the upper-left cell’s contents (one per row for Merge Across). Other contents will be removed. Continue?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatic</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>More Colors…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_View</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Light theme</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Dark theme</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Match worksheet to UI theme</value></data>
 </root>

@@ -245,4 +245,10 @@ Vous pouvez également utiliser « Exporter sous PDF » pour enregistrer la fe
   <data name="BorderDashed" xml:space="preserve"><value>Tirets</value></data>
   <data name="BorderDotted" xml:space="preserve"><value>Pointillés</value></data>
   <data name="MergeContentsWarning" xml:space="preserve"><value>La fusion conserve uniquement le contenu de la cellule supérieure gauche (une par ligne pour la fusion par ligne). Les autres contenus seront supprimés. Continuer ?</value></data>
+  <data name="Automatic" xml:space="preserve"><value>Automatique</value></data>
+  <data name="MoreColors" xml:space="preserve"><value>Autres couleurs…</value></data>
+  <data name="SampleViewMenu" xml:space="preserve"><value>_Affichage</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Thème clair</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Thème sombre</value></data>
+  <data name="MatchWorksheetThemeToUI" xml:space="preserve"><value>Adapter la feuille au thème de l’interface</value></data>
 </root>

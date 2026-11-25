@@ -120,6 +120,7 @@
                 <StreamGeometry x:Key="IconCopy">M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z</StreamGeometry>
                 <StreamGeometry x:Key="IconPaste">M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z</StreamGeometry>
                 <StreamGeometry x:Key="IconPrint">M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z</StreamGeometry>
+                <StreamGeometry x:Key="IconFillColor">M8 1L6.6 2.4L8.7 4.5L3.5 9.7C2.8 10.4 2.8 11.6 3.5 12.3L9.2 18C9.9 18.7 11.1 18.7 11.8 18L18.7 11.1L10 2.4L8 1ZM5.5 10.5L10.1 5.9L14.7 10.5H5.5ZM20 12.5C20 12.5 17.5 15.4 17.5 17.2A2.5 2.5 0 0 0 22.5 17.2C22.5 15.4 20 12.5 20 12.5Z</StreamGeometry>
                 <StreamGeometry x:Key="IconAlignLeft">M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z</StreamGeometry>
                 <StreamGeometry x:Key="IconAlignCenter">M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z</StreamGeometry>
                 <StreamGeometry x:Key="IconAlignRight">M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z</StreamGeometry>
@@ -204,20 +205,41 @@
                     </Button.Content>
                     <Button.Flyout>
                         <Flyout>
-                            <WrapPanel x:Name="ForegroundPalette" Width="132" />
+                            <StackPanel Spacing="6">
+                                <Button x:Name="AutomaticTextColorButton"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                        Focusable="False" AutomationProperties.Name="{loc:Loc Automatic}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Border x:Name="AutomaticTextColorSwatch" Width="16" Height="16" Background="Black" BorderBrush="Gray" BorderThickness="1" />
+                                        <TextBlock Text="{loc:Loc Automatic}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Separator />
+                                <WrapPanel x:Name="ForegroundPalette" Width="132" />
+                                <Separator />
+                                <Button x:Name="MoreTextColorsButton" Content="{loc:Loc MoreColors}"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False" />
+                            </StackPanel>
                         </Flyout>
                     </Button.Flyout>
                 </Button>
 
-                <Button x:Name="BackgroundButton" Classes="tool" ToolTip.Tip="{loc:Loc FillColor}">
+                <Button x:Name="BackgroundButton" Classes="tool" ToolTip.Tip="{loc:Loc FillColor}" AutomationProperties.Name="{loc:Loc FillColor}">
                     <Button.Content>
-                        <Border BorderBrush="#66000000" BorderThickness="1" CornerRadius="2" Width="18" Height="14">
-                            <Border x:Name="BackgroundSwatch" Background="Yellow" Margin="1" CornerRadius="1" />
-                        </Border>
+                        <StackPanel Spacing="1" HorizontalAlignment="Center">
+                            <PathIcon Data="{StaticResource IconFillColor}" Width="16" Height="16" />
+                            <Border x:Name="BackgroundSwatch" Width="16" Height="3" Background="Yellow"
+                                    BorderBrush="{Binding $parent[Button].Foreground}" BorderThickness="0.5" />
+                        </StackPanel>
                     </Button.Content>
                     <Button.Flyout>
                         <Flyout>
-                            <WrapPanel x:Name="BackgroundPalette" Width="132" />
+                            <StackPanel Spacing="6">
+                                <WrapPanel x:Name="BackgroundPalette" Width="132" />
+                                <Separator />
+                                <Button x:Name="MoreFillColorsButton" Content="{loc:Loc MoreColors}"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False" />
+                            </StackPanel>
                         </Flyout>
                     </Button.Flyout>
                 </Button>
@@ -229,7 +251,7 @@
                     <TextBlock Text="{loc:Loc BoldGlyph}" FontWeight="Bold" />
                 </ToggleButton>
                 <ToggleButton x:Name="ItalicButton" Classes="tool" ToolTip.Tip="{loc:Loc Italic}" AutomationProperties.Name="{loc:Loc Italic}">
-                    <PathIcon Data="M10 4V7H12.21L8.79 15H6V18H14V15H11.79L15.21 7H18V4Z" Width="16" Height="16" />
+                    <PathIcon Data="M4.5 0H9V1H7.2L3.4 10H4.5V11H0V10H1.8L5.6 1H4.5Z" Width="9" Height="11" />
                 </ToggleButton>
                 <ToggleButton x:Name="UnderlineButton" Classes="tool" ToolTip.Tip="{loc:Loc Underline}">
                     <TextBlock Text="{loc:Loc UnderlineGlyph}" TextDecorations="Underline" />
